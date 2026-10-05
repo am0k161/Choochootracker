@@ -49,6 +49,8 @@ struct KeyMapping {
 };
 
 enum class StickLiveMode { hold, toggle, free };
+enum class TrackVisualMode : uint8_t { detailed, audio };
+struct TrackVisualSettings { TrackVisualMode mode = TrackVisualMode::detailed; };
 
 struct AppSettings {
   int screenWidth;
@@ -85,6 +87,8 @@ struct AppSettings {
   // instrument, the pre-existing behavior).
   int8_t midiChannelInstrument[MIDI_CHANNEL_COUNT];
   StickLiveMode stickLiveMode;
+  TrackVisualSettings trackVisuals[PROJECT_MAX_TRACKS];
+  uint8_t persistentWaveform;
   KeyMapping keyMapping;
   ColorScheme colorScheme;
   char themeName[THEME_NAME_LENGTH + 1];

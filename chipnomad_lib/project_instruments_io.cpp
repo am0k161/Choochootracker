@@ -256,6 +256,7 @@ static int loadInstrumentSample(FILE* file, Instrument* instrument) {
     else if (strncmp(line, "- Sample loop: ", 15) == 0) sscanf(line, "- Sample loop: %hhu", &sample->loopMode);
     else if (strncmp(line, "- Sample slice: ", 16) == 0) sscanf(line, "- Sample slice: %hhu", &sample->slice);
     else if (strncmp(line, "- Sample stretch: ", 18) == 0) sscanf(line, "- Sample stretch: %hhu", &sample->stretchMode);
+    else if (strncmp(line, "- Speed algo: ", 14) == 0) sscanf(line, "- Speed algo: %hhu", &sample->speedAlgorithm);
     else if (strncmp(line, "- Sample volume: ", 17) == 0) sscanf(line, "- Sample volume: %hhu", &instrument->volume);
     else loadVoicePostSetting(line, sample);
     consumeLine(file);
@@ -267,6 +268,7 @@ static int loadInstrumentSample(FILE* file, Instrument* instrument) {
   if (sample->loopMode > 2) sample->loopMode = 0;
   sample->slice = sampleNormalizeSlice(sample->slice);
   if (sample->stretchMode > 6) sample->stretchMode = 0;
+  if (sample->speedAlgorithm > 1) sample->speedAlgorithm = 0;
   return 0;
 }
 
@@ -671,6 +673,7 @@ static int saveInstrumentSample(FILE* file, Instrument* instrument) {
   fprintf(file, "- Sample loop: %hhu\n", sample->loopMode);
   fprintf(file, "- Sample slice: %hhu\n", sampleNormalizeSlice(sample->slice));
   fprintf(file, "- Sample stretch: %hhu\n", sample->stretchMode > 6 ? 0 : sample->stretchMode);
+  fprintf(file, "- Speed algo: %hhu\n", sample->speedAlgorithm > 1 ? 0 : sample->speedAlgorithm);
   saveVoicePostSettings(file, sample);
   return 0;
 }

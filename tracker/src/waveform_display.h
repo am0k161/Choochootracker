@@ -29,6 +29,9 @@ void waveformDisplayInvalidate(void);
  */
 Bitmap* waveformDisplayGetBitmap(int trackIdx);
 
+// Actual per-track audio, reduced into pixel columns with a padded centre line.
+void renderTrackAudioWaveform(Bitmap* bitmap, const float* samples, int count);
+
 /**
  * @brief Render a sample waveform preview into a bitmap
  *

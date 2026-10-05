@@ -153,7 +153,7 @@ static void drawStatic(void) {
 }
 
 static void drawField(int col, int row, CellState state) {
-  if (row < screen.topRow || row >= (screen.topRow + 16)) return; // Don't draw outside of the viewing area
+  if (row < screen.topRow || row >= (screen.topRow + screenVisibleRows())) return; // Don't draw outside of the viewing area
 
   int chain = chipnomadState->project.song[row][col];
   int isHighlighted = chipnomadState->project.songHighlight[row][col];
@@ -206,11 +206,11 @@ static void fullRedraw(void) {
 
 static void draw(void) {
   for (int c = 0; c < chipnomadState->project.tracksCount; c++) {
-    gfxClearRect(2 + c * 3, 3, 1, 16);
+    gfxClearRect(2 + c * 3, 3, 1, screenVisibleRows());
     const PlaybackTrackState* track = &chipnomadGetPlaybackStatus(chipnomadState)->tracks[c];
     if (track->songRow != EMPTY_VALUE_16) {
       int row = track->songRow - screen.topRow;
-      if (row >= 0 && row < 16) {
+      if (row >= 0 && row < screenVisibleRows()) {
         gfxSetFgColor(appSettings.colorScheme.playMarkers);
         gfxPrint(2 + c * 3, 3 + row, ">");
       }
@@ -219,7 +219,7 @@ static void draw(void) {
       int stop = track->queue.liveAction == LiveQueueAction::stopNormal || track->queue.liveAction == LiveQueueAction::stopUrgent;
       int urgent = track->queue.liveAction == LiveQueueAction::urgent || track->queue.liveAction == LiveQueueAction::stopUrgent;
       int row = (stop ? track->songRow : track->queue.songRow) - screen.topRow;
-      if (row >= 0 && row < 16) {
+      if (row >= 0 && row < screenVisibleRows()) {
         gfxSetFgColor(appSettings.colorScheme.playMarkers);
         gfxPrint(2 + c * 3, 3 + row, stop ? "-" : (urgent ? "!" : "+"));
       }
@@ -341,7 +341,7 @@ static int onEdit(int col, int row, CellEditAction action) {
         screen.selectStartRow++;
         screen.cursorRow++;
         // Scroll down if selection moved below visible area
-        if (screen.cursorRow >= screen.topRow + 16) {
+        if (screen.cursorRow >= screen.topRow + screenVisibleRows()) {
           screen.topRow++;
         }
       }

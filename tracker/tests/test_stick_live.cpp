@@ -456,4 +456,18 @@ TEST_CASE_FIXTURE(StickLiveFixture, "midiChannelInstrument round-trips through s
   CHECK(appSettings.midiChannelInstrument[2] == 3);
 }
 
+TEST_CASE_FIXTURE(StickLiveFixture, "Persistent waveform toggle is in Graphics settings") {
+  CHECK(appSettings.persistentWaveform == 0);
+  screenGraphicsSettings.fullRedraw();
+  REQUIRE(mockScreenData != nullptr);
+  auto* screen = mockScreenData;
+  CHECK(screen->rows == 6);
+  screen->drawField(0, 2, CellState::focus);
+  CHECK(std::string(mockGfxCells[4] + 23, 3) == "OFF");
+  REQUIRE(screen->onEdit(0, 2, CellEditAction::tap) == 1);
+  CHECK(appSettings.persistentWaveform == 1);
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.persistentWaveform == 1);
+}
+
 }

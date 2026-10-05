@@ -14,12 +14,19 @@ static constexpr int sourceValueX = 9;
 static constexpr int sourceValueWidth = 7;
 static constexpr int editLabelX = 17;
 static constexpr int editLabelWidth = 4;
-static constexpr int previewRow = 16, previewWidth = 32, previewHeight = 3;
 static Bitmap* samplePreviewBitmap;
+static int samplePreviewWidth, samplePreviewHeight;
 static const char* stretchLabels[] = {"Off", "1 beat", "2 beats", "1 bar", "2 bars", "4 bars", "8 bars"};
 
 static void updateSamplePreview(const InstrumentSample* sample) {
-  if (!samplePreviewBitmap) samplePreviewBitmap = gfxBitmapCreate(previewWidth, previewHeight);
+  int width = appSettings.persistentWaveform ? 15 : 32;
+  int height = appSettings.persistentWaveform ? 2 : 3;
+  if (width != samplePreviewWidth || height != samplePreviewHeight) {
+    gfxBitmapFree(samplePreviewBitmap);
+    samplePreviewBitmap = gfxBitmapCreate(width, height);
+    samplePreviewWidth = width;
+    samplePreviewHeight = height;
+  }
   uint32_t start = sample->frameCount ? (uint64_t)sample->start * (sample->frameCount - 1) / 255 : 0;
   uint32_t end = sample->end == 255 ? sample->frameCount :
     (uint64_t)(sample->end + 1) * sample->frameCount / 256;
@@ -30,7 +37,7 @@ static void updateSamplePreview(const InstrumentSample* sample) {
 static void drawSamplePreview(void) {
   if (!samplePreviewBitmap) return;
   gfxSetFgColor(appSettings.colorScheme.textInfo);
-  gfxDrawBitmap(samplePreviewBitmap, 0, previewRow);
+  gfxDrawBitmap(samplePreviewBitmap, 0, appSettings.persistentWaveform ? 15 : 16);
 }
 
 static void onSampleCancelled(void) {
@@ -99,7 +106,7 @@ static void drawStatic(void) {
   gfxPrint(0,7,"SOURCE");
   gfxSetFgColor(appSettings.colorScheme.textDefault);
   gfxPrint(0,8,"Pitch"); gfxPrint(0,9,"Stretch");
-  gfxPrint(0,11,"Loop"); gfxPrint(0,12,"Speed");
+  gfxPrint(0,10,"Loop"); gfxPrint(0,11,"Speed");
   instrumentCommonDrawVoicePostStatic(1);
   InstrumentSample* sample = &chipnomadState->project.instruments[cInstrument].chip.sample;
   updateSamplePreview(sample);
@@ -149,12 +156,12 @@ static void drawField(int col, int row, CellState state) {
     case 5:
       if (!col) gfxPrint(sourceValueX, 9, stretchLabels[sample->stretchMode <= 6 ? sample->stretchMode : 0]);
       break;
-    case 7: if(!col) { static const char* m[]={"Off","Loop","Ping"}; gfxPrint(sourceValueX,11,m[sample->loopMode<=2?sample->loopMode:0]); } break;
-    case 8:
+    case 6: if(!col) { static const char* m[]={"Off","Loop","Ping"}; gfxPrint(sourceValueX,10,m[sample->loopMode<=2?sample->loopMode:0]); } break;
+    case 7:
       if (!col) {
         // Speed is inert while Stretch drives the duration: dim it.
         if (stretchOn) gfxSetFgColor(appSettings.colorScheme.textEmpty);
-        gfxPrint(sourceValueX, 12, byteToHex(controlFromRange(sample->speedPercent, 500)));
+        gfxPrint(sourceValueX, 11, byteToHex(controlFromRange(sample->speedPercent, 500)));
       }
       break;
   }
@@ -191,8 +198,8 @@ static int onEdit(int col, int row, CellEditAction action) {
       }
       return handled;
     }
-    case 7: handled=!col?edit8noLast(action,&sample->loopMode,1,0,2):0; break;
-    case 8:
+    case 6: handled=!col?edit8noLast(action,&sample->loopMode,1,0,2):0; break;
+    case 7:
       // Speed is inert while Stretch drives the duration.
       if (sample->stretchMode != 0) return 0;
       if (!col && action == CellEditAction::clear) {
@@ -216,9 +223,8 @@ static int loadAdjacentSample(int direction) {
 }
 
 static int isCellValid(int col, int row) {
-  if (!col && row == 6) return 0;
   // Speed is inert while Stretch drives the duration: skip it in navigation.
-  if (!col && row == 8 && chipnomadState->project.instruments[cInstrument].chip.sample.stretchMode != 0) return 0;
+  if (!col && row == 7 && chipnomadState->project.instruments[cInstrument].chip.sample.stretchMode != 0) return 0;
   return 1;
 }
 

@@ -61,17 +61,21 @@ static int mixerEdit(int, int row, CellEditAction action) {
 static ScreenData mixerData = {2, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, mixerStatic, mixerCursor, NULL, noHeader, noHeader, mixerField, mixerEdit, NULL, NULL, NULL, NULL};
 
 static void graphicsStatic(void) { gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "GRAPHICS"); }
-static void graphicsCursor(int, int row) { gfxCursor(row < 2 ? 23 : 0, 2 + row, row == 0 ? 3 : row == 1 ? 8 : row == 2 ? 9 : 16); }
+static void graphicsCursor(int, int row) { gfxCursor(row == 2 || row == 5 ? 23 : 0, 2 + row, row == 0 ? 16 : row == 1 ? 9 : row == 2 ? 3 : row == 3 ? 13 : 8); }
 static void graphicsField(int, int row, CellState state) {
   const ColorScheme cs = appSettings.colorScheme;
   if (row == 0) {
-    gfxSetFgColor(cs.textDefault); gfxPrint(0, 2, "Waveform FPS");
-    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrintf(23, 2, "%03d", appSettings.waveformRefreshHz);
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, 2, "Edit color theme");
   } else if (row == 1) {
-    gfxSetFgColor(cs.textDefault); gfxPrint(0, 3, "Renderer");
-    gfxSetFgColor(cs.textInfo); gfxPrint(23, 3, gfxGetRendererType());
-  } else {
-    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, 2 + row, row == 2 ? "Load font" : "Edit color theme");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, 3, "Load font");
+  } else if (row == 2) {
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, 4, "Persistent waveform");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(23, 4, appSettings.persistentWaveform ? "ON " : "OFF");
+  } else if (row == 3) {
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, 5, "Track visuals");
+  } else if (row == 5) {
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, 7, "Renderer");
+    gfxSetFgColor(cs.textInfo); gfxPrint(23, 7, gfxGetRendererType());
   }
 }
 static void fontLoaded(const char* path) {
@@ -86,18 +90,22 @@ static void fontLoaded(const char* path) {
 }
 static void fontCancelled(void) { screenSetup(&screenGraphicsSettings, 0); }
 static int graphicsEdit(int, int row, CellEditAction action) {
-  if (row == 0) {
-    uint8_t hz = (uint8_t)appSettings.waveformRefreshHz;
-    int handled = edit8noLast(action, &hz, 5, 1, 60);
-    if (handled) { appSettings.waveformRefreshHz = hz; waveformDisplayInvalidate(); }
-    return handled;
+  if (row == 2) {
+    uint8_t value = appSettings.persistentWaveform;
+    if (action == CellEditAction::tap || action == CellEditAction::doubleTap) value ^= 1;
+    else if (!edit8noLast(action, &value, 1, 0, 1)) return 0;
+    appSettings.persistentWaveform = value;
+    if (settingsSave() != 0) screenMessage(MESSAGE_TIME, "Could not save waveform setting");
+    return 1;
   }
-  if (row == 1 || action != CellEditAction::tap) return 0;
-  if (row == 2) { fileBrowserSetup("LOAD FONT", ".cnfont", appSettings.fontFolderPath, fontLoaded, fontCancelled); screenSetup(&screenFileBrowser, 0); }
-  else screenSetup(&screenColorTheme, 0);
+  if (row == 5 || action != CellEditAction::tap) return 0;
+  if (row == 0) screenSetup(&screenColorTheme, 0);
+  else if (row == 1) { fileBrowserSetup("LOAD FONT", ".cnfont", appSettings.fontFolderPath, fontLoaded, fontCancelled); screenSetup(&screenFileBrowser, 0); }
+  else if (row == 3) screenSetup(&screenTrackVisuals, 0);
   return 0;
 }
-static ScreenData graphicsData = {4, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, graphicsStatic, graphicsCursor, NULL, noHeader, noHeader, graphicsField, graphicsEdit, NULL, NULL, NULL, NULL};
+static int graphicsCellValid(int, int row) { return row != 4; }
+static ScreenData graphicsData = {6, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, graphicsStatic, graphicsCursor, NULL, noHeader, noHeader, graphicsField, graphicsEdit, NULL, NULL, graphicsCellValid, NULL};
 
 static int menuInput(ScreenData* data, int isKeyDown, int keys, int taps) { if (keys == keyOpt) { screenSetup(&screenSettings, 0); return 1; } return screenInput(data, isKeyDown, keys, taps); }
 static void synthRedraw(void) { screenFullRedraw(&synthData); }

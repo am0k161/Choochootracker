@@ -17,6 +17,7 @@
 #include "midi/midi_router.h"
 #include <math.h>
 #include <atomic>
+#include <new>
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +37,8 @@ static int hasAudioRateModulation(const ChipNomadState* state);
 static void updateAudioRateModulations(ChipNomadState* state);
 static void motionRecordFrame(ChipNomadState* state);
 static int instrumentFXCutoff(uint8_t value);
+static int slewEngineFX(PlaybackTrackState*, FX, int);
+static void updateInsertValues(ChipNomadState*);
 
 class AudioCommandQueue {
  public:
@@ -266,9 +269,21 @@ static void resetMotionRecordLast(void) {
       motionRecordLast[track][fx] = -1;
 }
 
-static int motionDestinationFX(const Instrument* instrument, const PlaybackTrackState* track,
+static int motionDestinationFX(ChipNomadState* state, int trackIdx, const Instrument* instrument, const PlaybackTrackState* track,
                                int destination, FX* fx, int* base, int* range,
                                InstrumentMotionValue* value) {
+  int insert = instrumentGenericModDestination(instrument->type, destination) - genericModFirstInsert;
+  if (insert >= 0 && insert < 16) {
+    int slot = insert / 8, p = insert % 8;
+    const auto& c = state->audioProject.trackInserts[trackIdx][slot];
+    const auto& d = insertDescriptor(c.module);
+    if (p >= d.count) return 0;
+    *fx = (FX)(fxF11 + insert);
+    *base = track->inserts.valid[slot] & (1 << p) ? track->inserts.values[slot][p] : c.values[p];
+    *range = d.parameters[p].mapping == InsertMapping::discrete ? (int)d.parameters[p].maximum : 255;
+    *value = InstrumentMotionValue::raw;
+    return 1;
+  }
   uint8_t rawFX;
   if (!instrumentMotionDestination(instrument, destination, &rawFX, base, range, value)) return 0;
   *fx = (FX)rawFX;
@@ -310,11 +325,17 @@ static void rebaseMotionRecordRate(ChipNomadState* state) {
       if (!modulation->modulation || modulation->modulation->type != ModulationType::StickRate) continue;
       FX fx;
       int base, range; InstrumentMotionValue value;
-      if (!motionDestinationFX(instrument, track, modulation->modulation->destination, &fx, &base, &range, &value)) continue;
+      if (!motionDestinationFX(state, trackIdx, instrument, track, modulation->modulation->destination, &fx, &base, &range, &value)) continue;
       int delta = playbackModScaleToRange(modulation->outValue, range);
       if (range == 16384) delta /= 129;
-      track->note.fx[fx].isOn = 1;
-      track->note.fx[fx].fxValue = motionFXValue(base + delta, value);
+      if (fx >= fxF11 && fx <= fxF28) {
+        int a=fx-fxF11, slot=a/8, p=a%8;
+        track->inserts.values[slot][p]=insertClamp(state->audioProject.trackInserts[trackIdx][slot].module,p,base+delta);
+        track->inserts.valid[slot]|=1<<p;
+      } else {
+        track->note.fx[fx].isOn = 1;
+        track->note.fx[fx].fxValue = motionFXValue(base + delta, value);
+      }
       state->playbackState.liveStickRate[track->note.instrument][slot] = 0;
       modulation->outValue = 0;
     }
@@ -348,7 +369,7 @@ static void motionRecordFrame(ChipNomadState* state) {
       if (!modulation->modulation || !modulationIsLiveStick(modulation->modulation->type)) continue;
       FX fx;
       int base, range; InstrumentMotionValue value;
-      if (!motionDestinationFX(instrument, track, modulation->modulation->destination, &fx, &base, &range, &value)) continue;
+      if (!motionDestinationFX(state, trackIdx, instrument, track, modulation->modulation->destination, &fx, &base, &range, &value)) continue;
       int target = -1;
       for (int i = 0; i < targetCount; ++i) if (targets[i] == fx) target = i;
       int delta = playbackModScaleToRange(modulation->outValue, range);
@@ -365,6 +386,10 @@ static void motionRecordFrame(ChipNomadState* state) {
     for (int target = 0; target < targetCount; ++target) {
       FX fx = targets[target];
       int fxValue = motionFXValue(values[target], valueKinds[target]);
+      if (fx >= fxF11 && fx <= fxF28) {
+        int a=fx-fxF11;
+        fxValue=insertClamp(state->audioProject.trackInserts[trackIdx][a/8].module,a%8,values[target]);
+      }
       if (mode == 1 && motionRecordLast[trackIdx][fx] == fxValue) continue;
       MotionRecordEvent event = {phrase, row, (uint8_t)fx, (uint8_t)fxValue, (uint8_t)(mode == 2)};
       if (!chipnomadMotionPushEvent(event)) {
@@ -392,7 +417,9 @@ static int resizeMixBuffers(ChipNomadState* state, int requiredSize) {
   float* mixBuffer = (float*)malloc(requiredSize * sizeof(float));
   float* reverbBuffer = (float*)malloc(requiredSize * sizeof(float));
   float* delayBuffer = (float*)malloc(requiredSize * sizeof(float));
-  if (!mixBuffer || !reverbBuffer || !delayBuffer) {
+  float* insertBuffer = (float*)malloc((size_t)requiredSize * PROJECT_MAX_TRACKS * sizeof(float));
+  if (!mixBuffer || !reverbBuffer || !delayBuffer || !insertBuffer) {
+    free(insertBuffer);
     free(mixBuffer);
     free(reverbBuffer);
     free(delayBuffer);
@@ -402,6 +429,8 @@ static int resizeMixBuffers(ChipNomadState* state, int requiredSize) {
   free(state->mixBuffer);
   free(state->reverbBuffer);
   free(state->delayBuffer);
+  free(state->insertBuffer);
+  state->insertBuffer = insertBuffer;
   state->mixBuffer = mixBuffer;
   state->reverbBuffer = reverbBuffer;
   state->delayBuffer = delayBuffer;
@@ -457,6 +486,10 @@ static inline void mixTrackSample(ChipNomadState* state, int trackIdx,
                                   float delaySend) {
   sample = state->trackTilt[trackIdx].process(sample, sampleIndex & 1,
     state->audioProject.trackTilt[trackIdx], state->audioProject.tiltPivotHz);
+  if (state->insertActive[trackIdx]) {
+    state->insertBuffer[(size_t)trackIdx * state->mixBufferSize + sampleIndex] += sample;
+    return;
+  }
   state->audioMonitor->add(trackIdx, sampleIndex, sample);
   float previous = *mix;
   *mix += sample;
@@ -492,7 +525,9 @@ ChipNomadState* chipnomadCreate(void) {
   state->mixBuffer = (float*)malloc(state->mixBufferSize * sizeof(float));
   state->reverbBuffer = (float*)malloc(state->mixBufferSize * sizeof(float));
   state->delayBuffer = (float*)malloc(state->mixBufferSize * sizeof(float));
-  if (!state->mixBuffer || !state->reverbBuffer || !state->delayBuffer) {
+  state->insertBuffer = (float*)malloc((size_t)state->mixBufferSize * PROJECT_MAX_TRACKS * sizeof(float));
+  if (!state->mixBuffer || !state->reverbBuffer || !state->delayBuffer || !state->insertBuffer) {
+    free(state->insertBuffer);
     free(state->mixBuffer);
     free(state->reverbBuffer);
     free(state->delayBuffer);
@@ -557,6 +592,8 @@ void chipnomadDestroy(ChipNomadState* state) {
 
   if (state->ownsProjectResources) projectFree(&state->project);
 
+  for (auto* chain : state->insertChains) delete chain;
+  free(state->insertBuffer);
   // Cleanup mix buffer
   free(state->mixBuffer);
   free(state->reverbBuffer);
@@ -590,6 +627,10 @@ void chipnomadInitChips(ChipNomadState* state, int sampleRate, ChipFactory facto
   state->masterEffects->init((float)sampleRate);
   for (int i = 0; i < PROJECT_MAX_TRACKS; i++) {
     state->trackTilt[i].init((float)sampleRate);
+    delete state->insertChains[i];
+    state->insertChains[i] = new(std::nothrow) InsertChain((float)sampleRate);
+    if (state->insertChains[i]) state->insertChains[i]->sync(state->audioProject.trackInserts[i], &state->playbackState.tracks[i].inserts);
+    state->insertResetSeen[i] = state->playbackState.tracks[i].insertReset;
     for (int voice = 0; voice < CHORD_MAX_VOICES; ++voice) {
       state->braidsVoices[i][voice]->init((float)sampleRate);
       state->sampleVoices[i][voice]->init((float)sampleRate);
@@ -710,7 +751,7 @@ static void applyVoicePostModulations(const PlaybackTrackState* track, Instrumen
     const PlaybackModState* mod = &track->note.modulation[i];
     if (!mod->modulation) continue;
     int destination = instrumentGenericModDestination(type, mod->modulation->destination);
-    if (destination < genericModEnvelopeAttack || destination >= genericModTotalCount) continue;
+    if (destination < genericModEnvelopeAttack || destination >= genericModFirstP5) continue;
     int index = destination - genericModEnvelopeAttack;
     int value = playbackModScaleToRange(mod->outValue, 255);
     *values[index] = modulationIsAdditive(mod->modulation->type) ? *values[index] + value : value;
@@ -733,6 +774,7 @@ static void updateAudioRateModulations(ChipNomadState* state) {
   updateDrumSynthVoices(state);
   updateMMEVoices(state);
   updateSinteredVoices(state);
+  updateInsertValues(state);
 }
 
 static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
@@ -742,8 +784,24 @@ static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
     chipnomadMidiPanic(state);
     playbackStop(&state->playbackState);
   }
+  for (int t = 0; t < PROJECT_MAX_TRACKS; ++t) {
+    if (!state->insertChains[t]) continue;
+    auto& track = state->playbackState.tracks[t];
+    uint16_t cleared = state->insertChains[t]->sync(state->audioProject.trackInserts[t], &track.inserts);
+    for (int address = 0; address < 16; ++address) if (cleared & (1u << address)) {
+      track.slewTarget[fxF11 + address] = -1;
+      track.slewRemaining[fxF11 + address] = 0;
+    }
+  }
   state->audioCommands->applySettings(&state->playbackState);
   state->audioCommands->applyCommands(&state->playbackState);
+  for (int t = 0; t < PROJECT_MAX_TRACKS; ++t) {
+    auto& track = state->playbackState.tracks[t];
+    if (track.insertReset != state->insertResetSeen[t]) {
+      if (state->insertChains[t]) state->insertChains[t]->reset();
+      state->insertResetSeen[t] = track.insertReset;
+    }
+  }
   float axes[4];
   for (int i = 0; i < 4; ++i) axes[i] = chipnomadLiveStickAxis(i);
   int enabled = chipnomadLiveStickIsEnabled();
@@ -758,6 +816,7 @@ static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
   if (state->audioOverload > 0) state->audioOverload--;
   for (int i = 0; i < PROJECT_MAX_TRACKS; ++i)
     if (state->trackClipping[i] > 0) state->trackClipping[i]--;
+  updateInsertValues(state);
   detectAYPitchConflicts(state);
   state->audioCommands->publishStatus(&state->playbackState);
   return allTracksStopped;
@@ -769,6 +828,10 @@ static int prepareRenderChunk(ChipNomadState* state, float* output, int frames) 
   if (requiredSize > state->mixBufferSize) {
     state->audioCommands->setRenderBufferOverflow();
     return 0;
+  }
+  for (int t = 0; t < PROJECT_MAX_TRACKS; ++t) {
+    state->insertActive[t] = state->insertChains[t] && state->insertChains[t]->active();
+    if (state->insertActive[t]) memset(state->insertBuffer + (size_t)t * state->mixBufferSize, 0, requiredSize * sizeof(float));
   }
   state->audioMonitor->beginChunk(frames);
   memset(output, 0, requiredSize * sizeof(float));
@@ -838,6 +901,47 @@ static void renderStereoVoiceTracks(ChipNomadState* state, Voice* const voices[]
   }
 }
 
+static void updateInsertValues(ChipNomadState* state) {
+  for (int t = 0; t < state->audioProject.tracksCount; ++t) {
+    auto& track = state->playbackState.tracks[t];
+    for (int slot = 0; slot < 2; ++slot) {
+      const auto& c = state->audioProject.trackInserts[t][slot];
+      const auto& d = insertDescriptor(c.module);
+      for (int p = 0; p < d.count; ++p) {
+        int value = track.inserts.valid[slot] & (1 << p) ? track.inserts.values[slot][p] : c.values[p];
+        int range = d.parameters[p].mapping == InsertMapping::discrete ? (int)d.parameters[p].maximum : 255;
+        if (d.parameters[p].mapping != InsertMapping::discrete) value = slewEngineFX(&track, (FX)(fxF11 + slot * 8 + p), value);
+        if (track.note.instrument != EMPTY_VALUE_8) {
+          auto type = state->audioProject.instruments[track.note.instrument].type;
+          for (auto& mod : track.note.modulation) {
+            if (!mod.modulation || instrumentGenericModDestination(type, mod.modulation->destination) != genericModFirstInsert + slot * 8 + p) continue;
+            int offset = playbackModScaleToRange(mod.outValue, range);
+            value = modulationIsAdditive(mod.modulation->type) || mod.modulation->type == ModulationType::SLFO || mod.modulation->type == ModulationType::FLFO ? value + offset : offset;
+          }
+        }
+        state->insertValues[t][slot][p] = insertClamp(c.module, p, value);
+      }
+    }
+  }
+}
+
+static void processTrackInserts(ChipNomadState* state, float* output, int frames) {
+  for (int t = 0; t < state->audioProject.tracksCount; ++t) {
+    if (!state->insertActive[t] || !state->playbackState.trackEnabled[t]) continue;
+    float* samples = state->insertBuffer + (size_t)t * state->mixBufferSize;
+    state->insertChains[t]->process(samples, frames, state->insertValues[t]);
+    float reverb = effectiveTrackSend(state, t, true), delay = effectiveTrackSend(state, t, false);
+    for (int i = 0; i < frames * 2; ++i) {
+      float sample = samples[i], previous = output[i];
+      state->audioMonitor->add(t, i, sample);
+      output[i] += sample;
+      state->reverbBuffer[i] += sample * reverb;
+      state->delayBuffer[i] += sample * delay;
+      if (fabsf(output[i]) > 1.0f && fabsf(output[i]) > fabsf(previous)) state->trackClipping[t] = AUDIO_OVERLOAD_COOLDOWN_FRAMES;
+    }
+  }
+}
+
 static void processMasterMix(ChipNomadState* state, float* output, int frames) {
   bool hasReverb = false, hasDelay = false;
   for (int i = 0; i < state->audioProject.tracksCount; ++i) {
@@ -880,6 +984,7 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples) {
     renderMonoVoiceTracks(state, state->drumSynthVoices, output, frames);
     renderMonoVoiceTracks(state, state->mmeVoices, output, frames);
     renderMonoVoiceTracks(state, state->sinteredVoices, output, frames);
+    processTrackInserts(state, output, frames);
     processMasterMix(state, output, frames);
     state->audioMonitor->finishChunk(output, frames, state->sampleRate);
     samplesLeft -= frames;
@@ -1251,7 +1356,8 @@ static void updateSampleVoices(ChipNomadState* state) {
       }
       voices[slot]->configure(sample, (float)voicePitchCents, gain / track->chordVoiceCount, (float)speedPercent, start, end, (uint8_t)loopMode,
                               (uint16_t)cutoff, (uint8_t)resonance, attack, decay, sustain, release, shape,
-                              sliceCount, voiceSliceIndex, sample->stretchMode, project->tickRate);
+                              sliceCount, voiceSliceIndex, sample->stretchMode, project->tickRate,
+                              sample->speedAlgorithm);
     }
   }
 }

@@ -185,8 +185,8 @@ static void draw(void) {
   if (cpuLoad == displayedCpuLoad) return;
   displayedCpuLoad = cpuLoad;
   gfxSetFgColor(appSettings.colorScheme.textTitles);
-  gfxClearRect(31, 1, 9, 1);
-  gfxPrintf(31, 1, "CPU %03d%%", cpuLoad);
+  gfxClearRect(31, 0, 9, 1);
+  gfxPrintf(31, 0, "CPU %03d%%", cpuLoad);
 }
 
 static void setPage(int page) {

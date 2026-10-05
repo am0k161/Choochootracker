@@ -114,8 +114,9 @@ static void fullRedraw(void) {
 }
 
 static void drawField(int col, int row, CellState state) {
+  if (row < screen.topRow || row >= screen.topRow + screenVisibleRows()) return;
   int x = columnX[col];
-  int y = 3 + row;
+  int y = 3 + row - screen.topRow;
   if (col == 0) {
     // Note
     uint8_t value = phraseRows[row].note;
@@ -140,9 +141,10 @@ static void drawField(int col, int row, CellState state) {
 }
 
 static void drawRowHeader(int row, CellState state) {
+  if (row < screen.topRow || row >= screen.topRow + screenVisibleRows()) return;
   const ColorScheme cs = appSettings.colorScheme;
   gfxSetFgColor((state == CellState::focus) ? cs.textDefault : ((row & 3) == 0 ? cs.textValue : cs.textInfo));
-  gfxPrintf(1, 3 + row, "%X", row);
+  gfxPrintf(1, 3 + row - screen.topRow, "%X", row);
 }
 
 static void drawColHeader(int col, CellState state) {
@@ -177,15 +179,16 @@ static void drawColHeader(int col, CellState state) {
 }
 
 static void drawCursor(int col, int row) {
+  if (row < screen.topRow || row >= screen.topRow + screenVisibleRows()) return;
   int width = 2;
   if (col == 0 || col == 3 || col == 5 || col == 7) width = 3;
-  gfxCursor(col == 0 ? 3 : 4 + col * 3, 3 + row, width);
+  gfxCursor(col == 0 ? 3 : 4 + col * 3, 3 + row - screen.topRow, width);
 }
 
 static void drawSelection(int col1, int row1, int col2, int row2) {
   int x = columnX[col1];
   int w = columnX[col2 + 1] - x - 1;
-  int y = 3 + row1;
+  int y = 3 + row1 - screen.topRow;
   int h = row2 - row1 + 1;
   if (col2 == 3 || col2 == 5 || col2 == 7) w++;
   gfxRect(x, y, w, h);
@@ -194,26 +197,28 @@ static void drawSelection(int col1, int row1, int col2, int row2) {
 static void draw(void) {
   if (isFxEdit) return;
 
-  gfxClearRect(0, 3, 1, 16);
+  gfxClearRect(0, 3, 1, screenVisibleRows());
   gfxSetFgColor(appSettings.colorScheme.textInfo);
-  gfxPrint(0, 3 + *pChainRow, "<");
+  if (*pChainRow >= screen.topRow && *pChainRow < screen.topRow + screenVisibleRows())
+    gfxPrint(0, 3 + *pChainRow - screen.topRow, "<");
 
-  gfxClearRect(2, 3, 1, 16);
+  gfxClearRect(2, 3, 1, screenVisibleRows());
   const PlaybackTrackState* track = &chipnomadGetPlaybackStatus(chipnomadState)->tracks[*pSongTrack];
   if (track->mode != PlaybackMode::stopped && track->mode != PlaybackMode::phraseRow && track->songRow != EMPTY_VALUE_16) {
     // Chain row
-    if (*pSongRow == track->songRow) {
+    if (*pSongRow == track->songRow && track->chainRow >= screen.topRow &&
+        track->chainRow < screen.topRow + screenVisibleRows()) {
       gfxSetFgColor(appSettings.colorScheme.playMarkers);
-      gfxPrint(0, 3 + track->chainRow, "<");
+      gfxPrint(0, 3 + track->chainRow - screen.topRow, "<");
     }
 
     // Phrase row
     int playingPhrase = chipnomadState->project.chains[chipnomadState->project.song[track->songRow][*pSongTrack]].rows[track->chainRow].phrase;
     if (playingPhrase == phraseIdx) {
       int row = track->phraseRow;
-      if (row >= 0 && row < 16) {
+      if (row >= screen.topRow && row < screen.topRow + screenVisibleRows()) {
         gfxSetFgColor(appSettings.colorScheme.playMarkers);
-        gfxPrint(2, 3 + row, ">");
+        gfxPrint(2, 3 + row - screen.topRow, ">");
       }
     }
   }

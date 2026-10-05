@@ -529,6 +529,7 @@ void instrumentCommonDrawEnvelopePreview(uint8_t attack, uint8_t decay, uint8_t 
 }
 
 void instrumentCommonDrawLivePreview(void) {
+  if (!appSettings.persistentWaveform) {
   const PlaybackStatus* playback = chipnomadGetPlaybackStatus(chipnomadState);
   int track = -1;
   for (int i = 0; i < chipnomadState->project.tracksCount; ++i) {
@@ -555,6 +556,9 @@ void instrumentCommonDrawLivePreview(void) {
   }
   gfxSetFgColor(appSettings.colorScheme.textInfo);
   gfxDrawBitmap(livePreviewBitmap, 0, 16);
+  livePreviewWasActive = 1;
+  return;
+  }
   Instrument* instrument = &chipnomadState->project.instruments[cInstrument];
   InstrumentVoicePostSettings* post = voicePostSettings(instrument, instrument->type);
   if (post && instrument->type != InstrumentType::DrumSynth && instrument->type != InstrumentType::Sintered &&
@@ -564,7 +568,6 @@ void instrumentCommonDrawLivePreview(void) {
     instrumentCommonDrawEnvelopePreview(post->attack, post->decay, post->sustain,
                                         post->release, post->envelopeShape);
   }
-  livePreviewWasActive = 1;
 }
 
 int instrumentCommonOnEdit(int col, int row, enum CellEditAction action) {

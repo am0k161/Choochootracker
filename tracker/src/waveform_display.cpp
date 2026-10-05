@@ -1,4 +1,6 @@
 #include "waveform_display.h"
+#include <algorithm>
+#include <cmath>
 #include "corelib_gfx.h"
 #include "chipnomad_lib.h"
 #include "playback_chips.h"
@@ -9,6 +11,8 @@
 #include "synth/mme_voice.h"
 #include "synth/sintered_voice.h"
 #include "common.h"
+#include "monitor_display.h"
+#include "audio_monitor.h"
 #include <string.h>
 #include <stdlib.h>
 #include <math.h>
@@ -305,7 +309,10 @@ void waveformDisplayRefresh(void) {
   voiceBlend = 1.0f - powf(0.7f, elapsedSeconds * 60.0f);
   if (voiceBlend > 1.0f) voiceBlend = 1.0f;
   for (int i = 0; i < chipnomadState->project.tracksCount; ++i) {
-    renderWaveform(i);
+    if (appSettings.trackVisuals[i].mode == TrackVisualMode::audio)
+      renderTrackAudioWaveform(waveformBitmaps[i], monitorDisplayTrackSamples(i), AUDIO_MONITOR_SAMPLES);
+    else
+      renderWaveform(i);
   }
   lastWaveformRefresh = now;
 }
@@ -556,4 +563,25 @@ void renderAYWavetableLfoPreview(Bitmap* bitmap, uint8_t* wavetable) {
   const int zeroY = bitmap->heightPixels / 2;
   for (int x = 0; x < bitmap->widthPixels; ++x) bitmap->data[zeroY * bitmap->widthPixels + x] = 64;
   renderWaveformPreview(bitmap, wavetable, 32, ayWavetableLfoPreviewLevel);
+}
+void renderTrackAudioWaveform(Bitmap* bitmap, const float* samples, int count) {
+  if (!bitmap) return;
+  gfxBitmapClear(bitmap);
+  if (!samples || count <= 0) return;
+  const int w = bitmap->widthPixels, h = bitmap->heightPixels;
+  if (w < 3 || h < 5) return;
+  const int centre = (h - 1) / 2, radius = (h - 4) / 2;
+  int previous = centre;
+  for (int x = 1; x < w - 1; ++x) {
+    int start = (x - 1) * count / (w - 2), end = std::max(start + 1, x * count / (w - 2));
+    float low = 1, high = -1;
+    for (int i = start; i < end && i < count; ++i) {
+      float value = std::isfinite(samples[i]) ? samples[i] : 0;
+      low = std::min(low, std::max(-1.0f, value)); high = std::max(high, std::min(1.0f, value));
+    }
+    int upper = centre - (int)lroundf(high * radius), lower = centre - (int)lroundf(low * radius);
+    if (x > 1) { upper = std::min(upper, previous); lower = std::max(lower, previous); }
+    for (int y = upper; y <= lower; ++y) bitmap->data[y * w + x] = low == 0 && high == 0 ? 64 : 255;
+    previous = (upper + lower) / 2;
+  }
 }

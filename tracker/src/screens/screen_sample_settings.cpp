@@ -38,6 +38,7 @@ static constexpr int previewWidth = 32;
 static constexpr int previewHeight = 8;
 static constexpr int fieldRow0 = 12;
 static const char* sliceLabels[] = {"Off", "2", "4", "8", "16", "32"};
+static const char* speedAlgorithmLabels[] = {"Dirty", "Clean"};
 static const uint8_t sliceValues[] = {0, 2, 4, 8, 16, 32};
 static constexpr int sliceCount = 6;
 
@@ -395,8 +396,8 @@ static int settingsColumnCount(int row) {
   // Region/Select rows: START + END; Process row: op + GO + UNDO; File row:
   // action + GO
   if (row == 0 || row == 1) return 2;
-  if (row == 3) return 3;
-  if (row == 4) return 2;
+  if (row == 4) return 3;
+  if (row == 5) return 2;
   return 1;
 }
 
@@ -437,18 +438,21 @@ static void settingsDrawStatic(void) {
   gfxPrint(markerLabelX, fieldRow0 + 1, "START");
   gfxPrint(endLabelX, fieldRow0 + 1, "END");
   gfxPrint(0, fieldRow0 + 2, "Slice");
-  gfxPrint(0, fieldRow0 + 3, "Process");
-  gfxPrint(0, fieldRow0 + 4, "File");
+  gfxPrint(0, fieldRow0 + 3, "Spd algo");
+  gfxPrint(0, fieldRow0 + 4, "Process");
+  gfxPrint(0, fieldRow0 + 5, "File");
 }
 
 static void settingsDrawCursor(int col, int row) {
   if (row == 0 || row == 1) {
     gfxCursor(col == 0 ? selValX : selEndValX, fieldRow0 + row, selValWidth);
-  } else if (row == 3) {
+  } else if (row == 4) {
     gfxCursor(col == 0 ? valueX : col == 1 ? goX : undoX, fieldRow0 + row,
               col == 0 ? opWidth : col == 1 ? goWidth : undoWidth);
-  } else if (row == 4) {
+  } else if (row == 5) {
     gfxCursor(col == 0 ? valueX : fileGoX, fieldRow0 + row, col == 0 ? opWidth : fileGoWidth);
+  } else if (row == 3) {
+    gfxCursor(valueX, fieldRow0 + row, sliceWidth);
   } else {
     gfxCursor(valueX, fieldRow0 + row, sliceWidth);
   }
@@ -467,7 +471,7 @@ static void settingsDrawColHeader(int col, CellState state) {
 static void settingsDrawField(int col, int row, CellState state) {
   InstrumentSample* sample = currentSample();
   gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
-  if (row == 3) {
+  if (row == 4) {
     if (col == 0) {
       // Process op selector
       gfxClearRect(valueX, fieldRow0 + row, opWidth, 1);
@@ -484,7 +488,7 @@ static void settingsDrawField(int col, int row, CellState state) {
     }
     return;
   }
-  if (row == 4) {
+  if (row == 5) {
     // File action + GO. Save needs a file path, Save As needs sample data
     // (it can assign a path to a fresh sample).
     if (col == 0) {
@@ -497,6 +501,12 @@ static void settingsDrawField(int col, int row, CellState state) {
       gfxClearRect(fileGoX, fieldRow0 + row, fileGoWidth, 1);
       gfxPrint(fileGoX, fieldRow0 + row, "GO");
     }
+    return;
+  }
+  if (row == 3) {
+    gfxClearRect(valueX, fieldRow0 + row, sliceWidth, 1);
+    gfxPrint(valueX, fieldRow0 + row,
+             speedAlgorithmLabels[sample->speedAlgorithm <= 1 ? sample->speedAlgorithm : 0]);
     return;
   }
   if (row == 0 || row == 1) {
@@ -569,8 +579,9 @@ static void settingsRepaintAfterOp(void) {
     if (row < 2) settingsDrawField(1, row, CellState::normal);
   }
   settingsDrawField(0, 3, CellState::normal);
-  settingsDrawField(1, 3, CellState::normal);
-  settingsDrawField(2, 3, CellState::normal);
+  settingsDrawField(0, 4, CellState::normal);
+  settingsDrawField(1, 4, CellState::normal);
+  settingsDrawField(2, 4, CellState::normal);
 }
 
 // Runs the selected process op on the current selection (or the whole
@@ -739,6 +750,17 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
   int handled = 0;
   int marker = 0; // 1 = Start, 2 = End
   if (row == 3) {
+    if (col) return 0;
+    uint8_t algorithm = sample->speedAlgorithm <= 1 ? sample->speedAlgorithm : 0;
+    handled = edit8noLast(action, &algorithm, 1, 0, 1);
+    if (handled) {
+      sample->speedAlgorithm = algorithm;
+      projectModified = 1;
+      settingsDrawField(0, 3, CellState::focus);
+    }
+    return handled;
+  }
+  if (row == 4) {
     if (col == 0) {
       // Cycle the operation; Edit+Opt clears it to none
       if (action == CellEditAction::clear) {
@@ -753,7 +775,7 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
       } else {
         return 0;
       }
-      settingsDrawField(0, 3, CellState::focus);
+      settingsDrawField(0, 4, CellState::focus);
       return 1;
     }
     if (action != CellEditAction::tap && action != CellEditAction::doubleTap) return 0;
@@ -761,7 +783,7 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
     else settingsRunUndo();
     return 1;
   }
-  if (row == 4) {
+  if (row == 5) {
     if (col == 0) {
       // Cycle the action (any edit key toggles); Edit+Opt resets it to Save
       if (action == CellEditAction::clear) {
@@ -774,7 +796,7 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
       } else {
         return 0;
       }
-      settingsDrawField(0, 4, CellState::focus);
+      settingsDrawField(0, 5, CellState::focus);
       return 1;
     }
     if (action != CellEditAction::tap && action != CellEditAction::doubleTap) return 0;
@@ -907,14 +929,14 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
 static int settingsIsCellValid(int col, int row) {
   InstrumentSample* sample = currentSample();
   if (row == 2 && sample->stretchMode != 0) return 0;
-  if (row == 4 && col == 0) {
+  if (row == 5 && col == 0) {
     return fileAction == 0 ? sample->path[0] != 0 : (sample->data != NULL && sample->frameCount > 0);
   }
   return 1;
 }
 
 static ScreenData screenSampleSettingsData = {
-  .rows = 5,
+  .rows = 6,
   .cursorRow = 0,
   .cursorCol = 0,
   .topRow = 0,

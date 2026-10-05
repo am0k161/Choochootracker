@@ -183,6 +183,8 @@ static int inputPlayback(int keys, int tapCount) {
     }
 
     chipnomadQueuePlaybackStop(chipnomadState);
+    waveformDisplayInvalidate();
+    waveformDisplayRefresh();
     LoopRange range = screenGetLoopRange(currentScreen);
 
     if (playbackLevel == ScreenPlaybackLevel::song) {
@@ -206,6 +208,8 @@ static int inputPlayback(int keys, int tapCount) {
     }
 
     chipnomadQueuePlaybackStop(chipnomadState);
+    waveformDisplayInvalidate();
+    waveformDisplayRefresh();
     LoopRange range = screenGetLoopRange(currentScreen);
 
     if (playbackLevel == ScreenPlaybackLevel::song) {
@@ -257,6 +261,16 @@ static int autosaveCounter = 0;
 ///////////////////////////////////////////////////////////////////////////////
 //
 
+void appResetInputState(void) {
+  pressedButtons = 0;
+  tapTimerCount = 0;
+  tapButton = 0;
+  tapCount = 0;
+  keyRepeatCount = 0;
+  quickHelpSelectHeld = 0;
+  quickHelpSelectAlone = 0;
+}
+
 /**
 * @brief Initialize the application: setup audio system, load auto-saved project, show the first screen
 */
@@ -281,11 +295,7 @@ void appSetup(void) {
   }
 
   // Keyboard input reset
-  pressedButtons = 0;
-  tapTimerCount = 0;
-  tapButton = 0;
-  tapCount = 0;
-  keyRepeatCount = 0;
+  appResetInputState();
   motionRecordHeld = 0;
   motionEraseHeld = 0;
   motionLiveHeld = 0;

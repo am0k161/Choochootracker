@@ -67,6 +67,10 @@ void gfxClear(void);
  */
 void gfxUpdateScreen(void);
 
+// Offset page content below persistent UI. Overlays explicitly use zero.
+void gfxSetContentRowOffset(int rows);
+int gfxGetContentRowOffset(void);
+
 // All following functions take coordinates in characters, assuming a 40x20 screen
 
 void gfxClearRect(int x, int y, int w, int h);

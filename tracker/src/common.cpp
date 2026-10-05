@@ -42,11 +42,14 @@ void initDefaultAppSettings(void) {
   appSettings.ayWavetableLfoView = 0;
   appSettings.waveformRefreshHz = 30;
   appSettings.stickLiveMode = StickLiveMode::hold;
+  for (auto& visual : appSettings.trackVisuals)
+    visual.mode = TrackVisualMode::detailed;
   appSettings.midiInputDevice = -1;
   appSettings.midiOutputDevice = -1;
   appSettings.midiInputDeviceName[0] = '\0';
   appSettings.midiOutputDeviceName[0] = '\0';
   for (int i = 0; i < MIDI_CHANNEL_COUNT; i++) appSettings.midiChannelInstrument[i] = -1;
+  appSettings.persistentWaveform = 0;
 
   // Zero out key mapping (platform-specific defaults applied later)
   memset(&appSettings.keyMapping, 0, sizeof(KeyMapping));
@@ -179,6 +182,9 @@ int settingsSave(void) {
   const char* stickLiveMode = appSettings.stickLiveMode == StickLiveMode::free ? "FREE" :
     appSettings.stickLiveMode == StickLiveMode::toggle ? "TOGGLE" : "HOLD";
   fprintf(file, "stickLiveMode: %s\n", stickLiveMode);
+  fprintf(file, "persistentWaveform: %d\n", appSettings.persistentWaveform);
+  for (int track = 0; track < PROJECT_MAX_TRACKS; ++track)
+    fprintf(file, "trackVisuals%d: %d\n", track + 1, (int)appSettings.trackVisuals[track].mode);
 
   fprintf(file, "midiChannelInstrument: ");
   for (int i = 0; i < MIDI_CHANNEL_COUNT; i++) {
@@ -266,7 +272,16 @@ int settingsLoad(void) {
       len--;
     }
 
-    if (strncmp(line, "screenWidth: ", 13) == 0) {
+    if (strncmp(line, "persistentWaveform: ", 20) == 0) {
+      int enabled;
+      if (sscanf(line + 20, "%d", &enabled) == 1 && (enabled == 0 || enabled == 1))
+        appSettings.persistentWaveform = (uint8_t)enabled;
+    } else if (strncmp(line, "trackVisuals", 11) == 0) {
+      int track, mode;
+      if (sscanf(line, "trackVisuals%d: %d", &track, &mode) == 2 &&
+          track >= 1 && track <= PROJECT_MAX_TRACKS && mode >= 0 && mode <= 1)
+        appSettings.trackVisuals[track - 1].mode = (TrackVisualMode)mode;
+    } else if (strncmp(line, "screenWidth: ", 13) == 0) {
       sscanf(line + 13, "%d", &appSettings.screenWidth);
     } else if (strncmp(line, "screenHeight: ", 14) == 0) {
       sscanf(line + 14, "%d", &appSettings.screenHeight);

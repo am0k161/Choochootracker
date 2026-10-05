@@ -19,7 +19,7 @@
 #define TEXT_ROWS (20)
 
 #define CHAR_X(x) ((x) * charW + offsetX)
-#define CHAR_Y(y) ((y) * charH + offsetY)
+#define CHAR_Y(y) (((y) + gfxGetContentRowOffset()) * charH + offsetY)
 
 #ifdef TOUCH_INPUT
 #define VPAD_BUTTON_SIZE 110
@@ -491,6 +491,14 @@ int gfxSetup(int *screenWidth, int *screenHeight) {
 
   snprintf(printBuffer, PRINT_BUFFER_SIZE, "%s v%s (%s)", appTitle, appVersion, appBuild);
 
+  // Desktop deliberately uses the tracker's native window size.  Do not
+  // restore a DPI-scaled drawable size from a prior run as a window size.
+#ifdef DESKTOP_BUILD
+  screenW = 640;
+  screenH = 480;
+  if (screenWidth != NULL) *screenWidth = screenW;
+  if (screenHeight != NULL) *screenHeight = screenH;
+#else
   // Detect screen resolution if not provided or zero
   if (screenWidth == NULL || screenHeight == NULL || *screenWidth == 0 || *screenHeight == 0) {
     #if defined(DESKTOP_BUILD) || defined(WEB_BUILD)
@@ -516,6 +524,7 @@ int gfxSetup(int *screenWidth, int *screenHeight) {
     screenW = *screenWidth;
     screenH = *screenHeight;
   }
+#endif
 
   window = SDL_CreateWindow(printBuffer,
     SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
@@ -555,12 +564,10 @@ int gfxSetup(int *screenWidth, int *screenHeight) {
     return 1;
   }
 
-  // Check for high-DPI display and get actual drawable size. HTML5 uses a
-  // software canvas, so SDL_GL_GetDrawableSize is not meaningful there.
+  // Desktop and web keep the requested logical window size. SDL's drawable
+  // size may be the physical monitor size with the software renderer.
   int drawableW, drawableH;
-#ifdef WEB_BUILD
-  // Keep the tracker grid at its native 40x20 character layout. CSS scales
-  // the 640x480 canvas for portrait phones without changing the font size.
+#if defined(DESKTOP_BUILD) || defined(WEB_BUILD)
   drawableW = screenW;
   drawableH = screenH;
 #else

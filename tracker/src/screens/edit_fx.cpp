@@ -352,8 +352,8 @@ void fxEditFullDraw(uint8_t currentFX, uint8_t instrumentIdx, int isTable) {
       y = drawFXList(g, y);
     }
 
-    // Add spacing between groups
-    y++;
+    // The persistent scope uses the former blank rows between groups.
+    if (!screenScopeRows(currentScreen)) y++;
   }
 }
 
