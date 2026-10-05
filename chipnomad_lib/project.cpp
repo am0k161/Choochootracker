@@ -236,7 +236,7 @@ int8_t phraseIsEmpty(Project* project, int phrase) {
   for (int c = 0; c < 16; c++) {
     if (project->phrases[phrase].rows[c].note != EMPTY_VALUE_8) return 0;
     if (project->phrases[phrase].rows[c].instrument != EMPTY_VALUE_8) return 0;
-    if (project->phrases[phrase].rows[c].volume != EMPTY_VALUE_8) return 0;
+    if (project->phrases[phrase].rows[c].volume != EMPTY_VALUE_16) return 0;
     for (int d = 0; d < 3; d++) {
       if (project->phrases[phrase].rows[c].fx[d][0] != EMPTY_VALUE_8) return 0;
       if (project->phrases[phrase].rows[c].fx[d][1] != 0) return 0;
@@ -313,7 +313,7 @@ void phraseClear(Phrase* phrase) {
   for (int d = 0; d < 16; d++) {
     phrase->rows[d].note = EMPTY_VALUE_8;
     phrase->rows[d].instrument = EMPTY_VALUE_8;
-    phrase->rows[d].volume = EMPTY_VALUE_8;
+    phrase->rows[d].volume = EMPTY_VALUE_16;
     for (int e = 0; e < 3; e++) {
       phrase->rows[d].fx[e][0] = EMPTY_VALUE_8;
       phrase->rows[d].fx[e][1] = 0;

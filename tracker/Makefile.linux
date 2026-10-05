@@ -91,6 +91,7 @@ appimage: linux
 	@mkdir -p $(BUILD)/$(APPNAME).AppDir/usr/share/choochootracker/common
 	@cp -r packaging/common/* $(BUILD)/$(APPNAME).AppDir/usr/share/choochootracker/common/
 	@cp packaging/linux-appimage/AppRun $(BUILD)/$(APPNAME).AppDir/
+	@sed -i 's/\r$$//' $(BUILD)/$(APPNAME).AppDir/AppRun
 	@chmod +x $(BUILD)/$(APPNAME).AppDir/AppRun
 	@cp packaging/linux-appimage/choochootracker.desktop $(BUILD)/$(APPNAME).AppDir/
 	@sed -i 's/\r$$//' $(BUILD)/$(APPNAME).AppDir/choochootracker.desktop

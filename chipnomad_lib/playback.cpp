@@ -433,7 +433,7 @@ void readPhraseRowDirect(PlaybackState* state, int trackIdx, PhraseRow* phraseRo
 
   uint8_t note = phraseRow->note;
   uint8_t instrument = phraseRow->instrument;
-  uint8_t volume = phraseRow->volume;
+  uint16_t volume = phraseRow->volume;
 
   uint8_t auxTable = EMPTY_VALUE_8;
   uint8_t auxTableRow = EMPTY_VALUE_8;
@@ -564,7 +564,7 @@ void readPhraseRowDirect(PlaybackState* state, int trackIdx, PhraseRow* phraseRo
     } else {
       track->note.pitchBase = note;
       // Accent is deliberately derived from this row, never from sticky volume.
-      track->note.accent = volume == 0x0f;
+      track->note.accent = volume == PHRASE_VOLUME_MAX;
       track->note.noteTriggered = 1;
       if (track->note.instrument != EMPTY_VALUE_8 &&
           p->instruments[track->note.instrument].type == InstrumentType::AChChid)
@@ -617,8 +617,8 @@ void readPhraseRowDirect(PlaybackState* state, int trackIdx, PhraseRow* phraseRo
   }
 
   // Volume
-  if (volume != EMPTY_VALUE_8) {
-    track->note.volume = volume;
+  if (volume != EMPTY_VALUE_16) {
+    track->note.volume = (uint8_t)volume;
   }
 }
 
@@ -858,7 +858,7 @@ static void processModulations(PlaybackState* state, int trackIdx) {
       int parameter = generic - genericModFirstParameter;
       target = parameter / 4;
       targetParameter = parameter % 4;
-    } else if (generic >= genericModFirstP5 && generic < genericModTotalCount) {
+    } else if (generic >= genericModFirstP5 && generic < genericModFirstInsert) {
       target = generic - genericModFirstP5;
       targetParameter = 4;
     } else continue;
@@ -1225,6 +1225,8 @@ void playbackInit(PlaybackState* state, Project* project) {
   initAYSampleTables();
 
   for (int c = 0; c < PROJECT_MAX_TRACKS; c++) {
+    memset(&state->tracks[c].inserts, 0, sizeof(InsertAutomation));
+    state->tracks[c].insertReset = 0;
     resetTrack(state, c);
     state->tracks[c].queue.mode = PlaybackMode::none;
     state->tracks[c].queue.loop = 0;
@@ -1264,6 +1266,10 @@ void playbackClearLoopRange(PlaybackState* state) {
 
 void playbackStartSong(PlaybackState* state, int songRow, int chainRow, int loop) {
   if (playbackIsPlaying(state)) return;
+  for (auto& track : state->tracks) {
+    memset(&track.inserts, 0, sizeof(track.inserts));
+    ++track.insertReset;
+  }
 
   state->scaleRoot = state->p->scaleRoot;
   state->scalePreset = state->p->scalePreset;
@@ -1285,6 +1291,10 @@ void playbackStartSong(PlaybackState* state, int songRow, int chainRow, int loop
 
 void playbackStartChain(PlaybackState* state, int trackIdx, int songRow, int chainRow, int loop) {
   if (playbackIsPlaying(state)) return;
+  for (auto& track : state->tracks) {
+    memset(&track.inserts, 0, sizeof(track.inserts));
+    ++track.insertReset;
+  }
 
   state->scaleRoot = state->p->scaleRoot;
   state->scalePreset = state->p->scalePreset;
@@ -1303,6 +1313,10 @@ void playbackStartChain(PlaybackState* state, int trackIdx, int songRow, int cha
 
 void playbackStartPhrase(PlaybackState* state, int trackIdx, int songRow, int chainRow, int loop, int startPhraseRow) {
   if (playbackIsPlaying(state)) return;
+  for (auto& track : state->tracks) {
+    memset(&track.inserts, 0, sizeof(track.inserts));
+    ++track.insertReset;
+  }
 
   state->scaleRoot = state->p->scaleRoot;
   state->scalePreset = state->p->scalePreset;
@@ -1317,6 +1331,11 @@ void playbackStartPhrase(PlaybackState* state, int trackIdx, int songRow, int ch
 }
 
 void playbackStartPhraseRow(PlaybackState* state, int trackIdx, PhraseRow* phraseRow) {
+  if (!playbackIsPlaying(state)) {
+    auto& track = state->tracks[trackIdx];
+    memset(&track.inserts, 0, sizeof(track.inserts));
+    ++track.insertReset;
+  }
   state->scaleRoot = state->p->scaleRoot;
   state->scalePreset = state->p->scalePreset;
   resetTrack(state, trackIdx);
@@ -1349,7 +1368,8 @@ static int liveChainValid(const PlaybackState* state, int trackIdx, int songRow)
 }
 
 float playbackVolumeGain(const PlaybackState* state, const PlaybackTrackState* track) {
-  float gain = clampInt(track->note.volume + track->note.volumeOffset, 0, 15) / 15.0f;
+  float gain = clampInt(track->note.volume + track->note.volumeOffset, 0, PHRASE_VOLUME_MAX) /
+               (float)PHRASE_VOLUME_MAX;
   const PlaybackTableState* tables[] = {&track->note.instrumentTable, &track->note.auxTable};
   for (const PlaybackTableState* table : tables) {
     if (table->tableIdx == EMPTY_VALUE_8) continue;
@@ -1363,6 +1383,8 @@ void playbackStartLiveChain(PlaybackState* state, int trackIdx, int songRow) {
   if (!liveChainValid(state, trackIdx, songRow)) return;
   PlaybackTrackState* track = &state->tracks[trackIdx];
   if (track->mode != PlaybackMode::stopped) return;
+  memset(&track->inserts, 0, sizeof(track->inserts));
+  ++track->insertReset;
   track->queue.mode = PlaybackMode::live;
   track->queue.songRow = songRow;
   track->queue.chainRow = 0;
@@ -1394,7 +1416,7 @@ void playbackPreviewNote(PlaybackState* state, int trackIdx, uint8_t note, uint8
   PhraseRow phraseRow = {0};
   phraseRow.note = note;
   phraseRow.instrument = instrument;
-  phraseRow.volume = 15;
+  phraseRow.volume = PHRASE_VOLUME_MAX;
 
   // Set up empty FX
   for (int i = 0; i < 3; i++) {
@@ -1407,6 +1429,10 @@ void playbackPreviewNote(PlaybackState* state, int trackIdx, uint8_t note, uint8
 }
 
 void playbackStop(PlaybackState* state) {
+  for (auto& track : state->tracks) {
+    memset(&track.inserts, 0, sizeof(track.inserts));
+    ++track.insertReset;
+  }
   for (int c = 0; c < PROJECT_MAX_TRACKS; c++) {
     resetTrack(state, c);
     state->tracks[c].queue.mode = PlaybackMode::none;

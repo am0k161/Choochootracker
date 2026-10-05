@@ -73,6 +73,11 @@ struct ChipNomadState {
   int trackClipping[PROJECT_MAX_TRACKS];
   int trackWarnings[PROJECT_MAX_TRACKS];
   TrackTilt trackTilt[PROJECT_MAX_TRACKS];
+  InsertChain* insertChains[PROJECT_MAX_TRACKS];
+  uint32_t insertResetSeen[PROJECT_MAX_TRACKS];
+  uint8_t insertValues[PROJECT_MAX_TRACKS][2][8];
+  uint8_t insertActive[PROJECT_MAX_TRACKS];
+  float* insertBuffer;
   float* mixBuffer;
   float* reverbBuffer;
   float* delayBuffer;

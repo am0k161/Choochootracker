@@ -7,6 +7,10 @@
 #include <cstring>
 #include <vector>
 
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
 static void writeU16(FILE* file, uint16_t value) {
   fputc(value & 0xff, file);
   fputc(value >> 8, file);
@@ -83,7 +87,7 @@ TEST_CASE("SampleVoice start and end delimit playback") {
 }
 
 TEST_CASE("Sample modulation exposes all sample parameter destinations") {
-  CHECK(instrumentModDestinationMax(InstrumentType::Sample) == 33);
+  CHECK(instrumentModDestinationMax(InstrumentType::Sample) == 53);
   CHECK(std::strcmp(instrumentModDestinationName(InstrumentType::Sample, 3), "Start") == 0);
   CHECK(std::strcmp(instrumentModDestinationName(InstrumentType::Sample, 4), "End") == 0);
   CHECK(std::strcmp(instrumentModDestinationName(InstrumentType::Sample, 5), "Speed") == 0);

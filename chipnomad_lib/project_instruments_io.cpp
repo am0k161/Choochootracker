@@ -338,6 +338,10 @@ static int loadInstrumentBYOWTBL(FILE* file, Instrument* instrument) {
     else if (strncmp(line, "- Oscillator B path: ", 21) == 0) sscanf(line, "- Oscillator B path: %255[^\n]", table->oscillator[1].path);
     else if (strncmp(line, "- Position A: ", 14) == 0) sscanf(line, "- Position A: %hhu", &table->frameIndex[0]);
     else if (strncmp(line, "- Position B: ", 14) == 0) sscanf(line, "- Position B: %hhu", &table->frameIndex[1]);
+    else if (strncmp(line, "- Frame size A: ", 16) == 0) sscanf(line, "- Frame size A: %hu", &table->frameSize[0]);
+    else if (strncmp(line, "- Frame size B: ", 16) == 0) sscanf(line, "- Frame size B: %hu", &table->frameSize[1]);
+    else if (strncmp(line, "- Table frames A: ", 18) == 0) sscanf(line, "- Table frames A: %hu", &table->tableFrames[0]);
+    else if (strncmp(line, "- Table frames B: ", 18) == 0) sscanf(line, "- Table frames B: %hu", &table->tableFrames[1]);
     else if (strncmp(line, "- Detune: ", 10) == 0) sscanf(line, "- Detune: %hhu", &table->detune);
     else if (strncmp(line, "- Mix: ", 7) == 0) sscanf(line, "- Mix: %hhu", &table->mix);
     else loadVoicePostSetting(line, table);
@@ -723,6 +727,10 @@ static int saveInstrumentBYOWTBL(FILE* file, Instrument* instrument) {
   fprintf(file, "- Oscillator B path: %s\n", table->oscillator[1].path);
   fprintf(file, "- Position A: %hhu\n", table->frameIndex[0]);
   fprintf(file, "- Position B: %hhu\n", table->frameIndex[1]);
+  fprintf(file, "- Frame size A: %hu\n", table->frameSize[0]);
+  fprintf(file, "- Frame size B: %hu\n", table->frameSize[1]);
+  fprintf(file, "- Table frames A: %hu\n", table->tableFrames[0]);
+  fprintf(file, "- Table frames B: %hu\n", table->tableFrames[1]);
   fprintf(file, "- Detune: %hhu\n", table->detune);
   fprintf(file, "- Mix: %hhu\n", table->mix);
   saveVoicePostSettings(file, table);

@@ -21,8 +21,10 @@
 #define ROW_TOTAL 16
 #define ROWS_PER_MOD 8
 
-static SelectionItem destinationCategories[6];
+static SelectionItem destinationCategories[7];
 static SelectionItem sourceCategories[3];
+static SelectionItem insertDestinations[16];
+static char insertHelpers[16][64];
 static const SelectionItem envelopeSources[] = {{"ADSR", (int)ModulationType::ADSR, NULL, 0}, {"AHD", (int)ModulationType::AHD, NULL, 0}};
 static const SelectionItem lfoSources[] = {{"LFO", (int)ModulationType::LFO, NULL, 0}, {"SYNC LFO", (int)ModulationType::SLFO, NULL, 0}, {"FAST LFO", (int)ModulationType::FLFO, NULL, 0}};
 static const SelectionItem stickSources[] = {{"LINEAR", (int)ModulationType::StickLinear, NULL, 0}, {"RATE", (int)ModulationType::StickRate, NULL, 0}};
@@ -151,6 +153,14 @@ static void openDestinationPopup(int modIndex) {
     if (functions.supportsTrigger)
       destinationCategories[categoryCount++] = {"TRIGGER", -1, triggerDestinations, 2};
   }
+  for (int i = 0; i < 16; ++i) {
+    const auto& c = chipnomadState->project.trackInserts[*pSongTrack][i/8];
+    const auto& d = insertDescriptor(c.module);
+    snprintf(insertHelpers[i],sizeof(insertHelpers[i]),"F%d%d TF%d %s: %s",i/8+1,i%8+1,i/8+1,d.name,i%8<d.count?d.parameters[i%8].name:"Inactive");
+    int destination=firstGeneric+genericModFirstInsert+i;
+    insertDestinations[i]={instrumentModDestinationName(instrument->type,destination),destination,NULL,0,insertHelpers[i]};
+  }
+  destinationCategories[categoryCount++]={"INSERT FX",-1,insertDestinations,16};
   selectionPopupSetup("DESTINATION", destinationCategories, categoryCount,
     instrument->modulation[modIndex].destination, destinationSelected,
     destinationCancelled);
@@ -578,6 +588,10 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
     chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
   }
 
+  if (keys == (keyUp | keyShift)) {
+    screenSetup(&screenInsertFX, -1);
+    return 1;
+  }
   if (keys == (keyDown | keyShift)) {
     // To Instrument screen
     screenSetup(&screenInstrument, cInstrument);

@@ -45,7 +45,7 @@ TEST_CASE("SCL changes runtime scale without changing phrase data") {
   PhraseRow row = {};
   row.note = 3; // D#
   row.instrument = EMPTY_VALUE_8;
-  row.volume = EMPTY_VALUE_8;
+  row.volume = EMPTY_VALUE_16;
   for (int i = 0; i < 3; ++i) row.fx[i][0] = EMPTY_VALUE_8;
   row.fx[0][0] = fxSCL;
   row.fx[0][1] = 0x10; // Major, C
@@ -74,7 +74,7 @@ TEST_CASE("sliced sample notes skip scale quantization") {
   PhraseRow row = {};
   row.note = 3;
   row.instrument = 0;
-  row.volume = EMPTY_VALUE_8;
+  row.volume = EMPTY_VALUE_16;
   for (int i = 0; i < 3; ++i) row.fx[i][0] = EMPTY_VALUE_8;
   readPhraseRowDirect(&state, 0, &row, 0);
   CHECK(state.tracks[0].note.pitchBase == 3);
@@ -96,7 +96,7 @@ TEST_CASE("track scale mask leaves excluded tracks chromatic") {
   playbackInit(&state, &project);
   state.tracks[1].mode = PlaybackMode::phraseRow;
   PhraseRow row = {};
-  row.note = 3; row.instrument = EMPTY_VALUE_8; row.volume = EMPTY_VALUE_8;
+  row.note = 3; row.instrument = EMPTY_VALUE_8; row.volume = EMPTY_VALUE_16;
   for (int i = 0; i < 3; ++i) row.fx[i][0] = EMPTY_VALUE_8;
   readPhraseRowDirect(&state, 1, &row, 0);
   CHECK(state.tracks[1].note.pitchBase == 3);

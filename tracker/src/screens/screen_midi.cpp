@@ -12,9 +12,9 @@ static int columnCount(int row) {
   return 1;
 }
 
-// The value field starts at column 23 on the fixed 40-column char grid (see
-// screens.cpp's gfxClearRect(0, 0, 40, 20)), leaving 17 columns to work with.
-#define DEVICE_FIELD_X (23)
+// Keep the device value close to its short row label so the fixed 40-column
+// screen has room for real Android names such as Novation/Focusrite ports.
+#define DEVICE_FIELD_X (10)
 #define DEVICE_FIELD_WIDTH (40 - DEVICE_FIELD_X)
 
 // Truncates src to at most maxLen visible characters, replacing the tail

@@ -296,9 +296,8 @@ static uint32_t readU32(FILE* file, bool* ok) {
     ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }
 
-int sampleLoadWav16(const char* path, InstrumentSample* sample,
-                    char* error, size_t errorSize) {
-  FILE* file = fopen(path, "rb");
+int sampleLoadWav16File(FILE* file, const char* path, InstrumentSample* sample,
+                        char* error, size_t errorSize) {
   if (!file) { snprintf(error, errorSize, "Cannot open WAV"); return 1; }
   char id[4];
   bool ok = fread(id, 1, 4, file) == 4 && !memcmp(id, "RIFF", 4);
@@ -329,14 +328,12 @@ int sampleLoadWav16(const char* path, InstrumentSample* sample,
   if (!ok || format != 1 || (channels != 1 && channels != 2) ||
       (bits != 8 && bits != 16 && bits != 24) || sampleRate < 1000 ||
       sampleRate > 192000 || !dataOffset) {
-    fclose(file);
     snprintf(error, errorSize, "Need PCM8/16/24 mono/stereo WAV");
     return 1;
   }
   uint32_t bytesPerSample = bits / 8;
   uint32_t frames = dataSize / (channels * bytesPerSample);
   if (frames == 0 || dataSize > 64U * 1024U * 1024U) {
-    fclose(file);
     snprintf(error, errorSize, "WAV empty or over 64 MB");
     return 1;
   }
@@ -344,7 +341,6 @@ int sampleLoadWav16(const char* path, InstrumentSample* sample,
   int16_t* data = (int16_t*)malloc(sampleCount * sizeof(int16_t));
   if (!data || fseek(file, dataOffset, SEEK_SET) != 0) {
     free(data);
-    fclose(file);
     snprintf(error, errorSize, "Cannot read WAV data");
     return 1;
   }
@@ -369,11 +365,9 @@ int sampleLoadWav16(const char* path, InstrumentSample* sample,
   }
   if (!ok) {
     free(data);
-    fclose(file);
     snprintf(error, errorSize, "Cannot read WAV data");
     return 1;
   }
-  fclose(file);
   free(sample->data);
   sample->data = data;
   sample->frameCount = frames;
@@ -382,6 +376,15 @@ int sampleLoadWav16(const char* path, InstrumentSample* sample,
   sampleStorePath(path, sample);
   error[0] = 0;
   return 0;
+}
+
+int sampleLoadWav16(const char* path, InstrumentSample* sample,
+                    char* error, size_t errorSize) {
+  FILE* file = fopen(path, "rb");
+  if (!file) { snprintf(error, errorSize, "Cannot open WAV"); return 1; }
+  int result = sampleLoadWav16File(file, path, sample, error, errorSize);
+  fclose(file);
+  return result;
 }
 
 static void writeU16(FILE* file, uint16_t value, bool* ok) {

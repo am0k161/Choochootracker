@@ -1215,9 +1215,8 @@ static void applyVoiceEvents(ChipNomadState* state, uint64_t dueMicros) {
             int midiNote = 12 + track->chordPitchFinal[slot];
             if (midiNote < 0) midiNote = 0;
             if (midiNote > 127) midiNote = 127;
-            int volume = clampInt(track->note.volume + track->note.volumeOffset, 0, 15);
-            int velocity = (volume * 127 + 7) / 15;
-            if (velocity < 1) velocity = 1;
+            int volume = clampInt(track->note.volume + track->note.volumeOffset, 0, PHRASE_VOLUME_MAX);
+            int velocity = volume;
             midiRouterEmitNoteOn(state->midiRouter, trackIdx, slot, channel, (uint8_t)midiNote, (uint8_t)velocity, dueMicros);
           }
         }
@@ -1288,7 +1287,7 @@ static void updateSampleVoices(ChipNomadState* state) {
     if (track->note.fx[fxSPT].isOn) pitchCents = (int8_t)track->note.fx[fxSPT].fxValue * 100 + track->note.fineOffset;
     if (track->note.fx[fxSST].isOn) start = track->note.fx[fxSST].fxValue;
     if (track->note.fx[fxSEN].isOn) end = track->note.fx[fxSEN].fxValue;
-    if (track->note.fx[fxSVL].isOn) gain = track->note.fx[fxSVL].fxValue * track->note.volume / (255.0f * 15.0f);
+    if (track->note.fx[fxSVL].isOn) gain = track->note.fx[fxSVL].fxValue * track->note.volume / (255.0f * PHRASE_VOLUME_MAX);
     if (track->note.fx[fxSCF].isOn) cutoff = instrumentFXCutoff(track->note.fx[fxSCF].fxValue);
     if (track->note.fx[fxSRS].isOn) resonance = track->note.fx[fxSRS].fxValue;
     if (track->note.fx[fxSSP].isOn) speedPercent = track->note.fx[fxSSP].fxValue * 500 / 255;
@@ -1406,7 +1405,7 @@ static void updateSCWFVoices(ChipNomadState* state) {
       if (!mod->modulation) continue;
       int value = playbackModScaleToRange(mod->outValue, 255);
       switch (mod->modulation->destination) {
-        case 1: gain = modulationIsAdditive(mod->modulation->type) ? gain + value / 255.0f : value * track->note.volume / (255.0f * 15.0f); break;
+        case 1: gain = modulationIsAdditive(mod->modulation->type) ? gain + value / 255.0f : value * track->note.volume / (255.0f * PHRASE_VOLUME_MAX); break;
         case 2: pitchModulation += playbackModScaleToRange(mod->outValue, 1200); break;
         case 3: detune += value; break;
         case 4: mix += value; break;
@@ -1523,7 +1522,7 @@ static void updateDrumSynthVoices(ChipNomadState* state) {
       PlaybackModState* mod = &track->note.modulation[i]; if (!mod->modulation) continue;
       int value = playbackModScaleToRange(mod->outValue, 255);
       switch (mod->modulation->destination) {
-        case 1: gain = modulationIsAdditive(mod->modulation->type) ? gain + value / 255.0f : value * track->note.volume / (255.0f * 15.0f); break;
+        case 1: gain = modulationIsAdditive(mod->modulation->type) ? gain + value / 255.0f : value * track->note.volume / (255.0f * PHRASE_VOLUME_MAX); break;
         case 2: pitchModulation += playbackModScaleToRange(mod->outValue, 1200); break;
         case 3: decay += value; break; case 4: tone += value; break; case 5: sweep += value; break;
         case 6: noise += value; break; case 7: fm += value; break; case 8: drive += value; break;
@@ -1693,7 +1692,7 @@ static void updateBraidsVoices(ChipNomadState* state) {
         case 1: {
           int value = playbackModScaleToRange(mod->outValue, 255);
           gain = modulationIsAdditive(mod->modulation->type)
-            ? gain + value / 255.0f : value * track->note.volume / (255.0f * 15.0f);
+            ? gain + value / 255.0f : value * track->note.volume / (255.0f * PHRASE_VOLUME_MAX);
           break;
         }
         case 2: pitchModulation += playbackModScaleToRange(mod->outValue, 1200); break;
@@ -1780,7 +1779,7 @@ static void updatePlaitsVoices(ChipNomadState* state) {
       if (!mod->modulation) continue;
       int value = playbackModScaleToRange(mod->outValue, 255);
       switch (mod->modulation->destination) {
-        case 1: gain = modulationIsAdditive(mod->modulation->type) ? gain + value / 255.0f : value * track->note.volume / (255.0f * 15.0f); break;
+        case 1: gain = modulationIsAdditive(mod->modulation->type) ? gain + value / 255.0f : value * track->note.volume / (255.0f * PHRASE_VOLUME_MAX); break;
         case 2: pitchModulation += playbackModScaleToRange(mod->outValue, 1200); break;
         case 3: harmonics += playbackModScaleToRange(mod->outValue, 32767); break;
         case 4: timbre += playbackModScaleToRange(mod->outValue, 32767); break;
@@ -1858,7 +1857,7 @@ static void updatePlaitsAltVoices(ChipNomadState* state) {
       if (!mod->modulation) continue;
       int value = playbackModScaleToRange(mod->outValue, 255);
       switch (mod->modulation->destination) {
-        case 1: gain = modulationIsAdditive(mod->modulation->type) ? gain + value / 255.0f : value * track->note.volume / (255.0f * 15.0f); break;
+        case 1: gain = modulationIsAdditive(mod->modulation->type) ? gain + value / 255.0f : value * track->note.volume / (255.0f * PHRASE_VOLUME_MAX); break;
         case 2: pitchModulation += playbackModScaleToRange(mod->outValue, 1200); break;
         case 3: harmonics += playbackModScaleToRange(mod->outValue, 32767); break;
         case 4: timbre += playbackModScaleToRange(mod->outValue, 32767); break;

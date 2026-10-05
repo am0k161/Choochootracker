@@ -15,7 +15,7 @@ static int isFxEdit = 0;
 static uint8_t lastNote = 48;
 static uint8_t lastInstrument = 0;
 
-static uint8_t lastVolume = 15;
+static uint16_t lastVolume = PHRASE_VOLUME_MAX;
 static uint8_t lastFX[2] = {0, 0};
 
 // Selection fill/mutate/arp cycle positions (see the fill section below).
@@ -66,7 +66,7 @@ static ScreenData screen = {
 static void init(void) {
   lastNote = 48;
   lastInstrument = 0;
-  lastVolume = 15;
+  lastVolume = PHRASE_VOLUME_MAX;
   lastFX[0] = 0;
   lastFX[1] = 0;
   screen.cursorRow = 0;
@@ -124,9 +124,9 @@ static void drawField(int col, int row, CellState state) {
     gfxPrint(x, y, noteName(&chipnomadState->project, value));
   } else if (col == 1 || col == 2) {
     // Instrument and volume
-    uint8_t value = (col == 1) ? phraseRows[row].instrument : phraseRows[row].volume;
-    setCellColor(state, value == EMPTY_VALUE_8, 1);
-    gfxPrint(x, y, byteToHexOrEmpty(value));
+    uint16_t value = (col == 1) ? phraseRows[row].instrument : phraseRows[row].volume;
+    setCellColor(state, value == (col == 1 ? EMPTY_VALUE_8 : EMPTY_VALUE_16), 1);
+    gfxPrint(x, y, col == 1 ? byteToHexOrEmpty((uint8_t)value) : volumeToHexOrEmpty(value));
   } else if (col == 3 || col == 5 || col == 7) {
     // FX name
     uint8_t fx = phraseRows[row].fx[(col - 3) / 2][0];
@@ -769,7 +769,7 @@ static void triggerRowPreview(int row) {
 
 static int editCell(int col, int row, CellEditAction action) {
   int handled = 0;
-  uint8_t maxVolume = 15;
+  uint16_t maxVolume = PHRASE_VOLUME_MAX;
 
   if (col == 0) {
     // Note
@@ -777,14 +777,14 @@ static int editCell(int col, int row, CellEditAction action) {
       // Insert OFF
       phraseRows[row].note = NOTE_OFF;
       phraseRows[row].instrument = EMPTY_VALUE_8;
-      phraseRows[row].volume = EMPTY_VALUE_8;
+      phraseRows[row].volume = EMPTY_VALUE_16;
       handled = 1;
     } else if (action == CellEditAction::clear) {
       // Clear note
       handled = edit8withLimit(action, &phraseRows[row].note, &lastNote, chipnomadState->project.pitchTable.octaveSize, chipnomadState->project.pitchTable.length - 1);
       if (handled) phraseRows[row].note = noteLockSnap(phraseRows[row].note, 0);
       edit8withLimit(action, &phraseRows[row].instrument, &lastInstrument, 16, PROJECT_MAX_INSTRUMENTS - 1);
-      edit8withLimit(action, &phraseRows[row].volume, &lastVolume, 16, maxVolume);
+      edit16withLimit(action, &phraseRows[row].volume, &lastVolume, 16, maxVolume);
     } else if (action == CellEditAction::tap && phraseRows[row].note == EMPTY_VALUE_8) {
       phraseRows[row].note = noteLockSnap(lastNote, 0);
       phraseRows[row].instrument = lastInstrument;
@@ -795,7 +795,7 @@ static int editCell(int col, int row, CellEditAction action) {
       if (handled) {
         phraseRows[row].note = noteLockSnap(phraseRows[row].note, noteLockSnapUp(action));
         if (phraseRows[row].instrument != EMPTY_VALUE_8) lastInstrument = phraseRows[row].instrument;
-        if (phraseRows[row].volume != EMPTY_VALUE_8) lastVolume = phraseRows[row].volume;
+        if (phraseRows[row].volume != EMPTY_VALUE_16) lastVolume = phraseRows[row].volume;
       }
     }
     if (handled) {
@@ -819,7 +819,7 @@ static int editCell(int col, int row, CellEditAction action) {
     }
   } else if (col == 2) {
     // Volume
-    handled = edit8withLimit(action, &phraseRows[row].volume, &lastVolume, 16, maxVolume);
+    handled = edit16withLimit(action, &phraseRows[row].volume, &lastVolume, 16, maxVolume);
   } else if (col == 3 || col == 5 || col == 7) {
     // FX
     int fxIdx = (col - 3) / 2;
@@ -1107,17 +1107,17 @@ static void keyJazzGetActiveRange(int* startCol, int* startRow, int* endCol, int
 static void keyJazzClearColumn(int row, int col) {
   if (col == 0) phraseRows[row].note = EMPTY_VALUE_8;
   else if (col == 1) phraseRows[row].instrument = EMPTY_VALUE_8;
-  else if (col == 2) phraseRows[row].volume = EMPTY_VALUE_8;
+  else if (col == 2) phraseRows[row].volume = EMPTY_VALUE_16;
   // FX columns are out of scope for key jazz.
 }
 
-static void keyJazzSetColumn(int row, int col, uint8_t value) {
-  if (col == 0) phraseRows[row].note = value;
-  else if (col == 1) phraseRows[row].instrument = value;
+static void keyJazzSetColumn(int row, int col, uint16_t value) {
+  if (col == 0) phraseRows[row].note = (uint8_t)value;
+  else if (col == 1) phraseRows[row].instrument = (uint8_t)value;
   else if (col == 2) phraseRows[row].volume = value;
 }
 
-static uint8_t keyJazzGetColumn(int row, int col) {
+static uint16_t keyJazzGetColumn(int row, int col) {
   if (col == 0) return phraseRows[row].note;
   if (col == 1) return phraseRows[row].instrument;
   if (col == 2) return phraseRows[row].volume;
@@ -1135,7 +1135,7 @@ static void keyJazzShiftColumnUp(int col, int startRow, int count) {
 static void keyJazzClearRow(int row, int includeFx) {
   phraseRows[row].note = EMPTY_VALUE_8;
   phraseRows[row].instrument = EMPTY_VALUE_8;
-  phraseRows[row].volume = EMPTY_VALUE_8;
+  phraseRows[row].volume = EMPTY_VALUE_16;
   if (includeFx) {
     for (int i = 0; i < 3; i++) {
       phraseRows[row].fx[i][0] = EMPTY_VALUE_8;
@@ -1300,7 +1300,7 @@ int phraseKeyJazzHandleRawKey(InputCode input, int isDown) {
     int row = screen.cursorRow;
     phraseRows[row].note = noteLockSnap(keyJazzClampNote(keyJazzBaseNote + offset), 0);
     if (phraseRows[row].instrument == EMPTY_VALUE_8) phraseRows[row].instrument = lastInstrument;
-    if (phraseRows[row].volume == EMPTY_VALUE_8) phraseRows[row].volume = lastVolume;
+    if (phraseRows[row].volume == EMPTY_VALUE_16) phraseRows[row].volume = lastVolume;
     lastNote = phraseRows[row].note;
     triggerRowPreview(row);
     drawField(0, row, CellState::normal);

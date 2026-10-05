@@ -26,6 +26,14 @@ static const Instrument* getCurrentInstrument() {
     ? &chipnomadState->project.instruments[currentInstrumentIdx] : NULL;
 }
 
+static const char* contextualFXHint(uint8_t* fx,int table,uint8_t instrument) {
+  if(fx[0]<fxF11 || fx[0]>fxF28)return helpFXHint(fx,table,instrument);
+  static char text[80];int a=fx[0]-fxF11;
+  const auto& c=chipnomadState->project.trackInserts[*pSongTrack][a/8];
+  const auto& d=insertDescriptor(c.module);
+  snprintf(text,sizeof(text),"F%d%d TF%d %s: %s",a/8+1,a%8+1,a/8+1,d.name,a%8<d.count?d.parameters[a%8].name:"Inactive");
+  return text;
+}
 static bool isFXAvailable(enum FX fx, uint8_t instrumentIdx, int isTable) {
   if (isTable && (fx == fxSCL || fx == fxCRD)) return false;
   // Note Lock pins note entry to the project scale, so SCL is not offered.
@@ -120,7 +128,7 @@ int editFX(CellEditAction action, uint8_t* fx, uint8_t* lastValue, int isTable, 
     fxEditFullDraw(fx[0], instrumentIdx, isTable);
     result = 1;
   }
-  if (result != 1) screenMessage(0, "%s", helpFXHint(fx, isTable, instrumentIdx));
+  if (result != 1) screenMessage(0, "%s", contextualFXHint(fx, isTable, instrumentIdx));
   return result;
 }
 
@@ -144,7 +152,7 @@ int editFXValue(CellEditAction action, uint8_t* fx, uint8_t* lastFX, int isTable
       fx[1] = (inversion << 4) | chord;
       if (isNotMultiAction) lastFX[1] = fx[1];
     }
-    screenMessage(0, "%s", helpFXHint(fx, isTable, instrumentIdx));
+    screenMessage(0, "%s", contextualFXHint(fx, isTable, instrumentIdx));
     return handled;
   }
 
@@ -152,7 +160,7 @@ int editFXValue(CellEditAction action, uint8_t* fx, uint8_t* lastFX, int isTable
 
   if (fx[0] == fxSPD && !chipnomadState->project.signedTrackSpeed) {
     int handled = edit8noLast(action, &fx[1], 1, 0, 0x10);
-    screenMessage(0, "%s", helpFXHint(fx, isTable, instrumentIdx));
+    screenMessage(0, "%s", contextualFXHint(fx, isTable, instrumentIdx));
     return handled;
   }
 
@@ -163,7 +171,7 @@ int editFXValue(CellEditAction action, uint8_t* fx, uint8_t* lastFX, int isTable
   }
 
   int handled = edit8noLimit(action, &fx[1], &lastFX[1], bigStep);
-  screenMessage(0, "%s", helpFXHint(fx, 0, instrumentIdx));
+  screenMessage(0, "%s", contextualFXHint(fx, 0, instrumentIdx));
   return handled;
 }
 
@@ -280,9 +288,7 @@ int drawFXList(int visibleGroupIdx, int y) {
 
     gfxPrint(1 + col * 4, fxY, item->name);
 
-    if (isCurrent) {
-      gfxCursor(1 + col * 4, fxY, 3);
-    }
+    if (isCurrent) gfxCursor(1 + col * 4, fxY, 3);
   }
 
   // Calculate how many rows the FX list takes
@@ -292,6 +298,9 @@ int drawFXList(int visibleGroupIdx, int y) {
 
 void fxEditFullDraw(uint8_t currentFX, uint8_t instrumentIdx, int isTable) {
   gfxClearRect(0, 0, 35, 20);
+  // The phrase screen reserves the bottom row for messages.  Do not leave a
+  // stale insert hint there: it can overwrite the second row of Fxx entries.
+  screenMessage(0, "");
 
   // Store instrument index for this session
   currentInstrumentIdx = instrumentIdx;

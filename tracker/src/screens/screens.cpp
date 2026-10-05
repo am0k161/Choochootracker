@@ -1,3 +1,4 @@
+#include "selection_popup.h"
 #include <stdarg.h>
 #include <string.h>
 #include "screens.h"
@@ -21,12 +22,13 @@ static int pendingScreenInput;
 
 void drawScreenMap() {
   ScreenOverlayCoordinates overlay;
+  if (currentScreen == &screenSelectionPopup && selectionPopupIsFullWidth()) return;
   const static int smY = 15;
 
   const ColorScheme cs = appSettings.colorScheme;
   gfxSetBgColor(cs.background);
   gfxSetFgColor(cs.textInfo);
-  gfxClearRect(34, smY, 6, 5);
+  gfxClearRect(34, smY - 1, 6, 6);
 
   // Core screens
   gfxPrint(34, smY + 1, "MSCPIT");
@@ -39,10 +41,11 @@ void drawScreenMap() {
     gfxPrint(35, smY, "P");
   } else if (currentScreen == &screenPhrase || currentScreen == &screenGroove) {
     gfxPrint(37, smY, "G");
-  } else if (currentScreen == &screenInstrument || currentScreen == &screenInstrumentPool) {
-    gfxPrint(38, smY + 2, "P");
+  } else if (currentScreen == &screenInstrument || currentScreen == &screenSampleSettings ||
+             currentScreen == &screenInstrumentPool || currentScreen == &screenModulation ||
+             currentScreen == &screenInsertFX) {
+    gfxPrint(38, smY - 1, "F");
     gfxPrint(38, smY, "M");
-  } else if (currentScreen == &screenModulation) {
     gfxPrint(38, smY + 2, "P");
   } else if (currentScreen == &screenTable || currentScreen == &screenAYWavetable) {
     gfxPrint(39, smY + 2, "W");
@@ -70,6 +73,8 @@ void drawScreenMap() {
     gfxPrint(38, smY + 2, "P");
   } else if (currentScreen == &screenModulation) {
     gfxPrint(38, smY, "M");
+  } else if (currentScreen == &screenInsertFX) {
+    gfxPrint(38, smY - 1, "F");
   } else if (currentScreen == &screenTable) {
     gfxPrint(39, smY + 1, "T");
   } else if (currentScreen == &screenAYWavetable) {

@@ -40,7 +40,7 @@ TEST_CASE("CRD is same-row only and quantizes every chord note") {
   playbackInit(&state, &project);
   state.tracks[0].mode = PlaybackMode::phraseRow;
   PhraseRow row = {};
-  row.note = 36; row.instrument = EMPTY_VALUE_8; row.volume = EMPTY_VALUE_8;
+  row.note = 36; row.instrument = EMPTY_VALUE_8; row.volume = EMPTY_VALUE_16;
   for (int i = 0; i < 3; ++i) row.fx[i][0] = EMPTY_VALUE_8;
   row.fx[0][0] = fxCRD; row.fx[0][1] = 0x00;
   readPhraseRowDirect(&state, 0, &row, 0);
@@ -66,7 +66,7 @@ TEST_CASE("CRD is ignored by AY instruments") {
   playbackInit(&state, &project);
   state.tracks[0].mode = PlaybackMode::phraseRow;
   PhraseRow row = {};
-  row.note = 36; row.instrument = 0; row.volume = EMPTY_VALUE_8;
+  row.note = 36; row.instrument = 0; row.volume = EMPTY_VALUE_16;
   for (int i = 0; i < 3; ++i) row.fx[i][0] = EMPTY_VALUE_8;
   row.fx[0][0] = fxCRD; row.fx[0][1] = 0x00;
   readPhraseRowDirect(&state, 0, &row, 0);

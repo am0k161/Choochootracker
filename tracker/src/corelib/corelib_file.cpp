@@ -87,17 +87,29 @@ int fileCreateDirectoryRecursive(const char* path) {
   snprintf(tmp, sizeof(tmp), "%s", path);
   size_t len = strlen(tmp);
   if (len == 0) return -1;
+#ifdef _WIN32
+  // Callers commonly build paths with '/', while the Windows APIs and the
+  // drive-prefix check below use '\\'. Normalize once so recursive creation
+  // behaves consistently for both spellings.
+  for (size_t i = 0; i < len; i++) {
+    if (tmp[i] == '/') tmp[i] = '\\';
+  }
+#endif
   if (tmp[len - 1] == '/' || tmp[len - 1] == '\\') tmp[len - 1] = 0;
   if (tmp[0] == 0) return -1;
 
   // Create each path level in turn; existing levels report EEXIST and are fine
-  for (char* p = tmp + 1; *p; p++) {
+  char* firstSeparator = tmp + 1;
+#ifdef _WIN32
+  if (tmp[1] == ':' && (tmp[2] == '/' || tmp[2] == '\\')) firstSeparator = tmp + 3;
+#endif
+  for (char* p = firstSeparator; *p; p++) {
     if (*p == '/' || *p == '\\') {
       *p = 0;
       if (!fileDirectoryExists(tmp)) {
         if (fileCreateDirectory(tmp) != 0) return -1;
       }
-      *p = '/';
+      *p = PATH_SEPARATOR;
     }
   }
   if (!fileDirectoryExists(tmp)) {

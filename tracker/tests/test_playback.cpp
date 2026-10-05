@@ -237,11 +237,11 @@ TEST_CASE_FIXTURE(PlaybackFixture, "Live chains loop and switch at the requested
 
 TEST_CASE_FIXTURE(PlaybackFixture, "table volume and VOL apply to the shared voice gain") {
   PlaybackTrackState* track = &state->playbackState.tracks[0];
-  track->note.volume = 15;
+  track->note.volume = PHRASE_VOLUME_MAX;
   track->note.volumeOffset = -1;
   tableInit(&state->playbackState, 0, &track->note.instrumentTable, 0, 0, 1);
   state->project.tables[0].rows[0].volume = 15;
-  CHECK(playbackVolumeGain(&state->playbackState, track) == doctest::Approx(14.0f / 15.0f));
+  CHECK(playbackVolumeGain(&state->playbackState, track) == doctest::Approx(126.0f / PHRASE_VOLUME_MAX));
 
   state->project.tables[0].rows[0].volume = 0;
   CHECK(playbackVolumeGain(&state->playbackState, track) == 0.0f);
@@ -427,7 +427,7 @@ TEST_CASE_FIXTURE(PlaybackFixture, "single note outputs to registers") {
   // Put a note in phrase 0, row 0
   state->project.phrases[0].rows[0].note = 48; // C-4
   state->project.phrases[0].rows[0].instrument = 0;
-  state->project.phrases[0].rows[0].volume = 15;
+  state->project.phrases[0].rows[0].volume = PHRASE_VOLUME_MAX;
 
   // Put phrase 0 in chain 0
   state->project.chains[0].rows[0].phrase = 0;
@@ -480,7 +480,7 @@ TEST_CASE_FIXTURE(PlaybackFixture, "auto mix relieves an octave-band pileup") {
   for (int track = 0; track < 3; ++track) {
     p->phrases[track].rows[0].note = track < 2 ? 36 : 72;
     p->phrases[track].rows[0].instrument = 0;
-    p->phrases[track].rows[0].volume = 15;
+  p->phrases[track].rows[0].volume = PHRASE_VOLUME_MAX;
     for (int row = 0; row < 12; ++row) p->chains[track].rows[row].phrase = track;
     p->song[0][track] = track;
   }
@@ -501,7 +501,7 @@ TEST_CASE_FIXTURE(PlaybackFixture, "ADSR volume envelope ranges") {
   // Put a note in phrase 0
   state->project.phrases[0].rows[0].note = 48;
   state->project.phrases[0].rows[0].instrument = 0;
-  state->project.phrases[0].rows[0].volume = 15;
+  state->project.phrases[0].rows[0].volume = PHRASE_VOLUME_MAX;
 
   // Put phrase in chain and song
   state->project.chains[0].rows[0].phrase = 0;
@@ -618,7 +618,7 @@ TEST_CASE_FIXTURE(PlaybackFixture, "SLE reaches every BYOWTBL engine FX destinat
   PlaybackTrackState* track = &state->playbackState.tracks[0];
   track->note.instrument = 0;
   track->note.pitchFinal = 60;
-  track->note.volume = 15;
+  track->note.volume = PHRASE_VOLUME_MAX;
   track->slewTicks = 8;
   const FX destinations[] = {fxSDT, fxSMX, fxBIA, fxBIB, fxSCF2, fxSRS2};
   for (FX fx : destinations) {

@@ -150,7 +150,7 @@ TEST_CASE("a project with fewer than 8 tracks survives save and load") {
   saved.chains[0].rows[0].phrase = 0;
   saved.phrases[0].rows[0].note = 40;
   saved.phrases[0].rows[0].instrument = 0;
-  saved.phrases[0].rows[0].volume = 15;
+  saved.phrases[0].rows[0].volume = PHRASE_VOLUME_MAX;
 
   const char* path = "build/tests/reduced_tracks_io.cct";
   REQUIRE(projectSave(&saved, path) == 0);
@@ -203,6 +203,62 @@ TEST_CASE("sample slice survives save and load; missing field is Off") {
   CHECK(missing.instruments[0].chip.sample.slice == 0);
 }
 
+TEST_CASE("projects embed loaded samples in a ZIP container") {
+  Project saved, loaded;
+  projectInitAY(&saved);
+  projectInitAY(&loaded);
+  getInstrumentFunctions(InstrumentType::Sample).init(&saved.instruments[0]);
+  InstrumentSample& sample = saved.instruments[0].chip.sample;
+  std::strcpy(sample.path, "samples/original.wav");
+  sample.sampleRate = 8000;
+  sample.frameCount = 4;
+  sample.channels = 1;
+  sample.data = static_cast<int16_t*>(std::malloc(4 * sizeof(int16_t)));
+  REQUIRE(sample.data != nullptr);
+  sample.data[0] = -1000; sample.data[1] = 2000; sample.data[2] = -3000; sample.data[3] = 4000;
+
+  const char* path = "build/tests/sample_archive.cct";
+  REQUIRE(projectSave(&saved, path) == 0);
+  FILE* archive = std::fopen(path, "rb");
+  REQUIRE(archive != nullptr);
+  CHECK(std::fgetc(archive) == 'P');
+  CHECK(std::fgetc(archive) == 'K');
+  std::fclose(archive);
+
+  REQUIRE(projectLoad(&loaded, path) == 0);
+  const InstrumentSample& result = loaded.instruments[0].chip.sample;
+  REQUIRE(result.data != nullptr);
+  CHECK(result.frameCount == 4);
+  CHECK(result.sampleRate == 8000);
+  CHECK(result.data[0] == -1000);
+  CHECK(result.data[3] == 4000);
+  CHECK(std::strcmp(result.path, "samples/original.wav") == 0);
+}
+
+TEST_CASE("archives preserve BYOWTBL frame layout") {
+  Project saved, loaded;
+  projectInitAY(&saved);
+  projectInitAY(&loaded);
+  getInstrumentFunctions(InstrumentType::BYOWTBL).init(&saved.instruments[0]);
+  InstrumentBYOWTBL& table = saved.instruments[0].chip.byowtbl;
+  std::strcpy(table.oscillator[0].path, "samples/wavetable.wav");
+  table.oscillator[0].sampleRate = 8000;
+  table.oscillator[0].frameCount = 8;
+  table.oscillator[0].channels = 1;
+  table.oscillator[0].data = static_cast<int16_t*>(std::malloc(8 * sizeof(int16_t)));
+  REQUIRE(table.oscillator[0].data != nullptr);
+  table.frameSize[0] = 4;
+  table.tableFrames[0] = 2;
+
+  const char* path = "build/tests/byowtbl_archive.cct";
+  REQUIRE(projectSave(&saved, path) == 0);
+  REQUIRE(projectLoad(&loaded, path) == 0);
+
+  const InstrumentBYOWTBL& result = loaded.instruments[0].chip.byowtbl;
+  CHECK(result.frameSize[0] == 4);
+  CHECK(result.tableFrames[0] == 2);
+}
+
 TEST_CASE("new projects initialize the validated period pitch table") {
   Project project;
   projectInitAY(&project);
@@ -247,24 +303,24 @@ TEST_CASE_FIXTURE(ProjectFixture, "projectInit tables empty") {
 }
 
 TEST_CASE("modulation destination limits match every engine's routing") {
-  CHECK(instrumentModDestinationMax(InstrumentType::AY1) == 22);
-  CHECK(instrumentModDestinationMax(InstrumentType::AY2) == 28);
-  CHECK(instrumentModDestinationMax(InstrumentType::AYSample) == 24);
-  CHECK(instrumentModDestinationMax(InstrumentType::Braids) == 31);
-  CHECK(instrumentModDestinationMax(InstrumentType::Sample) == 33);
-  CHECK(instrumentModDestinationMax(InstrumentType::SCWF) == 31);
-  CHECK(instrumentModDestinationMax(InstrumentType::BYOWTBL) == 33);
-  CHECK(instrumentModDestinationMax(InstrumentType::Plaits) == 33);
-  CHECK(instrumentModDestinationMax(InstrumentType::PlaitsAlt) == 33);
-  CHECK(instrumentModDestinationMax(InstrumentType::AChChid) == 27);
-  CHECK(instrumentModDestinationMax(InstrumentType::DrumSynth) == 28);
+  CHECK(instrumentModDestinationMax(InstrumentType::AY1) == 49);
+  CHECK(instrumentModDestinationMax(InstrumentType::AY2) == 55);
+  CHECK(instrumentModDestinationMax(InstrumentType::AYSample) == 51);
+  CHECK(instrumentModDestinationMax(InstrumentType::Braids) == 51);
+  CHECK(instrumentModDestinationMax(InstrumentType::Sample) == 53);
+  CHECK(instrumentModDestinationMax(InstrumentType::SCWF) == 51);
+  CHECK(instrumentModDestinationMax(InstrumentType::BYOWTBL) == 53);
+  CHECK(instrumentModDestinationMax(InstrumentType::Plaits) == 53);
+  CHECK(instrumentModDestinationMax(InstrumentType::PlaitsAlt) == 53);
+  CHECK(instrumentModDestinationMax(InstrumentType::AChChid) == 54);
+  CHECK(instrumentModDestinationMax(InstrumentType::DrumSynth) == 55);
 }
 
 TEST_CASE("voice-post modulation destinations keep their labels") {
   static const char* labels[] = {"ADSR A", "ADSR D", "ADSR S", "ADSR R", "ADSR Shape", "Trig D", "Trig C",
                                  "M1 P5", "M2 P5", "M3 P5", "M4 P5"};
   int firstGeneric = getInstrumentFunctions(InstrumentType::Plaits).modDestinationsCount + 1;
-  for (int i = 0; i < genericModTotalCount - genericModEnvelopeAttack; ++i)
+  for (int i = 0; i < genericModFirstInsert - genericModEnvelopeAttack; ++i)
     CHECK(std::strcmp(instrumentModDestinationName(InstrumentType::Plaits,
       firstGeneric + genericModEnvelopeAttack + i), labels[i]) == 0);
 }
@@ -367,7 +423,7 @@ TEST_CASE("v4 projects preserve LFO wavetable settings") {
   REQUIRE(projectSave(&saved, path) == 0);
   INFO(projectFileError);
   REQUIRE(projectLoad(&loaded, path) == 0);
-  CHECK(projectFileVersion == 5);
+  CHECK(projectFileVersion == 6);
   const Modulation& reloaded = loaded.instruments[0].modulation[2];
   CHECK(reloaded.p1 == static_cast<uint8_t>(LFOShape::wavetable));
   CHECK(reloaded.p2 == static_cast<uint8_t>(LFOTrigger::chain));

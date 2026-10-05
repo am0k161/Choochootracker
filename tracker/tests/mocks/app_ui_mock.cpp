@@ -1,3 +1,5 @@
+#include <cstdarg>
+#include <cstdio>
 // UI/audio boundaries for exercising the real app and Settings event handlers.
 #include "app_ui_mock.h"
 #include "audio_manager.h"
@@ -8,7 +10,9 @@ int mockLastInputKeys;
 static int ignoreInput(int, int keys, int) { mockLastInputKeys = keys; return 1; }
 static void noOp(void) {}
 static int startAudio(int, int) { return 0; }
-AudioManager audioManager = {startAudio, noOp, noOp, nullptr, nullptr, noOp};
+static int cpuLoad() { return 0; }
+AudioManager audioManager = {startAudio, noOp, noOp, nullptr, nullptr, noOp,
+                             nullptr, nullptr, cpuLoad};
 const AppScreen screenSong = {nullptr, nullptr, noOp, noOp, ignoreInput};
 const AppScreen screenTitle = {nullptr, nullptr, noOp, noOp, ignoreInput};
 const AppScreen screenPhrase = {nullptr, nullptr, noOp, noOp, ignoreInput};
@@ -38,7 +42,13 @@ void screensInitAll(void) {
 }
 void screenSetup(const AppScreen* screen, int) { currentScreen = screen; }
 void screenDraw(void) {}
-void screenMessage(int, const char*, ...) {}
+static char activeMessage[42]{};
+void screenMessage(int, const char* format, ...) {
+  va_list args; va_start(args, format);
+  vsnprintf(activeMessage, sizeof(activeMessage), format, args);
+  va_end(args);
+}
+const char* screenGetActiveMessage(void) { return activeMessage; }
 void drawScreenMap(void) {}
 ScreenPlaybackLevel screenGetPlaybackLevel(const AppScreen*) { return ScreenPlaybackLevel::none; }
 LoopRange screenGetLoopRange(const AppScreen*) { return {}; }

@@ -290,7 +290,7 @@ On desktop, key jazz also brings direct hex-index typing here — see
 
 A phrase is the track pattern in a traditional step sequencer.
 
-A phrase is 16 steps long, with 1 row per step. Each row contains a note, an instrument and FX columns. Notes use tracker notation such as `C-4` (note and octave).
+A phrase is 16 steps long, with 1 row per step. Each row contains a note, an instrument, a volume from `00` to `7F`, and FX columns. Notes use tracker notation such as `C-4` (note and octave).
 
 To stop a note, insert `NOTE OFF`, use the kill-note FX, or play another note with no instrument set.
 
@@ -1133,3 +1133,95 @@ Desktop and PortMaster. Settings > **MIDI** opens this submenu: **MIDI In** / **
 ## 15. Credits and licensing
 
 ChooChooTracker is a fork of ChipNomad and retains its MIT licensing approach. Braids, Plaits, Plaits-Alt, Clouds DSP, Warps-derived MME DSP and stmlib code are derived from Mutable Instruments' open-source releases under their applicable MIT notices. Plaits-Alt is sourced from the lylepmills/eurorack Plaits Lab fork; its retained source notices apply. The aChChid engine uses Open303 by Robin Schmidt, copyright 2009, under the MIT License. Bogie and Sintered are original native implementations. MIDI I/O uses RtMidi by Gary P. Scavone, under its MIT-style license. See the packaged license files for exact attribution.
+
+## Track insert effects
+
+Each of the eight tracks has two serial slots, **TF1 → TF2**. From Instrument,
+use the usual Shift+Up gesture to open MOD, then Shift+Up again for **F: Insert
+FX**. Shift+Down returns to MOD. OPT+Left/Right selects the track (1–8), without
+changing the instrument selector. The module header opens the existing chooser;
+bypass retains the module, configured values, and automation. Parameters are
+byte values: left column 1–4, right column 5–8. Context text shows full names and
+decoded values. Old projects load with both slots OFF.
+
+The navigation display keeps the full F–M–I–P column visible throughout the
+instrument screens, including Insert FX and the instrument pool, and highlights
+the current screen.
+
+| Module | Parameters in order |
+| --- | --- |
+| Work Compressor | Threshold, Attack, Release, Makeup, Ratio, Detector source, Detector filter, Mix |
+| Airwindows Distortion | Input, Mode, Output, Mix |
+| Airwindows StereoDoubler | Detune, Mix |
+| TAPESCAM | Input, Drive, Color, Wobble, Tone, Output |
+| OTT (Rui-727) | Depth, Time, Upward, Downward, Input, Output |
+| Chorus | Rate, Depth, Tone, Mix |
+| Flanger | Rate, Depth, Feedback, Mix |
+| Phaser | Rate, Depth, Feedback, Mix |
+| Rotary | Speed, Depth, Drive, Mix |
+| Saturation | Drive, Tone, Level, Mix |
+| Bitcrusher | Bit depth, Rate reduction, Tone, Mix |
+| Destruction | Mode, Amount, Tone, Mix |
+
+Continuous controls use 00–FF, including valid zero and maximum FF. Bipolar
+controls have an exact neutral at 80. Distortion modes are 00 Density, 01 Drive,
+02 Spiral, 03 Mojo, 04 Dyno. Compressor ratios 00–07 are 1.5, 2, 3, 4, 6, 8, 16,
+20:1; detector sources 00–02 are stereo input, left, right. Detector filter 80 is
+neutral, below is low-pass, above is high-pass. No external/cross-track sidechain
+is provided. Either slot can contain any module; repeated modules are independent.
+Chorus, Flanger, Phaser and Rotary use gentle modulation defaults; Rotary speed
+switches between Slow and Fast. Bitcrusher bit depth ranges from 4 to 16 bits and
+rate reduction from 1x to 32x. Destruction modes are Fold, Clip and Crush.
+Saturation and distortion include output level or mix controls for balancing them
+against the unprocessed signal.
+
+Track level and tilt EQ precede the inserts, so both affect the signal entering
+compression and distortion. All voices/chord notes on the track feed one insert
+chain. Both reverb and delay sends receive its output. Shared effects, returns,
+master controls and mute/solo retain their existing behavior. Inserts do not
+process audio from external MIDI devices.
+
+The Insert FX chooser category adds **F11–F18** for TF1 and **F21–F28** for TF2.
+Any Phrase or Table FX column can address either slot; the Phrase grid keeps its
+three columns. These absolute runtime values persist across notes, instruments,
+phrases, chains and ordinary loops. Fresh playback/hard stop resets them. Editing
+a base value on the F page clears only that parameter's override. MOD acts on the
+effective base/automation value without saving its offsets. Selecting a new
+module restores defaults and clears that slot's overrides. Bypass retains
+existing automation while suspending processing after a short fade.
+
+**Addresses refer to track slots/parameter positions, not named effects.** A
+Phrase reused on another track uses that track's modules. Changing modules can
+change a command's meaning; commands are not rewritten. OFF/unused addresses
+are safe no-ops and remain intact in saved Phrase/Table data.
+
+The instrument MOD chooser adds an Insert FX category. Each instrument's sources
+control inserts on whichever track plays it, including the combined chord signal.
+The same instrument on two tracks affects independent chains. Existing source
+timing, signed amounts, source-combination rules, stick modes and motion recording
+apply. Discrete controls are quantized and clamped to valid choices. There is no
+new track-owned modulation bank.
+
+Compressor makeup starts at 0 dB. OTT starts at approximately 25% depth, 25%
+upward, 50% downward, 0 dB input and -3 dB output. Its band thresholds, gains and
+crossovers remain at Rui-727's native defaults; Depth is its wet/dry control.
+TAPESCAM retains native auxiliary defaults: new/high-speed tape, noise and
+compression off, widening on. Watch existing clipping indicators when adding
+drive/gain. Slot transitions use bounded 5 ms fades via dry audio.
+
+Saves store module IDs, bypass and configured bytes in the optional versioned
+`Track inserts: 1,8,2` section. Runtime overrides and DSP histories are not saved.
+Keep backups before opening insert-enabled saves in older builds. DSP attribution,
+source revisions and adaptations are in `chipnomad_lib/external/insert_fx/SOURCES.txt`;
+full MIT notices ship in `licenses/INSERT_FX.txt`.
+
+On an R36H at 48 kHz, a measured pair of inserts on one track took about 4–5%
+of real time for Compressor, 6% for Distortion, 18% for Doubler, 16% for TAPESCAM,
+and 24% for OTT, before the cost of the synths and shared effects. Sixteen active
+Doubler, TAPESCAM or OTT instances exceeded real time. Audio-rate modulation adds
+further cost. Start with a few inserts, watch for audio overload, and bypass
+unused slots; the sixteen available positions are not a guaranteed CPU budget.
+
+The Insert page keeps the selected field's tip visible after button release;
+temporary notices can still take its place. The module chooser shows each
+module's effect type and source project alongside its name.

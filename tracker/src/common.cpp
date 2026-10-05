@@ -20,8 +20,8 @@ void initDefaultAppSettings(void) {
 #ifdef WEB_BUILD
   appSettings.audioBufferSize = 1024;
 #elif defined(ANDROID_BUILD) || defined(DESKTOP_BUILD)
-  // Keep playback status and waveform monitors responsive at 30 Hz.
-  appSettings.audioBufferSize = 1600;
+  // Keep Android input latency low while leaving enough render headroom.
+  appSettings.audioBufferSize = 256;
 #else
   appSettings.audioBufferSize = 4906;
 #endif
@@ -456,6 +456,11 @@ int settingsLoad(void) {
 #elif defined(ANDROID_BUILD) || defined(DESKTOP_BUILD)
   // Migrate the old 10 Hz default.
   if (appSettings.audioBufferSize == 4906) appSettings.audioBufferSize = 1600;
+#ifdef ANDROID_BUILD
+  // Migrate the previous Android latency-oriented default.
+  if (appSettings.audioBufferSize == 1600) appSettings.audioBufferSize = 512;
+  if (appSettings.audioBufferSize == 512) appSettings.audioBufferSize = 256;
+#endif
 #endif
   if (appSettings.braidsBits < 0 || appSettings.braidsBits > 6) appSettings.braidsBits = 6;
   if (appSettings.braidsDrift < 0 || appSettings.braidsDrift > 4) appSettings.braidsDrift = 0;

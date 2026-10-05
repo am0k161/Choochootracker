@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include "voice_post_processor.h"
 #include "stretch_processor.h"
 
@@ -56,6 +57,8 @@ void sampleSliceFrames(uint32_t frameCount, uint8_t sliceCount, uint8_t sliceInd
                        uint32_t* startFrame, uint32_t* endFrame);
 int sampleLoadWav16(const char* path, InstrumentSample* sample,
                     char* error, size_t errorSize);
+int sampleLoadWav16File(FILE* file, const char* path, InstrumentSample* sample,
+                        char* error, size_t errorSize);
 
 // Writes the sample as an uncompressed 16-bit PCM WAV (44-byte RIFF header,
 // little-endian fields written byte-wise so the code is endian-agnostic).
