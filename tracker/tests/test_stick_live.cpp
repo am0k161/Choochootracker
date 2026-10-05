@@ -356,9 +356,9 @@ TEST_CASE_FIXTURE(StickLiveFixture, "screenMidi shows device rows and links to c
 
   screen->drawField(0, 0, CellState::focus);
   CHECK(std::string(mockGfxCells[2], 7) == "MIDI In");
-  CHECK(std::string(mockGfxCells[2] + 23, 3) == "OFF");
+  CHECK(std::string(mockGfxCells[2] + 10, 3) == "OFF");
   screen->drawCursor(0, 0);
-  CHECK(mockCursorX == 23);
+  CHECK(mockCursorX == 10);
   CHECK(mockCursorY == 2);
   CHECK(mockCursorWidth == 3); // "OFF"
   CHECK(screen->onEdit(0, 0, CellEditAction::increase) == 1); // handled, wraps straight back to OFF (no ports)
@@ -366,7 +366,7 @@ TEST_CASE_FIXTURE(StickLiveFixture, "screenMidi shows device rows and links to c
 
   screen->drawField(0, 1, CellState::focus);
   CHECK(std::string(mockGfxCells[3], 8) == "MIDI Out");
-  CHECK(std::string(mockGfxCells[3] + 23, 3) == "OFF");
+  CHECK(std::string(mockGfxCells[3] + 10, 3) == "OFF");
 
   screen->drawField(0, 2, CellState::focus);
   CHECK(std::string(mockGfxCells[5], 15) == "Channel mapping");
@@ -385,7 +385,7 @@ TEST_CASE_FIXTURE(StickLiveFixture, "screenMidi shows NOT FOUND for a configured
   screenMidi.fullRedraw();
   REQUIRE(mockScreenData != nullptr);
   mockScreenData->drawField(0, 0, CellState::focus);
-  CHECK(std::string(mockGfxCells[2] + 23, 9) == "NOT FOUND");
+  CHECK(std::string(mockGfxCells[2] + 10, 9) == "NOT FOUND");
 }
 
 TEST_CASE_FIXTURE(StickLiveFixture, "MIDI device names round-trip through settings save/load") {
