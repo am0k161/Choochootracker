@@ -22,6 +22,9 @@ class StretchProcessor {
   // tickRateHz * 60 / 24). pitchSemitones is the voice's transposition in
   // semitones (applied by the stretcher so playback speed stays 1:1).
   void configure(const InstrumentSample* sample, uint8_t stretchMode,
+                 uint16_t speedPercent, float tickRateHz, float pitchSemitones, uint8_t startMarker,
+                 uint8_t endMarker);
+  void configure(const InstrumentSample* sample, uint8_t stretchMode,
                  float tickRateHz, float pitchSemitones, uint8_t startMarker,
                  uint8_t endMarker);
   void noteOn();
