@@ -6,10 +6,6 @@
 #include <cstring>
 #include <vector>
 
-#ifndef M_PI
-#define M_PI 3.14159265358979323846
-#endif
-
 namespace {
 
 // 1 second of a 440 Hz sine at 48 kHz, mono.
@@ -108,29 +104,6 @@ TEST_CASE("StretchProcessor stretches 1 second to 1 beat at tickRate 50") {
   // Target 0.48 s = 23040 frames.
   CHECK(result.frames > 20000);
   CHECK(result.frames < 27000);
-}
-
-TEST_CASE("StretchProcessor speed mode follows speed, not clock") {
-  auto data = makeSine(440.0, 48000, 1.0);
-  InstrumentSample sample = makeSample(data, 48000);
-  float scratch[256 * 2];
-
-  auto renderSpeed = [&](uint16_t speedPercent, float tickRateHz) {
-    StretchProcessor stretch;
-    stretch.init(48000.0, false);
-    stretch.configure(&sample, 0, speedPercent, tickRateHz, 0.0f, 0, 255);
-    stretch.noteOn();
-    return renderAll(stretch, scratch, 256).frames;
-  };
-
-  size_t slow = renderSpeed(50, 50.0f);
-  size_t normal = renderSpeed(100, 50.0f);
-  size_t fast = renderSpeed(200, 50.0f);
-  size_t normalAtAnotherClock = renderSpeed(100, 100.0f);
-
-  CHECK(slow > normal * 17 / 10);
-  CHECK(fast < normal * 7 / 10);
-  CHECK(std::abs((long long)normal - (long long)normalAtAnotherClock) < 512);
 }
 
 TEST_CASE("StretchProcessor follows a tempo change mid-note") {

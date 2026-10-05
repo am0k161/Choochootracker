@@ -40,12 +40,6 @@ struct StretchOut {
 };
 }  // namespace
 
-void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretchMode,
-                                 float tickRateHz, float pitchSemitones,
-                                 uint8_t startMarker, uint8_t endMarker) {
-  configure(sample, stretchMode, 0, tickRateHz, pitchSemitones, startMarker, endMarker);
-}
-
 void StretchProcessor::init(double outputSampleRate, bool cheap) {
   outputSampleRate_ = outputSampleRate;
   cheap_ = cheap;
@@ -67,10 +61,9 @@ void StretchProcessor::init(double outputSampleRate, bool cheap) {
 }
 
 void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretchMode,
-                                 uint16_t speedPercent, float tickRateHz, float pitchSemitones,
+                                 float tickRateHz, float pitchSemitones,
                                  uint8_t startMarker, uint8_t endMarker) {
-  if (!stretch_ || !sample || !sample->data || sample->frameCount == 0 ||
-      (stretchMode == 0 && speedPercent == 0)) {
+  if (!stretch_ || !sample || !sample->data || sample->frameCount == 0 || stretchMode == 0) {
     configured_ = false;
     active_ = false;
     return;
@@ -102,19 +95,14 @@ void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretch
   sourceReverse_ = reverse;
   sourceDirection_ = reverse ? -1.0 : 1.0;
 
+  // Target duration: stretchMode musical divisions at the current tempo.
+  // 24 ticks = 1 beat, 96 ticks = 1 bar (4 beats).
+  static const uint32_t kTargetTicks[7] = {0, 24, 48, 96, 192, 384, 768};
+  uint32_t targetTicks = kTargetTicks[stretchMode <= 6 ? stretchMode : 0];
+  double bpm = (double)tickRateHz * 60.0 / 24.0;
+  double targetSeconds = (double)targetTicks / ((double)tickRateHz > 0.0 ? (double)tickRateHz : 50.0);
+  (void)bpm;
   double sourceSeconds = (double)(sourceEndFrame_ - sourceStartFrame_) / sampleRate_;
-  double targetSeconds;
-  if (stretchMode != 0) {
-    // Target duration: stretchMode musical divisions at the current tempo.
-    // 24 ticks = 1 beat, 96 ticks = 1 bar (4 beats).
-    static const uint32_t kTargetTicks[7] = {0, 24, 48, 96, 192, 384, 768};
-    uint32_t targetTicks = kTargetTicks[stretchMode <= 6 ? stretchMode : 0];
-    targetSeconds = (double)targetTicks / ((double)tickRateHz > 0.0 ? (double)tickRateHz : 50.0);
-  } else {
-    // Speed mode keeps pitch steady and changes duration, matching the dirty
-    // granular path: 200% speed consumes twice as much source per output frame.
-    targetSeconds = sourceSeconds * 100.0 / (double)speedPercent;
-  }
   stretchRatio_ = (sourceSeconds > 0.0 && targetSeconds > 0.0)
     ? targetSeconds / sourceSeconds
     : 1.0;

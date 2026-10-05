@@ -78,18 +78,16 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
                             float gain, float speedPercent, uint8_t start, uint8_t end, uint8_t loopMode,
                             uint16_t cutoffHz, uint8_t resonance, int attack, int decay,
                             int sustain, int release, int envelopeShape, uint8_t sliceCount,
-                            uint8_t sliceIndex, uint8_t stretchMode, float tickRateHz,
-                            uint8_t speedAlgorithm) {
+                            uint8_t sliceIndex, uint8_t stretchMode, float tickRateHz) {
   sample_ = sample;
   post_.setGain(gain);
   if (!sample_ || !sample_->data || sample_->frameCount == 0) return;
 
   // Stretch mode bypasses the granular speedPercent path entirely: the
   // stretcher applies pitch via transpose and drives its own source cursor.
-  useStretch_ = sliceCount == 0 &&
-    (stretchMode != 0 || (speedAlgorithm == 1 && speedPercent != 0));
+  useStretch_ = stretchMode != 0 && sliceCount == 0;
   if (useStretch_) {
-    stretch_.configure(sample, stretchMode, speedPercent, tickRateHz, pitchCents / 100.0f, start, end);
+    stretch_.configure(sample, stretchMode, tickRateHz, pitchCents / 100.0f, start, end);
   }
 
   uint32_t startFrame;

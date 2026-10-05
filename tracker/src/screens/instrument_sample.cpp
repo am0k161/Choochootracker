@@ -106,7 +106,7 @@ static void drawStatic(void) {
   gfxPrint(0,7,"SOURCE");
   gfxSetFgColor(appSettings.colorScheme.textDefault);
   gfxPrint(0,8,"Pitch"); gfxPrint(0,9,"Stretch");
-  gfxPrint(0,10,"Loop"); gfxPrint(0,11,"Speed");
+  gfxPrint(0,11,"Loop"); gfxPrint(0,12,"Speed");
   instrumentCommonDrawVoicePostStatic(1);
   InstrumentSample* sample = &chipnomadState->project.instruments[cInstrument].chip.sample;
   updateSamplePreview(sample);
@@ -156,12 +156,12 @@ static void drawField(int col, int row, CellState state) {
     case 5:
       if (!col) gfxPrint(sourceValueX, 9, stretchLabels[sample->stretchMode <= 6 ? sample->stretchMode : 0]);
       break;
-    case 6: if(!col) { static const char* m[]={"Off","Loop","Ping"}; gfxPrint(sourceValueX,10,m[sample->loopMode<=2?sample->loopMode:0]); } break;
-    case 7:
+    case 7: if(!col) { static const char* m[]={"Off","Loop","Ping"}; gfxPrint(sourceValueX,11,m[sample->loopMode<=2?sample->loopMode:0]); } break;
+    case 8:
       if (!col) {
         // Speed is inert while Stretch drives the duration: dim it.
         if (stretchOn) gfxSetFgColor(appSettings.colorScheme.textEmpty);
-        gfxPrint(sourceValueX, 11, byteToHex(controlFromRange(sample->speedPercent, 500)));
+        gfxPrint(sourceValueX, 12, byteToHex(controlFromRange(sample->speedPercent, 500)));
       }
       break;
   }
@@ -198,8 +198,8 @@ static int onEdit(int col, int row, CellEditAction action) {
       }
       return handled;
     }
-    case 6: handled=!col?edit8noLast(action,&sample->loopMode,1,0,2):0; break;
-    case 7:
+    case 7: handled=!col?edit8noLast(action,&sample->loopMode,1,0,2):0; break;
+    case 8:
       // Speed is inert while Stretch drives the duration.
       if (sample->stretchMode != 0) return 0;
       if (!col && action == CellEditAction::clear) {
@@ -223,8 +223,9 @@ static int loadAdjacentSample(int direction) {
 }
 
 static int isCellValid(int col, int row) {
+  if (!col && row == 6) return 0;
   // Speed is inert while Stretch drives the duration: skip it in navigation.
-  if (!col && row == 7 && chipnomadState->project.instruments[cInstrument].chip.sample.stretchMode != 0) return 0;
+  if (!col && row == 8 && chipnomadState->project.instruments[cInstrument].chip.sample.stretchMode != 0) return 0;
   return 1;
 }
 
