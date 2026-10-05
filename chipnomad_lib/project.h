@@ -227,6 +227,7 @@ enum ScalePreset : uint8_t {
 const char* scalePresetName(ScalePreset preset);
 uint16_t scalePresetMask(ScalePreset preset);
 uint8_t scaleQuantizeNote(uint8_t note, uint8_t root, uint16_t mask, uint16_t pitchCount);
+uint8_t scaleSnapNoteUp(uint8_t note, uint8_t root, uint16_t mask, uint16_t pitchCount);
 
 struct FXName {
   enum FX fx;
@@ -338,8 +339,12 @@ struct Project {
   uint8_t signedTrackSpeed;
   uint8_t perceptualEffects;
 
-  // Global 12-TET playback quantizer. Phrase data always stays chromatic.
+  // Global 12-TET scale engine. Phrase data always stays chromatic.
+  // scaleMode: 0 = Quantizer (playback quantization, SCL FX active), 1 =
+  // Note Lock (entry locked to scale notes, SCL FX inert, quantization
+  // bypassed).
   uint8_t scaleApply;
+  uint8_t scaleMode;
   uint8_t scaleTracksMask;
   uint8_t scaleRoot;
   ScalePreset scalePreset;

@@ -463,9 +463,10 @@ void readPhraseRowDirect(PlaybackState* state, int trackIdx, PhraseRow* phraseRo
 
     if (fxType == fxSCL) {
       // SCL XY: X selects a scale, Y selects C..B. Phrase-only global FX.
+      // Inert in Note Lock mode: entry and chords follow the project scale.
       uint8_t preset = fxValue >> 4;
       uint8_t root = fxValue & 0x0f;
-      if (!state->scaleFXCommandSeen && preset < scalePresetCount && root < 12) {
+      if (!state->scaleFXCommandSeen && p->scaleMode == 0 && preset < scalePresetCount && root < 12) {
         state->scalePreset = (ScalePreset)preset;
         state->scaleRoot = root;
         state->scaleFXCommandSeen = 1;
@@ -591,7 +592,10 @@ void readPhraseRowDirect(PlaybackState* state, int trackIdx, PhraseRow* phraseRo
 
   // Keep phrases chromatic; only the pitch sent to the engine is quantized.
   // Sliced PCM samples map notes to windows, so they stay unquantized.
-  if (note != EMPTY_VALUE_8 && note != NOTE_OFF && p->scaleApply && !slicedSample &&
+  // In Note Lock mode entry is already restricted to the scale, so playback
+  // quantization of plain notes is bypassed (chords below still quantize).
+  int noteLock = p->scaleMode != 0;
+  if (note != EMPTY_VALUE_8 && note != NOTE_OFF && p->scaleApply && !noteLock && !slicedSample &&
       (p->scaleTracksMask & (1u << trackIdx)) && p->pitchTable.octaveSize == 12) {
     uint16_t mask = state->scalePreset == scaleCustom ? p->scaleCustomMask : scalePresetMask(state->scalePreset);
     track->note.pitchBase = scaleQuantizeNote(track->note.pitchBase, state->scaleRoot, mask, p->pitchTable.length);

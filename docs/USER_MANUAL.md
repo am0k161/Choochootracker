@@ -96,6 +96,53 @@ and to choose where WAV exports are saved.
 - **SELECT + EDIT** pastes it.
 - **EDIT + [DIRECTION]** edits the selected cells together.
 
+On the Phrase screen, with a selection active, the note column can be filled
+with rhythm patterns:
+
+- **OPT + LEFT** fills the selection's note cells with a fixed 16-step pattern
+  and advances to the next pattern on every press. After the last pattern the
+  notes are erased and the cycle starts over. Patterns are aligned to absolute
+  phrase rows, so a partial selection only receives the steps that fall inside
+  it.
+- **OPT + RIGHT** fills the selection's note cells with a randomized pattern of
+  3-8 notes (7 and 8 are less likely), cycling indefinitely while **OPT** is
+  held.
+- **OPT + UP** mutates the notes already placed in the selection: every press
+  picks 1-3 of them and shifts each by a random amount within an octave
+  (small shifts are more likely than extreme ones). With **Note Lock** active
+  the shifted notes are snapped back into the scale; Sampler instruments with
+  **Slice** on stay chromatic. Nothing is erased: the 8th press restores the
+  notes the selection held when the cycle started, then the cycle starts over.
+- **OPT + DOWN** spreads the placed notes of sliced Sampler instruments in
+  the selection into a chromatic run: each instrument's first note (highest
+  in the sequencer) keeps its value and every following note of that
+  instrument rises one semitone above the previous one, turning a stack of
+  identical notes into consecutive slice triggers. Several sliced
+  instruments spread independently from their own first notes, notes on
+  instruments without slicing are left untouched, and the result is never
+  snapped to the project scale. The last note the spread writes becomes
+  the last note used in note input, so continuing the run manually picks
+  up the next slice. A selection holding only sliced
+  instruments spreads on every press; when non-sliced notes are present
+  too, the spread runs on the first press and the random arp takes over
+  those notes from the second press on.
+- **OPT + DOWN** on a selection without sliced-instrument notes is a random
+  arpeggiator for the notes already placed there. A chord is picked from
+  the CRD palette - 3-note chords for selections of 1-2 notes, 3+ note
+  chords for 3, any chord for 4 or more - with its root on a random note
+  of the project scale inside the selection's register (any chromatic
+  note when the scale is off or the track is excluded from it), and its
+  tones are quantized into the scale like playback does for CRD. Every
+  press re-spreads the chord across the placed notes: randomized,
+  lowest-to-highest, highest-to-lowest, then up-and-down; the 5th press
+  restores the original notes and the next press picks a fresh chord.
+  The chord name shows in the status bar while the arp is active, no
+  notes are added or removed, and releasing **OPT** resets the whole
+  process.
+- Every fill press erases the selection's notes before writing, and placed
+  notes carry the last used instrument; releasing **OPT** resets the cycles
+  to their first step.
+
 ### Playback
 
 - **PLAY** starts from the cursor. Press it again to stop.
@@ -720,9 +767,11 @@ Each FX has a 3-letter command and a hexadecimal value. The in-app help panel gi
 
 `SCL XY` changes the global playback scale and root without changing the notes stored in phrases. `X` selects a scale (`0` Chromatic, `1` Major, `2` Minor, through `C` Custom); `Y` selects the root (`0` C through `B` B). The command applies to phrase FX only, not tables. If several tracks issue `SCL` on the same tick, the lowest-numbered track wins.
 
+`SCL` belongs to Quantizer mode. With **Note Lock** active the command is not offered in the FX list, and any `SCL` already written into phrases is ignored while the mode is on.
+
 ### Chords
 
-`CRD XY` turns the note on its own Phrase row into a chord. `Y` selects: `0` Major, `1` Minor, `2` Dim, `3` Aug, `4` Sus2, `5` Sus4, `6` Power, `7` Maj7, `8` Min7, `9` Dom7, `A` Min7b5, `B` Dim7, `C` Add9, `D` MinAdd9, `E` Maj9, or `F` Min9. `X` selects the musical inversion: `0` is root position; three-note chords offer `1-2`, and four-note chords offer `1-3`. The command is not persistent: write it on every chorded row. Each generated note is quantized independently when Scale is active. It is available to software engines only; AY instruments ignore it and remain monophonic.
+`CRD XY` turns the note on its own Phrase row into a chord. `Y` selects: `0` Major, `1` Minor, `2` Dim, `3` Aug, `4` Sus2, `5` Sus4, `6` Power, `7` Maj7, `8` Min7, `9` Dom7, `A` Min7b5, `B` Dim7, `C` Add9, `D` MinAdd9, `E` Maj9, or `F` Min9. `X` selects the musical inversion: `0` is root position; three-note chords offer `1-2`, and four-note chords offer `1-3`. The command is not persistent: write it on every chorded row. Each generated note is quantized independently when Scale is active, in both Quantizer and Note Lock modes. It is available to software engines only; AY instruments ignore it and remain monophonic.
 
 ### Sequencer FX
 
@@ -1025,7 +1074,12 @@ On desktop, key jazz lets you type the filename, title and author directly on th
 
 ### Scale / Quantize
 
-The Scale screen controls the global 12-TET playback quantizer. Phrase entry remains chromatic: when enabled, notes are rounded downward immediately before reaching the sound engine, so changing root or scale reharmonizes a song without editing its phrases. Choose a root, one of the compact built-in scales, or edit the twelve notes of **Custom**. Each of the eight track checkboxes decides which tracks are quantized. Quantization is bypassed for non-12-note pitch tables and for Sampler instruments whose **Slice** is not Off; MIDI input is not part of this version.
+The Scale screen controls the global 12-TET scale engine. The **Mode** row selects between two modes:
+
+- **Quantizer** (default): phrase entry remains chromatic; when enabled, notes are rounded downward immediately before reaching the sound engine, so changing root or scale reharmonizes a song without editing its phrases.
+- **Note Lock**: notes typed into phrases are snapped to the nearest note of the scale as they are entered, so only scale notes can be written. Fresh entries and decreases snap down; `EDIT + RIGHT` / `EDIT + UP` raise the note to the next scale note above. Entry always follows the project scale on this screen: changing the root or scale immediately affects newly entered notes on the enabled tracks, while notes already stored stay untouched. `SCL` FX is unavailable in this mode and any `SCL` already written is ignored. Playback quantization of plain notes is bypassed (entry is already locked); chord quantization via `CRD` still applies.
+
+Both modes share the same root, scale, **Custom** note editing and track checkboxes. Each of the eight track checkboxes decides which tracks the mode applies to. The scale engine is bypassed for non-12-note pitch tables and for Sampler instruments whose **Slice** is not Off (their notes select slices chromatically from C-0); MIDI input is not part of this version.
 
 - **Linear pitch** selects the pitch-table mode. **Off** is the default and the hardware-validated setting for correct AY, Braids and Plaits octave tracking.
 - **Tick rate** sets tracker timing and displays the corresponding BPM (`tick rate x 60 / 24`).

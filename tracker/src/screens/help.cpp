@@ -432,7 +432,7 @@ static void initFxHelpText() {
   fxHelpText[fxTXH] = "Aux Table Hop\nJumps to specific\naux table row";
   fxHelpText[fxGRV] = "Track Groove\nSets groove for this track only";
   fxHelpText[fxGGR] = "Global Groove\nSets groove for all tracks";
-  fxHelpText[fxSCL] = "Scale / Root\nSCL XY: X is scale\nY is root C through B";
+  fxHelpText[fxSCL] = "Scale / Root\nSCL XY: X is scale\nY is root C through B\nQuantizer mode only";
   fxHelpText[fxCRD] = "Chord\nCRD XY: X is inversion\nY selects a fixed chord";
   fxHelpText[fxHOP] = "Hop\nHops to phrase/table row X times";
   fxHelpText[fxSNG] = "Song Hop\nHops in song by N rows";

@@ -2,6 +2,44 @@
 
 ## v0.1.0-prealpha.5 (October 3, 2026)
 
+- Added a Mode row to the Scale screen with a second mode, Note Lock:
+  notes typed into phrases are snapped to the nearest note of the picked
+  scale (EDIT + RIGHT/UP step up, other edits snap down), while notes
+  already stored stay intact when the scale changes. SCL FX is a
+  Quantizer-mode command and is ignored while Note Lock is active; chord
+  quantization via CRD still applies in both modes.
+- Added pattern fill and randomize for the phrase selection's note column:
+  OPT + LEFT cycles eight fixed 16-step rhythm patterns (aligned to absolute
+  phrase rows, so partial selections only receive the steps inside them),
+  OPT + RIGHT applies randomized fills of 3-8 notes with 7 and 8 less
+  probable, cycling indefinitely while OPT is held; every press erases the
+  selection's notes first, the step after the last pattern erases only
+  before the pattern cycle restarts, releasing OPT resets it, and placed
+  notes carry the last used instrument.
+- Added mutate for the phrase selection's note column (OPT + UP): every
+  press shifts 1-3 of the placed notes by a random amount within an
+  octave, weighted toward small shifts; Note Lock snaps the results back
+  into the scale (sliced Sampler instruments stay chromatic), nothing is
+  erased, the 8th press restores the original notes and the cycle
+  restarts, and releasing OPT resets it.
+- Added slice spread for the phrase selection's note column (OPT + DOWN):
+  the placed notes of every sliced Sampler instrument become a chromatic
+  run - the instrument's first note keeps its value and each following
+  note rises one semitone above the previous one - with several sliced
+  instruments spreading independently, notes on non-sliced instruments
+  untouched and no scale snapping applied; the last note the spread writes
+  becomes the last note used in note input.
+- Added random arp for the phrase selection's note column (OPT + DOWN
+  when the selection holds no sliced-instrument note): a random chord
+  from the CRD palette - sized so selections of 1-3 notes don't repeat
+  it - with its root on a random note of the project scale inside the
+  selection's register (any chromatic note on tracks the scale doesn't
+  apply to), spread across the placed notes randomized, up, down and
+  up+down on consecutive presses; the 5th press restores the original
+  notes, the next press picks a fresh chord, the chord name shows in the
+  status bar and releasing OPT resets the process. Selections mixing
+  sliced and non-sliced instruments spread the slices on the first press
+  and hand the remaining notes to the arp from the second press on.
 - Expanded the PCM Sample screen into a sample editor: the waveform zooms
   in around the Start/End marker while fine-adjusting and returns to the
   full view on coarse steps.

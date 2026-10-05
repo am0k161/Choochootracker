@@ -136,6 +136,7 @@ enum ScreenPlaybackLevel screenGetPlaybackLevel(const AppScreen* screen);
 void screenFullRedraw(ScreenData* screen);
 void screenDrawOverlays(ScreenData* screen);
 int screenInput(ScreenData* screen, int isKeyDown, int keys, int tapCount);
+void screenClearOptPressed(void);
 int screenTouchTap(int col, int row);
 enum TouchAdjustResult { touchAdjustNone, touchAdjustCoarse, touchAdjustFine };
 TouchAdjustResult screenTouchAdjust(int col, int row);

@@ -28,6 +28,8 @@ static const Instrument* getCurrentInstrument() {
 
 static bool isFXAvailable(enum FX fx, uint8_t instrumentIdx, int isTable) {
   if (isTable && (fx == fxSCL || fx == fxCRD)) return false;
+  // Note Lock pins note entry to the project scale, so SCL is not offered.
+  if (fx == fxSCL && chipnomadState->project.scaleMode != 0) return false;
   InstrumentType instrumentType = getInstrumentType(instrumentIdx);
   const Instrument* instrument = instrumentIdx != EMPTY_VALUE_8 && instrumentIdx < PROJECT_MAX_INSTRUMENTS
     ? &chipnomadState->project.instruments[instrumentIdx] : NULL;
@@ -56,10 +58,12 @@ static void stepFX(uint8_t* fx, int direction, uint8_t instrumentIdx, int isTabl
 
 static int visibleFXCount(const FXGroup* group) {
   const Instrument* instrument = getCurrentInstrument();
-  if ((!instrument || group->instType != InstrumentType::DrumSynth) && !currentIsTable) return group->count;
+  int hideSCL = !currentIsTable && chipnomadState->project.scaleMode != 0;
+  if ((!instrument || group->instType != InstrumentType::DrumSynth) && !currentIsTable && !hideSCL) return group->count;
   int count = 0;
   for (int i = 0; i < group->count; ++i) {
     if (currentIsTable && (group->fxList[i].fx == fxSCL || group->fxList[i].fx == fxCRD)) continue;
+    if (hideSCL && group->fxList[i].fx == fxSCL) continue;
     if (!instrument || group->instType != InstrumentType::DrumSynth || instrumentFXAvailableForInstrument(instrument, group->fxList[i].fx)) ++count;
   }
   return count;
@@ -67,10 +71,12 @@ static int visibleFXCount(const FXGroup* group) {
 
 static const FXName* visibleFXAt(const FXGroup* group, int visibleIndex) {
   const Instrument* instrument = getCurrentInstrument();
-  if ((!instrument || group->instType != InstrumentType::DrumSynth) && !currentIsTable) return
+  int hideSCL = !currentIsTable && chipnomadState->project.scaleMode != 0;
+  if ((!instrument || group->instType != InstrumentType::DrumSynth) && !currentIsTable && !hideSCL) return
     visibleIndex >= 0 && visibleIndex < group->count ? &group->fxList[visibleIndex] : NULL;
   for (int i = 0; i < group->count; ++i) {
     if (currentIsTable && (group->fxList[i].fx == fxSCL || group->fxList[i].fx == fxCRD)) continue;
+    if (hideSCL && group->fxList[i].fx == fxSCL) continue;
     if (instrument && group->instType == InstrumentType::DrumSynth && !instrumentFXAvailableForInstrument(instrument, group->fxList[i].fx)) continue;
     if (visibleIndex-- == 0) return &group->fxList[i];
   }
