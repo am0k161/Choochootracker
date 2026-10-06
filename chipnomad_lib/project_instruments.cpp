@@ -185,6 +185,7 @@ static int initSampleInstrument(Instrument* instrument) {
   instrument->chip.sample.end = 255;
   instrument->chip.sample.speedPercent = 100;
   instrument->chip.sample.speedAlgorithm = 0;
+  instrument->chip.sample.autoSensitivity = 50;
   initVoicePostSettings(&instrument->chip.sample);
   return 0;
 }

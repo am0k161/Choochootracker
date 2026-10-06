@@ -55,6 +55,33 @@ class SampleVoice {
 uint8_t sampleNormalizeSlice(uint8_t slice);
 void sampleSliceFrames(uint32_t frameCount, uint8_t sliceCount, uint8_t sliceIndex,
                        uint32_t* startFrame, uint32_t* endFrame);
+
+// Slice sentinel encoding (plan decision D1). The single `slice` byte holds
+// both the mode and the slice count:
+//   0        off
+//   1..64    EQUAL with that many slices (legacy values 2/4/8/16/32 stay valid)
+//   65..128  AUTO with (value - 64) slices
+//   129..192 LAZY with (value - 128) slices
+//   193..255 reserved (loads as off)
+enum SliceMode : uint8_t {
+  sliceModeOff = 0,
+  sliceModeEqual = 1,
+  sliceModeAuto = 2,
+  sliceModeLazy = 3,
+};
+
+// Builds a sentinel from a mode and count (count clamped to 1..64; off
+// always yields 0 regardless of count).
+uint8_t sampleEncodeSlice(SliceMode mode, uint8_t count);
+SliceMode sampleDecodeSliceMode(uint8_t slice);
+uint8_t sampleDecodeSliceCount(uint8_t slice);
+// Pass-through for valid sentinels, 0 for anything else (garbage, reserved
+// range). Used when loading so unknown bytes never become live slices.
+uint8_t sampleNormalizeSliceEx(uint8_t slice);
+struct InstrumentSample;
+// 1 when the sample's slice setting makes notes select slices (EQUAL and
+// AUTO do; LAZY does not - its slices are chosen by editing, not by pitch).
+int sampleActsAsSliced(const InstrumentSample* sample);
 int sampleLoadWav16(const char* path, InstrumentSample* sample,
                     char* error, size_t errorSize);
 int sampleLoadWav16File(FILE* file, const char* path, InstrumentSample* sample,

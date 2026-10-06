@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "playback_internal.h"
+#include "synth/sample_voice.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 //
@@ -585,10 +586,9 @@ void readPhraseRowDirect(PlaybackState* state, int trackIdx, PhraseRow* phraseRo
 
   InstrumentType type = track->note.instrument == EMPTY_VALUE_8 ? InstrumentType::none
     : p->instruments[track->note.instrument].type;
-  uint8_t sampleSlice = type == InstrumentType::Sample
-    ? p->instruments[track->note.instrument].chip.sample.slice : 0;
-  int slicedSample = sampleSlice == 2 || sampleSlice == 4 || sampleSlice == 8 ||
-    sampleSlice == 16 || sampleSlice == 32;
+  const InstrumentSample* sample = type == InstrumentType::Sample
+    ? &p->instruments[track->note.instrument].chip.sample : NULL;
+  int slicedSample = sampleActsAsSliced(sample);
 
   // Keep phrases chromatic; only the pitch sent to the engine is quantized.
   // Sliced PCM samples map notes to windows, so they stay unquantized.

@@ -59,6 +59,46 @@ uint8_t sampleNormalizeSlice(uint8_t slice) {
   return 0;
 }
 
+uint8_t sampleEncodeSlice(SliceMode mode, uint8_t count) {
+  if (mode == sliceModeOff) return 0;
+  if (count < 1) count = 1;
+  if (count > 64) count = 64;
+  switch (mode) {
+    case sliceModeEqual: return (uint8_t)(0 + count);
+    case sliceModeAuto: return (uint8_t)(64 + count);
+    case sliceModeLazy: return (uint8_t)(128 + count);
+    default: return 0;
+  }
+}
+
+SliceMode sampleDecodeSliceMode(uint8_t slice) {
+  if (slice == 0) return sliceModeOff;
+  if (slice <= 64) return sliceModeEqual;
+  if (slice <= 128) return sliceModeAuto;
+  if (slice <= 192) return sliceModeLazy;
+  return sliceModeOff; // 193..255 reserved
+}
+
+uint8_t sampleDecodeSliceCount(uint8_t slice) {
+  switch (sampleDecodeSliceMode(slice)) {
+    case sliceModeEqual: return slice;
+    case sliceModeAuto: return (uint8_t)(slice - 64);
+    case sliceModeLazy: return (uint8_t)(slice - 128);
+    default: return 0;
+  }
+}
+
+uint8_t sampleNormalizeSliceEx(uint8_t slice) {
+  if (slice <= 192) return slice;
+  return 0;
+}
+
+int sampleActsAsSliced(const InstrumentSample* sample) {
+  if (!sample) return 0;
+  const SliceMode mode = sampleDecodeSliceMode(sample->slice);
+  return mode != sliceModeOff && mode != sliceModeLazy;
+}
+
 void sampleSliceFrames(uint32_t frameCount, uint8_t sliceCount, uint8_t sliceIndex,
                        uint32_t* startFrame, uint32_t* endFrame) {
   if (!startFrame || !endFrame) return;
@@ -94,6 +134,8 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
 
   uint32_t startFrame;
   uint32_t endFrame;
+  // Phase 0: sliceCount arrives already decoded from the sentinel by the
+  // caller; the legacy normalize keeps even-division behavior identical.
   sliceCount = sampleNormalizeSlice(sliceCount);
   if (sliceCount) {
     // When slicing is enabled, divide the LOOP REGION (start to end) into slices

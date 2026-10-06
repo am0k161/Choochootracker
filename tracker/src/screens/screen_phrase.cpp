@@ -252,7 +252,7 @@ static int noteLockSlicedSampleHere(int row) {
   if (instrument == EMPTY_VALUE_8) return 0;
   const Instrument* inst = &chipnomadState->project.instruments[instrument];
   if (inst->type != InstrumentType::Sample) return 0;
-  return sampleNormalizeSlice(inst->chip.sample.slice) != 0;
+  return sampleActsAsSliced(&inst->chip.sample);
 }
 
 // 1 for edit actions that raise a value (EDIT + RIGHT/UP, including their
@@ -451,7 +451,7 @@ static int sliceSpreadIsSliced(int instrument) {
   if (instrument < 0 || instrument >= PROJECT_MAX_INSTRUMENTS) return 0;
   const Instrument* inst = &chipnomadState->project.instruments[instrument];
   if (inst->type != InstrumentType::Sample) return 0;
-  return sampleNormalizeSlice(inst->chip.sample.slice) != 0;
+  return sampleActsAsSliced(&inst->chip.sample);
 }
 
 static void sliceSpreadApply(int startRow, int endRow) {

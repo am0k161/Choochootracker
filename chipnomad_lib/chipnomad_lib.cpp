@@ -1259,7 +1259,7 @@ static void updateSampleVoices(ChipNomadState* state) {
     int loopMode = sample->loopMode;
     uint8_t start = sample->start;
     uint8_t end = sample->end;
-    uint8_t sliceCount = sampleNormalizeSlice(sample->slice);
+    uint8_t sliceCount = sampleDecodeSliceCount(sample->slice);
     uint8_t sliceIndex = 0;
     int cutoff = sample->filterCutoffHz;
     int resonance = sample->filterResonance;
