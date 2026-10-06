@@ -132,6 +132,7 @@ static Bitmap* ensurePreviewBitmap(Bitmap** bitmap) {
     *bitmap = NULL;
   }
   if (!*bitmap) *bitmap = gfxBitmapCreate(previewWidth, previewHeight);
+  return *bitmap;
 }
 
 // Which marker the view window follows: 0 none, 1 Start, 2 End,
