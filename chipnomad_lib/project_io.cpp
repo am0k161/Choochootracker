@@ -824,6 +824,10 @@ static int projectLoadInternal(FILE* file, Project* project) {
   }
   line = peekLine(file);
   if (line && sscanf(line, "- Tilt pivot: %hu", &p.tiltPivotHz) == 1) consumeLine(file);
+  line = peekLine(file);
+  if (line && sscanf(line, "- Sample save choice: %hhu", &p.sampleSaveChoice) == 1) {
+    consumeLine(file);
+  }
 
   for (int i = 0; i < PROJECT_MAX_TRACKS; i++) {
     if (p.trackReverbSend[i] > 100) p.trackReverbSend[i] = 100;
@@ -838,6 +842,7 @@ static int projectLoadInternal(FILE* file, Project* project) {
   if (p.delayFilterCutoffHz < 20) p.delayFilterCutoffHz = 20;
   if (p.tiltPivotHz < 250) p.tiltPivotHz = 250;
   if (p.tiltPivotHz > 4000) p.tiltPivotHz = 4000;
+  if (p.sampleSaveChoice > 2) p.sampleSaveChoice = 0;
 
   // Try to read linear pitch (optional for backwards compatibility)
   line = peekLine(file);
@@ -1481,6 +1486,11 @@ static int projectSaveInternal(FILE* file, Project* project) {
   fprintf(file, "- Delay: %hhu,%hhu,%hhu,%hhu,%hu\n", project->delayReturn, project->delayReverbSend,
     project->delayTicks, project->delayFeedback, project->delayFilterCutoffHz);
   fprintf(file, "- Tilt pivot: %hu\n", project->tiltPivotHz);
+  // Optional field (Phase 4): only written when set, so older versions of
+  // the format stay byte-identical for projects without the preference.
+  if (project->sampleSaveChoice) {
+    fprintf(file, "- Sample save choice: %hhu\n", project->sampleSaveChoice);
+  }
   fprintf(file, "- Linear pitch: %d\n", project->linearPitch);
   fprintf(file, "- Signed track speed: %d\n", project->signedTrackSpeed);
   fprintf(file, "- Perceptual effects: %d\n", project->perceptualEffects);

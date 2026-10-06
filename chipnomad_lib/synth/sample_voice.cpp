@@ -532,8 +532,10 @@ static uint32_t readU32(FILE* file, bool* ok) {
     ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
 }
 
-int sampleLoadWav16File(FILE* file, const char* path, InstrumentSample* sample,
-                        char* error, size_t errorSize) {
+int sampleLoadWav16FileCues(FILE* file, const char* path, InstrumentSample* sample,
+                            uint32_t* outCueFrames, uint8_t* outCueCount,
+                            char* error, size_t errorSize) {
+  if (outCueCount) *outCueCount = 0;
   if (!file) { snprintf(error, errorSize, "Cannot open WAV"); return 1; }
   char id[4];
   bool ok = fread(id, 1, 4, file) == 4 && !memcmp(id, "RIFF", 4);
@@ -542,6 +544,11 @@ int sampleLoadWav16File(FILE* file, const char* path, InstrumentSample* sample,
   uint16_t format = 0, channels = 0, bits = 0;
   uint32_t sampleRate = 0, dataSize = 0;
   long dataOffset = 0;
+  // Cue points from the `cue ` chunk (Phase 4): sample offsets of the slice
+  // starts written by sampleSaveWav16WithCues. Only the first 64 are kept
+  // (the slice cap); the rest are skipped.
+  uint32_t cueFrames[PROJECT_SAMPLE_MAX_SLICES];
+  uint8_t cueCount = 0;
 
   while (ok && fread(id, 1, 4, file) == 4) {
     uint32_t size = readU32(file, &ok);
@@ -557,6 +564,22 @@ int sampleLoadWav16File(FILE* file, const char* path, InstrumentSample* sample,
     } else if (!memcmp(id, "data", 4)) {
       dataOffset = ftell(file);
       dataSize = size;
+    } else if (!memcmp(id, "cue ", 4) && size >= 4) {
+      const uint32_t numCues = readU32(file, &ok);
+      // Each cue point record is 24 bytes: dwIdentifier, dwPosition,
+      // fccChunk (4 bytes), dwChunkStart, dwBlockStart, dwSampleOffset.
+      // Only dwSampleOffset (the last field) matters here.
+      for (uint32_t i = 0; ok && i < numCues && i < 1024; ++i) {
+        (void)readU32(file, &ok);  // cue id
+        (void)readU32(file, &ok);  // position
+        if (fread(id, 1, 4, file) != 4) ok = false;
+        (void)readU32(file, &ok);  // chunk start
+        (void)readU32(file, &ok);  // block start
+        const uint32_t offset = readU32(file, &ok);
+        if (ok && cueCount < PROJECT_SAMPLE_MAX_SLICES) {
+          cueFrames[cueCount++] = offset;
+        }
+      }
     }
     if (fseek(file, nextChunk, SEEK_SET) != 0) ok = false;
   }
@@ -610,17 +633,33 @@ int sampleLoadWav16File(FILE* file, const char* path, InstrumentSample* sample,
   sample->sampleRate = sampleRate;
   sample->channels = (uint8_t)channels;
   sampleStorePath(path, sample);
+  if (outCueFrames && outCueCount) {
+    memcpy(outCueFrames, cueFrames, cueCount * sizeof(uint32_t));
+    *outCueCount = cueCount;
+  }
   error[0] = 0;
   return 0;
 }
 
-int sampleLoadWav16(const char* path, InstrumentSample* sample,
-                    char* error, size_t errorSize) {
+int sampleLoadWav16File(FILE* file, const char* path, InstrumentSample* sample,
+                        char* error, size_t errorSize) {
+  return sampleLoadWav16FileCues(file, path, sample, NULL, NULL, error, errorSize);
+}
+
+int sampleLoadWav16Cues(const char* path, InstrumentSample* sample,
+                        uint32_t* outCueFrames, uint8_t* outCueCount,
+                        char* error, size_t errorSize) {
   FILE* file = fopen(path, "rb");
   if (!file) { snprintf(error, errorSize, "Cannot open WAV"); return 1; }
-  int result = sampleLoadWav16File(file, path, sample, error, errorSize);
+  int result = sampleLoadWav16FileCues(file, path, sample, outCueFrames, outCueCount,
+                                       error, errorSize);
   fclose(file);
   return result;
+}
+
+int sampleLoadWav16(const char* path, InstrumentSample* sample,
+                    char* error, size_t errorSize) {
+  return sampleLoadWav16Cues(path, sample, NULL, NULL, error, errorSize);
 }
 
 static void writeU16(FILE* file, uint16_t value, bool* ok) {
@@ -634,8 +673,9 @@ static void writeU32(FILE* file, uint32_t value, bool* ok) {
   if (fwrite(bytes, 1, 4, file) != 4) *ok = false;
 }
 
-int sampleSaveWav16(const InstrumentSample* sample, const char* path,
-                    char* error, size_t errorSize) {
+int sampleSaveWav16WithCues(const InstrumentSample* sample, const char* path,
+                            const uint32_t* cueFrames, uint8_t cueCount,
+                            char* error, size_t errorSize) {
   if (!sample->data || sample->frameCount == 0) {
     snprintf(error, errorSize, "No sample to save");
     return 1;
@@ -653,9 +693,14 @@ int sampleSaveWav16(const InstrumentSample* sample, const char* path,
   const uint16_t channels = sample->channels >= 2 ? 2 : 1;
   const uint16_t bits = 16;
   const uint32_t dataBytes = (uint32_t)sample->frameCount * channels * 2;
+  // `cue ` chunk: 4-byte count + 24 bytes per cue point (standard cue
+  // record: id, position, "data" chunk id, chunk start, block start,
+  // sample offset). Written between fmt and data.
+  const uint8_t cues = cueFrames && cueCount ? cueCount : 0;
+  const uint32_t cueChunkSize = cues ? 4 + 24u * cues : 0;
   bool ok = true;
   fwrite("RIFF", 1, 4, file);
-  writeU32(file, 36 + dataBytes, &ok);
+  writeU32(file, 36 + dataBytes + cueChunkSize, &ok);
   fwrite("WAVE", 1, 4, file);
   fwrite("fmt ", 1, 4, file);
   writeU32(file, 16, &ok);            // fmt chunk size
@@ -665,6 +710,19 @@ int sampleSaveWav16(const InstrumentSample* sample, const char* path,
   writeU32(file, sample->sampleRate * channels * 2, &ok); // byte rate
   writeU16(file, channels * 2, &ok);  // block align
   writeU16(file, bits, &ok);
+  if (cues) {
+    fwrite("cue ", 1, 4, file);
+    writeU32(file, cueChunkSize, &ok);
+    writeU32(file, cues, &ok);
+    for (uint8_t i = 0; ok && i < cues; ++i) {
+      writeU32(file, i, &ok);         // dwIdentifier (cue id)
+      writeU32(file, 0, &ok);         // dwPosition
+      fwrite("data", 1, 4, file);     // fccChunk: cue points into the data chunk
+      writeU32(file, 0, &ok);         // dwChunkStart
+      writeU32(file, 0, &ok);         // dwBlockStart
+      writeU32(file, cueFrames[i], &ok);  // dwSampleOffset
+    }
+  }
   fwrite("data", 1, 4, file);
   writeU32(file, dataBytes, &ok);
   if (ok && fwrite(sample->data, sizeof(int16_t), (size_t)sample->frameCount * channels, file) !=
@@ -680,4 +738,9 @@ int sampleSaveWav16(const InstrumentSample* sample, const char* path,
   }
   error[0] = 0;
   return 0;
+}
+
+int sampleSaveWav16(const InstrumentSample* sample, const char* path,
+                    char* error, size_t errorSize) {
+  return sampleSaveWav16WithCues(sample, path, NULL, 0, error, errorSize);
 }

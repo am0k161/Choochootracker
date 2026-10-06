@@ -374,6 +374,10 @@ struct Project {
   uint8_t delayTicks;
   uint8_t delayFeedback;
   uint16_t delayFilterCutoffHz;
+  // Sample save destination preference (Phase 4): 0 = ask every time,
+  // 1 = write slice points into the WAV (cue chunks), 2 = keep them in the
+  // project only. Set by the save dialog's "don't ask again" checkbox.
+  uint8_t sampleSaveChoice;
 
   PitchTable pitchTable;
 

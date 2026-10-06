@@ -758,7 +758,9 @@ static void settingsSliceModeConfirmed(void) {
 }
 
 // Save: overwrite the WAV the sample was loaded from, after confirmation.
-static void settingsDoSave(void) {
+// SAVE TO PROJECT: plain WAV write, slice data stays in the .cct (the
+// existing behavior).
+static void settingsDoSaveToProject(void) {
   InstrumentSample* sample = currentSample();
   char error[128];
   audioManager.pause();
@@ -773,12 +775,67 @@ static void settingsDoSave(void) {
   settingsReturnFromDialog(0);
 }
 
+// SAVE TO SAMPLE: same WAV write, plus one cue point per slice start so
+// the chops travel inside the file (visible as markers in DAWs). The cue
+// frames come from sliceBounds when populated; legacy samples with an
+// empty bounds array fall back to the even division of the loop region.
+static void settingsDoSaveToSample(void) {
+  InstrumentSample* sample = currentSample();
+  uint32_t cueFrames[PROJECT_SAMPLE_MAX_SLICES];
+  uint8_t cueCount = 0;
+  const uint8_t count = sampleDecodeSliceCount(sample->slice);
+  if (count > 0) {
+    const uint32_t startFrame = sampleMarkerToStartFrame(sample->frameCount, sample->start);
+    const uint32_t endFrame = sampleMarkerToEndFrame(sample->frameCount, sample->end);
+    const int boundsPopulated = sample->sliceBounds[0] != 0 ||
+      (count > 1 && sample->sliceBounds[1] != 0);
+    for (uint8_t i = 0; i < count; ++i) {
+      if (boundsPopulated) {
+        cueFrames[cueCount++] = sample->sliceBounds[i];
+      } else {
+        uint32_t loopLength = endFrame > startFrame ? (endFrame - startFrame) : sample->frameCount;
+        if (loopLength == 0) loopLength = sample->frameCount;
+        cueFrames[cueCount++] = startFrame + (uint32_t)((uint64_t)loopLength * i / count);
+      }
+    }
+  }
+  char error[128];
+  audioManager.pause();
+  int result = sampleSaveWav16WithCues(sample, sample->path, cueFrames, cueCount,
+                                       error, sizeof(error));
+  audioManager.resume();
+  if (result != 0) {
+    screenMessage(MESSAGE_TIME_ERROR, "%s", error);
+    settingsReturnFromDialog(1);
+    return;
+  }
+  screenMessage(MESSAGE_TIME, "Saved %s", shortSampleFilename(sample->path, 24));
+  settingsReturnFromDialog(0);
+}
+
 static void settingsRunSave(void) {
   InstrumentSample* sample = currentSample();
   if (!sample->path[0]) return;
+  // Sliced samples ask where the chops should live (Phase 4): inside the
+  // WAV as cue chunks, or in the project only. The per-project preference
+  // ("don't ask again") skips the dialog; samples without slices keep the
+  // plain overwrite confirmation.
+  const uint8_t choice = chipnomadState->project.sampleSaveChoice;
+  if (sampleDecodeSliceMode(sample->slice) != sliceModeOff) {
+    if (choice == 0) {
+      saveChoiceSetup(sample->path, settingsDoSaveToSample, settingsDoSaveToProject,
+                      settingsCancelDialog);
+      screenSetup(&screenSaveChoice, 0);
+    } else if (choice == 1) {
+      settingsDoSaveToSample();
+    } else {
+      settingsDoSaveToProject();
+    }
+    return;
+  }
   char message[128];
   snprintf(message, sizeof(message), "Overwrite %s?", shortSampleFilename(sample->path, 48));
-  confirmSetup(message, settingsDoSave, settingsCancelDialog);
+  confirmSetup(message, settingsDoSaveToProject, settingsCancelDialog);
   screenSetup(&screenConfirm, 0);
 }
 

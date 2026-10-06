@@ -89,6 +89,7 @@ extern const AppScreen screenProject;
 extern const AppScreen screenProjectLoad;
 extern const AppScreen screenProjectSave;
 extern const AppScreen screenConfirm;
+extern const AppScreen screenSaveChoice;
 extern const AppScreen screenPitchTable;
 extern const AppScreen screenScale;
 extern const AppScreen screenFileBrowser;
@@ -152,6 +153,10 @@ LoopRange screenGetLoopRange(const AppScreen* screen);
 
 // Confirmation dialog
 void confirmSetup(const char* message, void (*confirmCallback)(void), void (*cancelCallback)(void));
+
+// Save-destination dialog (sample WAV cues vs project bounds)
+void saveChoiceSetup(const char* sampleName, void (*onSample)(void),
+                     void (*onProject)(void), void (*onCancel)(void));
 
 // Common edit functions
 int edit16withLimit(CellEditAction action, uint16_t* value, uint16_t* lastValue, uint16_t bigStep, uint16_t max);

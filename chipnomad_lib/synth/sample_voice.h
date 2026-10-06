@@ -164,6 +164,17 @@ int sampleLoadWav16(const char* path, InstrumentSample* sample,
                     char* error, size_t errorSize);
 int sampleLoadWav16File(FILE* file, const char* path, InstrumentSample* sample,
                         char* error, size_t errorSize);
+// Cue-aware loader: behaves exactly like sampleLoadWav16File and, when
+// outCueFrames/outCueCount are non-NULL, reports the WAV's `cue ` chunk
+// sample offsets (up to 64; extra cues are ignored). outCueCount is always
+// written (0 when the file has no cue chunk). The sample itself is not
+// modified - applying cues to sliceBounds is the caller's decision.
+int sampleLoadWav16FileCues(FILE* file, const char* path, InstrumentSample* sample,
+                            uint32_t* outCueFrames, uint8_t* outCueCount,
+                            char* error, size_t errorSize);
+int sampleLoadWav16Cues(const char* path, InstrumentSample* sample,
+                        uint32_t* outCueFrames, uint8_t* outCueCount,
+                        char* error, size_t errorSize);
 
 // Writes the sample as an uncompressed 16-bit PCM WAV (44-byte RIFF header,
 // little-endian fields written byte-wise so the code is endian-agnostic).
@@ -171,5 +182,13 @@ int sampleLoadWav16File(FILE* file, const char* path, InstrumentSample* sample,
 // not modified; markers and path are the caller's business.
 int sampleSaveWav16(const InstrumentSample* sample, const char* path,
                     char* error, size_t errorSize);
+
+// Cue-chunk variant: when cueCount > 0, a standard `cue ` chunk is written
+// between fmt and data with one cue point per slice start frame (visible as
+// markers in DAWs like Audacity). cueCount 0 / cueFrames NULL produces
+// byte-identical output to sampleSaveWav16.
+int sampleSaveWav16WithCues(const InstrumentSample* sample, const char* path,
+                            const uint32_t* cueFrames, uint8_t cueCount,
+                            char* error, size_t errorSize);
 
 #endif
