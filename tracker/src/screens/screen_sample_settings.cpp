@@ -37,10 +37,21 @@ static constexpr int previewRow = 3;
 static constexpr int previewWidth = 32;
 static constexpr int previewHeight = 8;
 static constexpr int fieldRow0 = 12;
-static const char* sliceLabels[] = {"Off", "2", "4", "8", "16", "32"};
 static const char* speedAlgorithmLabels[] = {"Dirty", "Clean"};
-static const uint8_t sliceValues[] = {0, 2, 4, 8, 16, 32};
-static constexpr int sliceCount = 6;
+
+// Slice row (Phase 1): one row hosting three value cells - Mode / Number /
+// Frame. The label sits at x=0; values start at x=6. No per-cell labels,
+// per the "only value boxes" rule.
+static constexpr int sliceModeX = 6;
+static constexpr int sliceModeW = 5;   // OFF / EQUAL / AUTO / LAZY
+static constexpr int sliceNumX = 12;
+static constexpr int sliceNumW = 2;    // current slice index, 1-indexed
+static constexpr int sliceFrameX = 15;
+static constexpr int sliceFrameW = 6;  // start frame of the current slice
+static const char* sliceModeLabels[] = {"OFF", "EQUAL", "AUTO", "LAZY"};
+// Session-only "current slice" being edited (0-based index into
+// sliceBounds). Never saved with the project.
+static int currentSlice;
 
 // Process toolbox: one selected operation plus GO/UNDO buttons. The op is
 // cycled with Edit+Left/Right; Edit+Opt clears it to "none".
@@ -69,17 +80,21 @@ static int pendingDirtyRestore;
 // the folder browser.
 static char saveAsName[64];
 
+// Mode the user asked for while the LAZY-override confirmation dialog is
+// up (0 = none pending). Applied by the confirm callback.
+static int pendingSliceMode;
+
 static Bitmap* samplePreviewBitmap;
 static Bitmap* sampleSliceMarkerBitmap;
 static Bitmap* sampleStartMarkerBitmap;
 static Bitmap* sampleEndMarkerBitmap;
 static Bitmap* sampleSelectionBitmap;
 
-static int sliceToIndex(uint8_t slice) {
-  for (int i = 1; i < sliceCount; ++i) {
-    if (sliceValues[i] == slice) return i;
-  }
-  return 0;
+// Total slice count for the current sentinel (0 when off). Legacy samples
+// (sentinel set, bounds empty) still report the sentinel count - the
+// preview falls back to the even division for them.
+static uint8_t sliceTotalCount(const InstrumentSample* sample) {
+  return sampleDecodeSliceCount(sample->slice);
 }
 
 static const char* sampleFilename(const char* path) {
@@ -118,7 +133,7 @@ static Bitmap* ensurePreviewBitmap(Bitmap** bitmap) {
 }
 
 static uint8_t sampleSliceDivisions(const InstrumentSample* sample) {
-  return sampleNormalizeSlice(sample->slice);
+  return sampleDecodeSliceCount(sample->slice);
 }
 
 // Which marker the view window follows: 0 none, 1 Start, 2 End,
@@ -324,18 +339,27 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
   // Create slice markers
   gfxBitmapClear(markers);
   if (slices) {
-    // When in slice mode, slice markers divide the loop region (start to end)
-    // This ensures slices follow the start/end markers
-    uint32_t loopLength = endFrame > startFrame ? (endFrame - startFrame) : frameCount;
-    if (loopLength == 0) loopLength = frameCount;
-
-    // Draw slice markers within the loop region; markers outside the view
-    // window are skipped cleanly
-    for (int i = 1; i < slices; ++i) {
-      uint32_t position = startFrame + (uint32_t)((uint64_t)loopLength * i / slices);
+    // Phase 1: markers come from sliceBounds when populated (manual edits,
+    // AUTO detection); legacy samples with empty bounds keep the even
+    // division of the loop region. The current slice's start marker is
+    // drawn brighter (255) than the others (128) so the user can see which
+    // slice the Number/Frame cells refer to.
+    const int boundsPopulated = sample->sliceBounds[0] != 0 ||
+      (slices > 1 && sample->sliceBounds[1] != 0);
+    for (int i = 0; i < slices; ++i) {
+      uint32_t position;
+      if (boundsPopulated) {
+        position = sample->sliceBounds[i];
+      } else {
+        // Even division of the loop region (start to end markers)
+        uint32_t loopLength = endFrame > startFrame ? (endFrame - startFrame) : frameCount;
+        if (loopLength == 0) loopLength = frameCount;
+        position = startFrame + (uint32_t)((uint64_t)loopLength * i / slices);
+      }
       int x = frameToPixel(position, view, width, 0);
       if (x < 0) continue;
-      for (int y = 0; y < height; ++y) markers->data[y * width + x] = 255;
+      const uint8_t brightness = i == currentSlice ? 255 : 128;
+      for (int y = 0; y < height; ++y) markers->data[y * width + x] = brightness;
     }
   }
   // Selection band + handles: dim fill over columns overlapping
@@ -393,9 +417,10 @@ static void drawSamplePreview(void) {
 }
 
 static int settingsColumnCount(int row) {
-  // Region/Select rows: START + END; Process row: op + GO + UNDO; File row:
-  // action + GO
+  // Region/Select rows: START + END; Slice row: Mode + Number + Frame;
+  // Process row: op + GO + UNDO; File row: action + GO
   if (row == 0 || row == 1) return 2;
+  if (row == 2) return 3;
   if (row == 4) return 3;
   if (row == 5) return 2;
   return 1;
@@ -446,13 +471,16 @@ static void settingsDrawStatic(void) {
 static void settingsDrawCursor(int col, int row) {
   if (row == 0 || row == 1) {
     gfxCursor(col == 0 ? selValX : selEndValX, fieldRow0 + row, selValWidth);
+  } else if (row == 2) {
+    // Slice row: Mode / Number / Frame cells
+    const int x = col == 0 ? sliceModeX : col == 1 ? sliceNumX : sliceFrameX;
+    const int w = col == 0 ? sliceModeW : col == 1 ? sliceNumW : sliceFrameW;
+    gfxCursor(x, fieldRow0 + row, w);
   } else if (row == 4) {
     gfxCursor(col == 0 ? valueX : col == 1 ? goX : undoX, fieldRow0 + row,
               col == 0 ? opWidth : col == 1 ? goWidth : undoWidth);
   } else if (row == 5) {
     gfxCursor(col == 0 ? valueX : fileGoX, fieldRow0 + row, col == 0 ? opWidth : fileGoWidth);
-  } else if (row == 3) {
-    gfxCursor(valueX, fieldRow0 + row, sliceWidth);
   } else {
     gfxCursor(valueX, fieldRow0 + row, sliceWidth);
   }
@@ -527,11 +555,39 @@ static void settingsDrawField(int col, int row, CellState state) {
     }
     return;
   }
-  // Row 2: Slice
-  gfxClearRect(valueX, fieldRow0 + row, sliceWidth, 1);
-  // Slice is inert while Stretch drives the duration: dim it.
-  if (sample->stretchMode != 0) gfxSetFgColor(appSettings.colorScheme.textEmpty);
-  gfxPrint(valueX, fieldRow0 + row, sliceLabels[sliceToIndex(sample->slice)]);
+  // Row 2: Slice - Mode / Number / Frame cells. All three are inert while
+  // Stretch drives the duration: dim them.
+  {
+    const SliceMode mode = sampleDecodeSliceMode(sample->slice);
+    const uint8_t count = sampleDecodeSliceCount(sample->slice);
+    const int dimmed = sample->stretchMode != 0;
+    if (col == 0) {
+      gfxClearRect(sliceModeX, fieldRow0 + row, sliceModeW, 1);
+      if (dimmed) gfxSetFgColor(appSettings.colorScheme.textEmpty);
+      gfxPrint(sliceModeX, fieldRow0 + row, sliceModeLabels[mode <= sliceModeLazy ? mode : 0]);
+    } else if (col == 1) {
+      gfxClearRect(sliceNumX, fieldRow0 + row, sliceNumW, 1);
+      if (dimmed || mode == sliceModeOff) gfxSetFgColor(appSettings.colorScheme.textEmpty);
+      char text[8];
+      // 1-indexed current slice, clamped into the live count
+      int shown = currentSlice < count ? currentSlice : (count > 0 ? count - 1 : 0);
+      snprintf(text, sizeof(text), "%02d", shown + 1);
+      gfxPrint(sliceNumX, fieldRow0 + row, text);
+    } else {
+      gfxClearRect(sliceFrameX, fieldRow0 + row, sliceFrameW, 1);
+      if (dimmed || mode == sliceModeOff) gfxSetFgColor(appSettings.colorScheme.textEmpty);
+      char text[16];
+      const int32_t frame = sampleSliceStartFrame(sample, (uint8_t)currentSlice,
+                                                  sample->start, sample->end);
+      if (frame < 0) {
+        gfxPrint(sliceFrameX, fieldRow0 + row, "------");
+      } else {
+        snprintf(text, sizeof(text), "%06X", (unsigned)frame);
+        gfxPrint(sliceFrameX, fieldRow0 + row, text);
+      }
+    }
+    return;
+  }
 }
 
 // Clamp the selection to the sample, swap inverted handles and update the
@@ -575,8 +631,10 @@ static void settingsRepaintAfterOp(void) {
   drawFilenameRow();
   drawSamplePreview();
   for (int row = 0; row < 3; ++row) {
-    settingsDrawField(0, row, CellState::normal);
-    if (row < 2) settingsDrawField(1, row, CellState::normal);
+    const int cols = row == 2 ? 3 : 2;
+    for (int col = 0; col < cols; ++col) {
+      settingsDrawField(col, row, CellState::normal);
+    }
   }
   settingsDrawField(0, 3, CellState::normal);
   settingsDrawField(0, 4, CellState::normal);
@@ -673,6 +731,21 @@ static void settingsCancelDialog(void) {
   settingsReturnFromDialog(1);
 }
 
+// Confirm callback for the LAZY-override dialog: apply the pending mode
+// switch (clears the chops). Re-entering the screen resets the session
+// state, so the work happens here before the round trip.
+static void settingsSliceModeConfirmed(void) {
+  InstrumentSample* sample = currentSample();
+  if (pendingSliceMode == sliceModeLazy) {
+    sampleSliceInitLazy(sample);
+    if (sample->stretchMode != 0) sample->stretchMode = 0;
+    currentSlice = 0;
+    projectModified = 1;
+  }
+  pendingSliceMode = 0;
+  settingsReturnFromDialog(1);
+}
+
 // Save: overwrite the WAV the sample was loaded from, after confirmation.
 static void settingsDoSave(void) {
   InstrumentSample* sample = currentSample();
@@ -743,6 +816,212 @@ static void settingsRunSaveAs(void) {
   sampleBasenameSansExt(sample->path, initialName, sizeof(initialName));
   enterNameSetup("SAVE SAMPLE", "File name:", initialName, settingsSaveAsNameEntered, settingsCancelDialog);
   screenSetup(&screenEnterName, 0);
+}
+
+// --- Slice row (Phase 1): Mode / Number / Frame --------------------------
+
+// Repaints everything a slice edit can invalidate: the three Slice cells,
+// the preview and (after mode switches) the Stretch row on the instrument
+// screen is handled there - here only the editor's own fields matter.
+static void settingsRepaintSlice(InstrumentSample* sample, int focusCol) {
+  updateSamplePreview(sample, &editorView, &editorSelection);
+  drawSamplePreview();
+  for (int col = 0; col < 3; ++col) {
+    settingsDrawField(col, 2, col == focusCol ? CellState::focus : CellState::normal);
+  }
+}
+
+// Clamp the session-only current slice into the live count.
+static void settingsClampCurrentSlice(const InstrumentSample* sample) {
+  const uint8_t count = sampleDecodeSliceCount(sample->slice);
+  if (count == 0) {
+    currentSlice = 0;
+  } else if (currentSlice >= count) {
+    currentSlice = count - 1;
+  }
+}
+
+// EDIT+OPT (CellEditAction::clear) deletes the current slice - universal
+// across all cells of the Slice row.
+static int settingsSliceDeleteCurrent(InstrumentSample* sample) {
+  const uint8_t count = sampleDecodeSliceCount(sample->slice);
+  if (count == 0) return 0;
+  const int next = sampleSliceDelete(sample, (uint8_t)currentSlice);
+  if (next < 0) {
+    // Deleting the last slice turned the mode off (or nothing changed).
+    if (sampleDecodeSliceMode(sample->slice) != sliceModeOff) return 0;
+    currentSlice = 0;
+  } else {
+    currentSlice = next;
+  }
+  settingsClampCurrentSlice(sample);
+  projectModified = 1;
+  settingsRepaintSlice(sample, -1);
+  return 1;
+}
+
+// EDIT (tap) splits the current slice at its midpoint - universal across
+// the Number and Frame cells.
+static int settingsSliceSplitCurrent(InstrumentSample* sample) {
+  const uint8_t count = sampleDecodeSliceCount(sample->slice);
+  if (count == 0) return 0;
+  const int newSlice = sampleSliceSplit(sample, (uint8_t)currentSlice);
+  if (newSlice < 0) return 0;
+  currentSlice = newSlice;
+  projectModified = 1;
+  settingsRepaintSlice(sample, -1);
+  return 1;
+}
+
+// Mode cell (col 0): cycle Off / EQUAL / AUTO / LAZY. Switching to a mode
+// initializes the bounds (EQUAL/AUTO: even division for now - real AUTO
+// detection is Phase 2; LAZY: single whole-loop slice). Switching to LAZY
+// with existing chops asks for confirmation first.
+static int settingsSliceModeEdit(InstrumentSample* sample, CellEditAction action) {
+  SliceMode mode = sampleDecodeSliceMode(sample->slice);
+  uint8_t nextMode = (uint8_t)mode;
+  if (action == CellEditAction::clear) {
+    if (mode == sliceModeOff) return 0;
+    nextMode = sliceModeOff;
+  } else if (action == CellEditAction::increase || action == CellEditAction::increaseBig ||
+             action == CellEditAction::tap || action == CellEditAction::doubleTap) {
+    nextMode = mode == sliceModeLazy ? sliceModeOff : (SliceMode)(mode + 1);
+  } else if (action == CellEditAction::decrease || action == CellEditAction::decreaseBig) {
+    nextMode = mode == sliceModeOff ? sliceModeLazy : (SliceMode)(mode - 1);
+  } else {
+    return 0;
+  }
+  if (nextMode == (uint8_t)mode) return 0;
+
+  if (nextMode == sliceModeLazy) {
+    // Switching to LAZY overrides existing chops; ask before wiping them.
+    const uint8_t count = sampleDecodeSliceCount(sample->slice);
+    if (count > 1) {
+      pendingSliceMode = sliceModeLazy;
+      confirmSetup("Switching to LAZY will clear existing chops. Continue?",
+                   settingsSliceModeConfirmed, settingsCancelDialog);
+      screenSetup(&screenConfirm, 0);
+      return 1;
+    }
+    sampleSliceInitLazy(sample);
+  } else if (nextMode == sliceModeOff) {
+    // Off keeps the bounds in memory so toggling back restores them.
+    sample->slice = 0;
+  } else {
+    // EQUAL (and AUTO placeholder until Phase 2): even division. The count
+    // defaults to the previous count or 4.
+    uint8_t count = sampleDecodeSliceCount(sample->slice);
+    if (count == 0) count = 4;
+    sampleSliceInitEven(sample, (SliceMode)nextMode, count);
+  }
+  // Stretch and Slice are mutually exclusive: enabling one disables the other.
+  if (nextMode != sliceModeOff) sample->stretchMode = 0;
+  settingsClampCurrentSlice(sample);
+  projectModified = 1;
+  settingsRepaintSlice(sample, 0);
+  return 1;
+}
+
+// Number cell (col 1): EQUAL/AUTO - EDIT+Left/Right re-inits the count
+// (wipes manual edits); LAZY - Left/Right navigates (count grows via EDIT
+// only); all modes - EDIT+Up/Down navigates the current slice; EDIT (tap)
+// splits the current slice at its midpoint.
+static int settingsSliceNumberEdit(InstrumentSample* sample, CellEditAction action) {
+  const SliceMode mode = sampleDecodeSliceMode(sample->slice);
+  const uint8_t count = sampleDecodeSliceCount(sample->slice);
+  if (mode == sliceModeOff) return 0;
+  if (action == CellEditAction::tap || action == CellEditAction::doubleTap) {
+    return settingsSliceSplitCurrent(sample);
+  }
+  if (action == CellEditAction::clear) {
+    return settingsSliceDeleteCurrent(sample);
+  }
+  const int navigate =
+    action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig ||
+    (mode == sliceModeLazy &&
+     (action == CellEditAction::increase || action == CellEditAction::decrease));
+  if (navigate) {
+    // Navigate the current slice
+    const int up = action == CellEditAction::increase || action == CellEditAction::increaseBig;
+    int next = currentSlice + (up ? 1 : -1);
+    if (next < 0) next = 0;
+    if (next >= count) next = count - 1;
+    if (next == currentSlice) return 0;
+    currentSlice = next;
+    // Recenter the zoomed view on the new slice's start (the full view
+    // shows every marker anyway).
+    if (editorView.viewEnd - editorView.viewStart < sample->frameCount) {
+      const int32_t frame = sampleSliceStartFrame(sample, (uint8_t)currentSlice,
+                                                  sample->start, sample->end);
+      if (frame >= 0) zoomToMarker(sample, &editorView, (uint32_t)frame);
+    }
+    settingsRepaintSlice(sample, 1);
+    return 1;
+  }
+  if (action == CellEditAction::increase || action == CellEditAction::decrease) {
+    // Re-init with a new count (EQUAL; AUTO re-detects in Phase 2)
+    const int up = action == CellEditAction::increase;
+    int next = count + (up ? 1 : -1);
+    if (next < 1) next = 1;
+    if (next > PROJECT_SAMPLE_MAX_SLICES) next = PROJECT_SAMPLE_MAX_SLICES;
+    if (next == count) return 0;
+    sampleSliceInitEven(sample, mode, (uint8_t)next);
+    settingsClampCurrentSlice(sample);
+    projectModified = 1;
+    settingsRepaintSlice(sample, 1);
+    return 1;
+  }
+  return 0;
+}
+
+// Frame cell (col 2): EDIT+Left/Right nudges the current slice's start by
+// +-1 frame, EDIT+Up/Down by +-16; EDIT (tap) splits at the midpoint.
+static int settingsSliceFrameEdit(InstrumentSample* sample, CellEditAction action) {
+  const SliceMode mode = sampleDecodeSliceMode(sample->slice);
+  if (mode == sliceModeOff) return 0;
+  if (action == CellEditAction::tap || action == CellEditAction::doubleTap) {
+    return settingsSliceSplitCurrent(sample);
+  }
+  if (action == CellEditAction::clear) {
+    return settingsSliceDeleteCurrent(sample);
+  }
+  if (action == CellEditAction::increase || action == CellEditAction::decrease ||
+      action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig) {
+    const int fine = action == CellEditAction::increase || action == CellEditAction::decrease;
+    const int up = action == CellEditAction::increase || action == CellEditAction::increaseBig;
+    const int32_t delta = (up ? 1 : -1) * (fine ? 1 : 16);
+    const int32_t frame = sampleSliceNudge(sample, (uint8_t)currentSlice, delta);
+    if (frame < 0) return 0;
+    // Fine steps zoom onto the nudged marker so the waveform shows exactly
+    // what is being adjusted; coarse steps return to the full view (the
+    // zoom holds while EDIT stays down, like the Region/Select rows).
+    if (fine) {
+      editorView.anchor = kViewAnchorNone;
+      zoomToMarker(sample, &editorView, (uint32_t)frame);
+      zoomHoldActive = 1;
+    } else {
+      zoomOutFull(sample, &editorView);
+      zoomHoldActive = 0;
+    }
+    projectModified = 1;
+    settingsRepaintSlice(sample, 2);
+    return 1;
+  }
+  return 0;
+}
+
+// Dispatch for the three Slice row cells. EDIT+OPT (clear) deletes the
+// current slice from any cell (universal editing model, plan §2.4).
+static int settingsOnEditSlice(int col, CellEditAction action, InstrumentSample* sample) {
+  // Slice is inert while Stretch drives the duration.
+  if (sample->stretchMode != 0) return 0;
+  if (action == CellEditAction::clear && col != 0) {
+    // EDIT+OPT deletes the current slice from any cell
+    return settingsSliceDeleteCurrent(sample);
+  }
+  if (col == 0) return settingsSliceModeEdit(sample, action);
+  if (col == 1) return settingsSliceNumberEdit(sample, action);
+  return settingsSliceFrameEdit(sample, action);
 }
 
 static int settingsOnEdit(int col, int row, CellEditAction action) {
@@ -889,19 +1168,7 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
     }
     return handled;
   } else if (row == 2) {
-    // Slice is inert while Stretch drives the duration.
-    if (sample->stretchMode != 0) return 0;
-    uint8_t index = (uint8_t)sliceToIndex(sample->slice);
-    handled = edit8noLast(action, &index, 1, 0, sliceCount - 1);
-    if (handled) {
-      sample->slice = sliceValues[index];
-      // Stretch and Slice are mutually exclusive: enabling one disables the other.
-      if (sample->slice) sample->stretchMode = 0;
-      projectModified = 1;
-      updateSamplePreview(sample, &editorView, &editorSelection);
-      drawSamplePreview();
-    }
-    return handled;
+    return settingsOnEditSlice(col, action, sample);
   }
   if (handled) {
     projectModified = 1;
@@ -924,8 +1191,8 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
   return handled;
 }
 
-// Slice is inert while Stretch drives the duration: skip it in navigation.
-// Save needs a file path, Save As needs sample data.
+// Slice is inert while Stretch drives the duration: skip all 3 of its cells
+// in navigation. Save needs a file path, Save As needs sample data.
 static int settingsIsCellValid(int col, int row) {
   InstrumentSample* sample = currentSample();
   if (row == 2 && sample->stretchMode != 0) return 0;
@@ -993,6 +1260,13 @@ static void fullRedraw(void) {
       !settingsIsCellValid(screenSampleSettingsData.cursorCol, 4)) {
     screenSampleSettingsData.cursorRow = 1;
   }
+  // Clamp the Slice row cursor into the 3 cells (older sessions may have
+  // parked it beyond).
+  if (screenSampleSettingsData.cursorRow == 2 &&
+      screenSampleSettingsData.cursorCol > 2) {
+    screenSampleSettingsData.cursorCol = 2;
+  }
+  settingsClampCurrentSlice(currentSample());
   screenFullRedraw(&screenSampleSettingsData);
 }
 

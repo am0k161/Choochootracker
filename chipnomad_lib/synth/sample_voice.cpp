@@ -99,6 +99,164 @@ int sampleActsAsSliced(const InstrumentSample* sample) {
   return mode != sliceModeOff && mode != sliceModeLazy;
 }
 
+// --- Slice bounds editing (Phase 1, universal editing model) -------------
+
+uint8_t sampleSliceBoundCount(const InstrumentSample* sample) {
+  if (!sample) return 0;
+  if (sampleDecodeSliceMode(sample->slice) == sliceModeOff) return 0;
+  return sampleDecodeSliceCount(sample->slice);
+}
+
+// Loop region in frames shared by the bounds helpers: swaps inverted
+// markers and falls back to the whole sample for an empty region (same
+// rules as SampleVoice::configure).
+static void sampleSliceLoopRegion(const InstrumentSample* sample, uint8_t start, uint8_t end,
+                                  uint32_t* loopStart, uint32_t* loopEnd) {
+  uint32_t s = sampleMarkerToStartFrame(sample->frameCount, start);
+  uint32_t e = sampleMarkerToEndFrame(sample->frameCount, end);
+  if (s > e) {
+    uint32_t swap = s;
+    s = e;
+    e = swap + 1;
+  }
+  if (e <= s) e = sample->frameCount;
+  *loopStart = s;
+  *loopEnd = e;
+}
+
+uint8_t sampleSliceInitEven(InstrumentSample* sample, SliceMode mode, uint8_t count) {
+  if (!sample) return 0;
+  if (count < 1) count = 1;
+  if (count > PROJECT_SAMPLE_MAX_SLICES) count = PROJECT_SAMPLE_MAX_SLICES;
+  uint32_t loopStart = 0;
+  uint32_t loopEnd = sample->frameCount;
+  if (sample->frameCount > 0) {
+    sampleSliceLoopRegion(sample, sample->start, sample->end, &loopStart, &loopEnd);
+  }
+  const uint32_t loopLength = loopEnd > loopStart ? loopEnd - loopStart : 0;
+  memset(sample->sliceBounds, 0, sizeof(sample->sliceBounds));
+  for (uint8_t i = 0; i < count; ++i) {
+    sample->sliceBounds[i] = loopStart + (uint32_t)((uint64_t)loopLength * i / count);
+  }
+  sample->slice = sampleEncodeSlice(mode, count);
+  return count;
+}
+
+uint8_t sampleSliceInitLazy(InstrumentSample* sample) {
+  if (!sample) return 0;
+  memset(sample->sliceBounds, 0, sizeof(sample->sliceBounds));
+  sample->slice = sampleEncodeSlice(sliceModeLazy, 1);
+  return 1;
+}
+
+int sampleSliceSplit(InstrumentSample* sample, uint8_t index) {
+  if (!sample) return -1;
+  const uint8_t count = sampleSliceBoundCount(sample);
+  if (count == 0 || index >= count) return -1;
+  if (count >= PROJECT_SAMPLE_MAX_SLICES) return -1;
+  // The last slice ends at the loop end marker; use it as the right edge
+  // when splitting the final slice.
+  uint32_t loopEnd = sample->frameCount;
+  if (sample->frameCount > 0) {
+    uint32_t loopStart = 0;
+    sampleSliceLoopRegion(sample, sample->start, sample->end, &loopStart, &loopEnd);
+  }
+  const uint32_t left = sample->sliceBounds[index];
+  const uint32_t right = index + 1 < count ? sample->sliceBounds[index + 1] : loopEnd;
+  if (right <= left + 1) return -1; // nothing to split
+  const uint32_t mid = left + (right - left) / 2;
+  for (int i = count; i > (int)index + 1; --i) {
+    sample->sliceBounds[i] = sample->sliceBounds[i - 1];
+  }
+  sample->sliceBounds[index + 1] = mid;
+  sample->slice = sampleEncodeSlice(sampleDecodeSliceMode(sample->slice), (uint8_t)(count + 1));
+  return index + 1;
+}
+
+int sampleSliceDelete(InstrumentSample* sample, uint8_t index) {
+  if (!sample) return -1;
+  const uint8_t count = sampleSliceBoundCount(sample);
+  if (count == 0 || index >= count) return -1;
+  if (count == 1) {
+    // Deleting the last slice turns slicing off; keep the bounds in memory
+    // so toggling back to a mode can restore them (plan §4.2 task 2).
+    sample->slice = 0;
+    return -1;
+  }
+  for (uint8_t i = index; i < count - 1; ++i) {
+    sample->sliceBounds[i] = sample->sliceBounds[i + 1];
+  }
+  sample->sliceBounds[count - 1] = 0;
+  sample->slice = sampleEncodeSlice(sampleDecodeSliceMode(sample->slice), (uint8_t)(count - 1));
+  return index > 0 ? index - 1 : 0;
+}
+
+int sampleSliceInsertAtFrame(InstrumentSample* sample, uint32_t frame) {
+  if (!sample) return -1;
+  const uint8_t count = sampleSliceBoundCount(sample);
+  if (count == 0 || count >= PROJECT_SAMPLE_MAX_SLICES) return -1;
+  uint32_t loopStart = 0;
+  uint32_t loopEnd = sample->frameCount;
+  if (sample->frameCount > 0) {
+    sampleSliceLoopRegion(sample, sample->start, sample->end, &loopStart, &loopEnd);
+  }
+  if (frame < loopStart || frame >= loopEnd) return -1;
+  // Find the insertion point (bounds are kept sorted ascending) and reject
+  // frames that duplicate an existing bound.
+  uint8_t insertAt = count;
+  for (uint8_t i = 0; i < count; ++i) {
+    if (sample->sliceBounds[i] == frame) return -1;
+    if (sample->sliceBounds[i] > frame) {
+      insertAt = i;
+      break;
+    }
+  }
+  for (int i = count; i > (int)insertAt; --i) {
+    sample->sliceBounds[i] = sample->sliceBounds[i - 1];
+  }
+  sample->sliceBounds[insertAt] = frame;
+  sample->slice = sampleEncodeSlice(sampleDecodeSliceMode(sample->slice), (uint8_t)(count + 1));
+  return insertAt;
+}
+
+int32_t sampleSliceNudge(InstrumentSample* sample, uint8_t index, int32_t delta) {
+  if (!sample) return -1;
+  const uint8_t count = sampleSliceBoundCount(sample);
+  if (count == 0 || index >= count) return -1;
+  uint32_t loopEnd = sample->frameCount;
+  if (sample->frameCount > 0) {
+    uint32_t loopStart = 0;
+    sampleSliceLoopRegion(sample, sample->start, sample->end, &loopStart, &loopEnd);
+  }
+  const uint32_t left = index > 0 ? sample->sliceBounds[index - 1] : 0;
+  const uint32_t right = index + 1 < count ? sample->sliceBounds[index + 1] : loopEnd;
+  int64_t next = (int64_t)sample->sliceBounds[index] + delta;
+  if (next < (int64_t)left) next = left;
+  if (next > (int64_t)right) next = right;
+  if (next == (int64_t)sample->sliceBounds[index]) return -1;
+  sample->sliceBounds[index] = (uint32_t)next;
+  return (int32_t)next;
+}
+
+int32_t sampleSliceStartFrame(const InstrumentSample* sample, uint8_t index,
+                              uint8_t start, uint8_t end) {
+  if (!sample) return -1;
+  const uint8_t count = sampleSliceBoundCount(sample);
+  if (count == 0 || index >= count) return -1;
+  // Populated bounds win; legacy samples (all bounds zero) fall back to the
+  // even division of the loop region.
+  if (sample->sliceBounds[0] != 0 || (count > 1 && sample->sliceBounds[1] != 0)) {
+    return (int32_t)sample->sliceBounds[index];
+  }
+  uint32_t loopStart = 0;
+  uint32_t loopEnd = sample->frameCount;
+  if (sample->frameCount > 0) {
+    sampleSliceLoopRegion(sample, start, end, &loopStart, &loopEnd);
+  }
+  const uint32_t loopLength = loopEnd > loopStart ? loopEnd - loopStart : 0;
+  return (int32_t)(loopStart + (uint32_t)((uint64_t)loopLength * index / count));
+}
+
 void sampleSliceFrames(uint32_t frameCount, uint8_t sliceCount, uint8_t sliceIndex,
                        uint32_t* startFrame, uint32_t* endFrame) {
   if (!startFrame || !endFrame) return;
@@ -134,8 +292,10 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
 
   uint32_t startFrame;
   uint32_t endFrame;
-  // Phase 0: sliceCount arrives already decoded from the sentinel by the
-  // caller; the legacy normalize keeps even-division behavior identical.
+  // Phase 1: sliceCount arrives already decoded from the sentinel by the
+  // caller. Samples with populated sliceBounds play their stored boundaries
+  // (manual edits, AUTO detection); legacy samples with empty bounds keep
+  // the even-division fallback.
   sliceCount = sampleNormalizeSlice(sliceCount);
   if (sliceCount) {
     // When slicing is enabled, divide the LOOP REGION (start to end) into slices
@@ -149,13 +309,24 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
     }
     uint32_t loopLength = loopEndFrame > loopStartFrame ? loopEndFrame - loopStartFrame : sample_->frameCount;
 
-    uint32_t sliceStart, sliceEnd;
-    sampleSliceFrames(loopLength, sliceCount, sliceIndex, &sliceStart, &sliceEnd);
+    const int boundsPopulated = sample_->sliceBounds[0] != 0 ||
+      (sliceCount > 1 && sample_->sliceBounds[1] != 0);
+    if (boundsPopulated && sliceIndex < sliceCount) {
+      // Stored boundaries: this slice starts at its bound and ends at the
+      // next bound (the loop end for the last slice).
+      startFrame_ = sample_->sliceBounds[sliceIndex];
+      endFrame_ = sliceIndex + 1 < sliceCount ? sample_->sliceBounds[sliceIndex + 1]
+                                              : loopEndFrame;
+      reverse_ = false;
+    } else {
+      uint32_t sliceStart, sliceEnd;
+      sampleSliceFrames(loopLength, sliceCount, sliceIndex, &sliceStart, &sliceEnd);
 
-    // Map slice to absolute frame positions within the loop region
-    startFrame_ = loopStartFrame + sliceStart;
-    endFrame_ = loopStartFrame + sliceEnd;
-    reverse_ = false;
+      // Map slice to absolute frame positions within the loop region
+      startFrame_ = loopStartFrame + sliceStart;
+      endFrame_ = loopStartFrame + sliceEnd;
+      reverse_ = false;
+    }
   } else {
     startFrame = sampleMarkerToStartFrame(sample_->frameCount, start);
     endFrame = sampleMarkerToEndFrame(sample_->frameCount, end);

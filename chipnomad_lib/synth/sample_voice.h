@@ -82,6 +82,59 @@ struct InstrumentSample;
 // 1 when the sample's slice setting makes notes select slices (EQUAL and
 // AUTO do; LAZY does not - its slices are chosen by editing, not by pitch).
 int sampleActsAsSliced(const InstrumentSample* sample);
+
+// --- Slice bounds editing (Phase 1, universal editing model) -------------
+// sliceBounds[] holds the start frame of each slice; the last slice ends at
+// the loop end marker. All helpers are pure functions over the sample: no
+// UI, no audio calls. They keep the sentinel's count field in sync with the
+// array and clamp everything to PROJECT_SAMPLE_MAX_SLICES.
+
+// Number of populated bounds entries: the sentinel's count when the mode is
+// active, else 0. Legacy samples (sentinel set, bounds all zero) report the
+// sentinel count - the even-division fallback still applies for playback.
+uint8_t sampleSliceBoundCount(const InstrumentSample* sample);
+
+// Fills sliceBounds[0..count-1] with an even division of the loop region
+// (start..end markers) and writes the sentinel for the given mode. Returns
+// the effective count (clamped to 1..64). This is the EQUAL initializer and
+// the Phase 1 AUTO placeholder.
+uint8_t sampleSliceInitEven(InstrumentSample* sample, SliceMode mode, uint8_t count);
+
+// LAZY initializer: clears all bounds and sets a single whole-loop slice.
+uint8_t sampleSliceInitLazy(InstrumentSample* sample);
+
+// Splits the current slice at its midpoint: inserts a new bound at
+// (bounds[index] + bounds[index+1]) / 2 (the loop end for the last slice),
+// increments the count and returns the new right-hand slice's index (the
+// caller's "current slice" after the split). Returns -1 when the sample is
+// not sliced, index is out of range or the count is already at the cap.
+int sampleSliceSplit(InstrumentSample* sample, uint8_t index);
+
+// Removes the slice starting at bounds[index]: shifts the following bounds
+// down, decrements the count and returns the index the caller should make
+// current (index - 1, or 0 when deleting the first slice). Returns -1 when
+// the sample is not sliced or index is out of range. Deleting the last
+// remaining slice turns the mode off (sentinel 0, bounds cleared).
+int sampleSliceDelete(InstrumentSample* sample, uint8_t index);
+
+// Inserts a new slice starting exactly at `frame` (kept sorted; the caller
+// supplies the frame, e.g. a playback position). Returns the new slice's
+// index, or -1 when the sample is not sliced, the frame is outside the loop
+// region, it duplicates an existing bound or the count is at the cap.
+// Phase 3's LAZY playback-drop reuses this.
+int sampleSliceInsertAtFrame(InstrumentSample* sample, uint32_t frame);
+
+// Moves the current slice's start frame by delta frames, clamped so the
+// bound stays inside its own slice (between the previous bound and the
+// next bound / loop end). Returns the new frame, or -1 when the sample is
+// not sliced or index is out of range.
+int32_t sampleSliceNudge(InstrumentSample* sample, uint8_t index, int32_t delta);
+
+// Start frame of slice `index` (bounds-aware; falls back to the even
+// division of the loop region when the bounds array is empty). Returns -1
+// when the sample is not sliced or index is out of range.
+int32_t sampleSliceStartFrame(const InstrumentSample* sample, uint8_t index,
+                              uint8_t start, uint8_t end);
 int sampleLoadWav16(const char* path, InstrumentSample* sample,
                     char* error, size_t errorSize);
 int sampleLoadWav16File(FILE* file, const char* path, InstrumentSample* sample,

@@ -190,7 +190,9 @@ static int onEdit(int col, int row, CellEditAction action) {
       handled = edit8noLast(action, &index, 1, 0, 6);
       if (handled) {
         sample->stretchMode = index;
-        // Stretch and Slice are mutually exclusive: enabling one disables the other.
+        // Stretch and Slice are mutually exclusive: enabling one disables
+        // the other (the sentinel's mode resets to Off; bounds stay in
+        // memory so toggling back restores them).
         if (sample->stretchMode) sample->slice = 0;
         projectModified = 1;
         // Repaint the dimmed Speed field and the new Stretch value.
