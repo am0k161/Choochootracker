@@ -9,6 +9,7 @@
 #include "screen_enter_name.h"
 #include "synth/sample_voice.h"
 #include "synth/sample_ops.h"
+#include "synth/sample_transient.h"
 #include "audio_manager.h"
 #include <stdio.h>
 #include <string.h>
@@ -873,10 +874,37 @@ static int settingsSliceSplitCurrent(InstrumentSample* sample) {
   return 1;
 }
 
+// AUTO initializer (Phase 2): runs the spectral-flux detection with the
+// sample's sensitivity and stores the onsets as bounds. Detection is a
+// destructive op (it overwrites sliceBounds), so it goes through the
+// process-op undo pattern: pause audio, snapshot, detect, resume. The
+// "DETECTING..." message is flushed to the screen before the synchronous
+// pass so the user sees feedback during longer analyses.
+static void settingsRunAutoDetect(InstrumentSample* sample, uint8_t count) {
+  screenMessage(MESSAGE_TIME, "DETECTING...");
+  gfxUpdateScreen();
+  audioManager.pause();
+  const int error = sampleOpPrepareUndo(sample, &editorUndo);
+  if (error == 0) {
+    sampleSliceInitAuto(sample, count);
+  }
+  audioManager.resume();
+  if (error != 0) {
+    sampleOpFreeUndo(&editorUndo);
+    screenMessage(MESSAGE_TIME_ERROR, "Detection failed");
+    return;
+  }
+  projectModified = 1;
+  sampleDirtyToDisk = 1;
+  settingsClampCurrentSlice(sample);
+  settingsRepaintSlice(sample, -1);
+  screenMessage(MESSAGE_TIME, "Detected %d slices", sampleDecodeSliceCount(sample->slice));
+}
+
 // Mode cell (col 0): cycle Off / EQUAL / AUTO / LAZY. Switching to a mode
-// initializes the bounds (EQUAL/AUTO: even division for now - real AUTO
-// detection is Phase 2; LAZY: single whole-loop slice). Switching to LAZY
-// with existing chops asks for confirmation first.
+// initializes the bounds (EQUAL: even division; AUTO: spectral-flux
+// detection; LAZY: single whole-loop slice). Switching to LAZY with
+// existing chops asks for confirmation first.
 static int settingsSliceModeEdit(InstrumentSample* sample, CellEditAction action) {
   SliceMode mode = sampleDecodeSliceMode(sample->slice);
   uint8_t nextMode = (uint8_t)mode;
@@ -907,9 +935,17 @@ static int settingsSliceModeEdit(InstrumentSample* sample, CellEditAction action
   } else if (nextMode == sliceModeOff) {
     // Off keeps the bounds in memory so toggling back restores them.
     sample->slice = 0;
-  } else {
-    // EQUAL (and AUTO placeholder until Phase 2): even division. The count
+  } else if (nextMode == sliceModeAuto) {
+    // AUTO: detect transients with the current sensitivity. The count
     // defaults to the previous count or 4.
+    uint8_t count = sampleDecodeSliceCount(sample->slice);
+    if (count == 0) count = 4;
+    settingsRunAutoDetect(sample, count);
+    // settingsRunAutoDetect already repainted; skip the shared repaint.
+    if (nextMode != sliceModeOff) sample->stretchMode = 0;
+    return 1;
+  } else {
+    // EQUAL: even division. The count defaults to the previous count or 4.
     uint8_t count = sampleDecodeSliceCount(sample->slice);
     if (count == 0) count = 4;
     sampleSliceInitEven(sample, (SliceMode)nextMode, count);
@@ -922,10 +958,11 @@ static int settingsSliceModeEdit(InstrumentSample* sample, CellEditAction action
   return 1;
 }
 
-// Number cell (col 1): EQUAL/AUTO - EDIT+Left/Right re-inits the count
-// (wipes manual edits); LAZY - Left/Right navigates (count grows via EDIT
-// only); all modes - EDIT+Up/Down navigates the current slice; EDIT (tap)
-// splits the current slice at its midpoint.
+// Number cell (col 1): EQUAL - EDIT+Left/Right re-inits the count (wipes
+// manual edits); AUTO - Left/Right re-detects with a new count, Up/Down
+// adjusts the hidden sensitivity (1..99) and re-detects; LAZY - Left/Right
+// navigates (count grows via EDIT only); all modes - EDIT (tap) splits the
+// current slice at its midpoint.
 static int settingsSliceNumberEdit(InstrumentSample* sample, CellEditAction action) {
   const SliceMode mode = sampleDecodeSliceMode(sample->slice);
   const uint8_t count = sampleDecodeSliceCount(sample->slice);
@@ -935,6 +972,30 @@ static int settingsSliceNumberEdit(InstrumentSample* sample, CellEditAction acti
   }
   if (action == CellEditAction::clear) {
     return settingsSliceDeleteCurrent(sample);
+  }
+  if (mode == sliceModeAuto) {
+    // AUTO: Up/Down = sensitivity (hidden value, re-detects); Left/Right =
+    // target count (re-detects). Both wipe manual edits by design.
+    if (action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig) {
+      const int up = action == CellEditAction::increaseBig;
+      int next = sample->autoSensitivity + (up ? 1 : -1);
+      if (next < 1) next = 1;
+      if (next > 99) next = 99;
+      if (next == sample->autoSensitivity) return 0;
+      sample->autoSensitivity = (uint8_t)next;
+      settingsRunAutoDetect(sample, count);
+      return 1;
+    }
+    if (action == CellEditAction::increase || action == CellEditAction::decrease) {
+      const int up = action == CellEditAction::increase;
+      int next = count + (up ? 1 : -1);
+      if (next < 1) next = 1;
+      if (next > PROJECT_SAMPLE_MAX_SLICES) next = PROJECT_SAMPLE_MAX_SLICES;
+      if (next == count) return 0;
+      settingsRunAutoDetect(sample, (uint8_t)next);
+      return 1;
+    }
+    return 0;
   }
   const int navigate =
     action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig ||
@@ -959,7 +1020,7 @@ static int settingsSliceNumberEdit(InstrumentSample* sample, CellEditAction acti
     return 1;
   }
   if (action == CellEditAction::increase || action == CellEditAction::decrease) {
-    // Re-init with a new count (EQUAL; AUTO re-detects in Phase 2)
+    // Re-init with a new count (EQUAL)
     const int up = action == CellEditAction::increase;
     int next = count + (up ? 1 : -1);
     if (next < 1) next = 1;
@@ -1246,6 +1307,14 @@ static void setup(int input) {
   zoomHoldActive = 0;
   sampleDirtyToDisk = pendingDirtyRestore;
   pendingDirtyRestore = 0;
+  // Legacy AUTO sentinel with empty bounds (old project saved before
+  // bounds existed): populate them here on the UI thread, never on the
+  // audio thread (detection allocates). The sentinel count is the target.
+  if (sampleDecodeSliceMode(sample->slice) == sliceModeAuto &&
+      sample->sliceBounds[0] == 0 &&
+      !(sampleDecodeSliceCount(sample->slice) > 1 && sample->sliceBounds[1] != 0)) {
+    settingsRunAutoDetect(sample, sampleDecodeSliceCount(sample->slice));
+  }
 }
 
 static void fullRedraw(void) {

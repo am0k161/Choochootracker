@@ -103,6 +103,13 @@ uint8_t sampleSliceInitEven(InstrumentSample* sample, SliceMode mode, uint8_t co
 // LAZY initializer: clears all bounds and sets a single whole-loop slice.
 uint8_t sampleSliceInitLazy(InstrumentSample* sample);
 
+// AUTO initializer (Phase 2): runs spectral-flux transient detection over
+// the loop region with the sample's autoSensitivity and stores up to
+// `count` onsets as bounds. Falls back to the even division when nothing
+// is detected (silence, tiny region). Allocates scratch buffers - run it
+// with audio paused. Defined in sample_transient.cpp.
+uint8_t sampleSliceInitAuto(InstrumentSample* sample, uint8_t count);
+
 // Splits the current slice at its midpoint: inserts a new bound at
 // (bounds[index] + bounds[index+1]) / 2 (the loop end for the last slice),
 // increments the count and returns the new right-hand slice's index (the
