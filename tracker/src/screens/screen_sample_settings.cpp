@@ -7,6 +7,7 @@
 #include "waveform_display.h"
 #include "file_browser.h"
 #include "screen_enter_name.h"
+#include "project_utils.h"
 #include "synth/sample_voice.h"
 #include "synth/sample_ops.h"
 #include "synth/sample_transient.h"
@@ -90,6 +91,7 @@ static Bitmap* sampleSliceMarkerBitmap;
 static Bitmap* sampleStartMarkerBitmap;
 static Bitmap* sampleEndMarkerBitmap;
 static Bitmap* sampleSelectionBitmap;
+static Bitmap* samplePlaybackMarkerBitmap;
 
 // Total slice count for the current sentinel (0 when off). Legacy samples
 // (sentinel set, bounds empty) still report the sentinel count - the
@@ -172,6 +174,11 @@ static SampleEditorSelection editorSelection;
 // Set while a fine adjustment (EDIT+LEFT/RIGHT) holds the zoomed view in;
 // releasing EDIT drops the view back to the full sample. Session-only.
 static int zoomHoldActive;
+
+// Set after a LAZY playback-drop consumed an EDIT press; re-armed on the
+// EDIT release. Key repeat re-fires onInput with isKeyDown=1, so without
+// this guard a held EDIT would machine-gun slices at the repeat rate.
+static int lazyEditArmed;
 
 // Smallest zoomed window in frames
 static constexpr uint32_t kMinViewSpan = 8;
@@ -557,11 +564,14 @@ static void settingsDrawField(int col, int row, CellState state) {
     return;
   }
   // Row 2: Slice - Mode / Number / Frame cells. All three are inert while
-  // Stretch drives the duration: dim them.
+  // Stretch drives the duration: dim them. While the LAZY playback-drop is
+  // armed, the Frame cell dims too - slices are being placed by the
+  // playback marker, not edited by hand.
   {
     const SliceMode mode = sampleDecodeSliceMode(sample->slice);
     const uint8_t count = sampleDecodeSliceCount(sample->slice);
-    const int dimmed = sample->stretchMode != 0;
+    const int dimmed = sample->stretchMode != 0 ||
+      (sampleLazyPlaybackActive && mode == sliceModeLazy && col == 2);
     if (col == 0) {
       gfxClearRect(sliceModeX, fieldRow0 + row, sliceModeW, 1);
       if (dimmed) gfxSetFgColor(appSettings.colorScheme.textEmpty);
@@ -840,6 +850,36 @@ static void settingsClampCurrentSlice(const InstrumentSample* sample) {
   } else if (currentSlice >= count) {
     currentSlice = count - 1;
   }
+}
+
+// LAZY playback-drop (Phase 3): while the full sample is playing back
+// (tap PLAY toggles it), every EDIT click drops a slice at the playback
+// marker's position. The marker is read straight from the track's sample
+// voice - the same tolerated cross-thread pattern as the voice monitors.
+static void settingsDropSliceAtPlayback(InstrumentSample* sample) {
+  const PlaybackStatus* playback = chipnomadGetPlaybackStatus(chipnomadState);
+  SampleVoice* voice = chipnomadState->sampleVoices[*pSongTrack][0];
+  if (playback->tracks[*pSongTrack].mode != PlaybackMode::phraseRow || !voice || !voice->active() ||
+      playback->tracks[*pSongTrack].note.instrument != cInstrument) {
+    screenMessage(MESSAGE_TIME, "Not playing");
+    return;
+  }
+  if (!sample->data || sample->frameCount == 0) return;
+  int frame = (int)voice->playbackFrame();
+  if (frame < 0) frame = 0;
+  if (frame >= (int)sample->frameCount) frame = (int)sample->frameCount - 1;
+  // Keep slices at least 50 ms apart so rapid EDIT taps don't pile up
+  // micro-slices on top of each other.
+  uint32_t minGap = sample->sampleRate / 20;
+  if (minGap == 0) minGap = 1;
+  const int index = sampleSliceInsertAtFrameGapped(sample, (uint32_t)frame, minGap);
+  if (index < 0) {
+    screenMessage(MESSAGE_TIME, "Too close to slice");
+    return;
+  }
+  currentSlice = index;
+  projectModified = 1;
+  settingsRepaintSlice(sample, -1);
 }
 
 // EDIT+OPT (CellEditAction::clear) deletes the current slice - universal
@@ -1305,6 +1345,13 @@ static void setup(int input) {
   editorSelection.active = 1;
   sampleEditorNormalizeState(sample, &editorSelection, &editorView);
   zoomHoldActive = 0;
+  // LAZY playback never survives leaving the screen (or a dialog round
+  // trip): the preview is stopped on the way out and the flag resets here.
+  if (sampleLazyPlaybackActive) {
+    chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
+    sampleLazyPlaybackActive = 0;
+  }
+  lazyEditArmed = 1;
   sampleDirtyToDisk = pendingDirtyRestore;
   pendingDirtyRestore = 0;
   // Legacy AUTO sentinel with empty bounds (old project saved before
@@ -1340,9 +1387,61 @@ static void fullRedraw(void) {
 }
 
 static void draw(void) {
+  InstrumentSample* sample = currentSample();
+  const int wasActive = sampleLazyPlaybackActive;
+  const PlaybackStatus* playback = chipnomadGetPlaybackStatus(chipnomadState);
+  SampleVoice* voice = chipnomadState->sampleVoices[*pSongTrack][0];
+  if (sampleLazyPlaybackActive) {
+    // The preview can end on its own (one-shot sample finished, or the
+    // track was stopped from elsewhere): drop the flag when the phrase row
+    // is gone or the voice went silent.
+    if (playback->tracks[*pSongTrack].mode != PlaybackMode::phraseRow || !voice || !voice->active()) {
+      sampleLazyPlaybackActive = 0;
+    }
+  }
+  if (sampleLazyPlaybackActive) {
+    // Cheap per-frame repaint: the waveform/slice bitmaps are cached, so
+    // only the marker column is drawn on top of the cached preview.
+    drawSamplePreview();
+    Bitmap* marker = ensurePreviewBitmap(&samplePlaybackMarkerBitmap);
+    if (marker) {
+      gfxBitmapClear(marker);
+      double pos = voice->playbackFrame();
+      if (pos < 0) pos = 0;
+      if (pos >= (double)sample->frameCount) pos = (double)sample->frameCount - 1;
+      const int x = frameToPixel((uint32_t)pos, &editorView, marker->widthPixels, 0);
+      if (x >= 0) {
+        for (int y = 0; y < marker->heightPixels; ++y) {
+          marker->data[y * marker->widthPixels + x] = 255;
+        }
+        gfxSetFgColor(appSettings.colorScheme.textValue);
+        gfxDrawBitmap(marker, 0, previewRow);
+      }
+    }
+  }
+  if (wasActive != sampleLazyPlaybackActive) {
+    // The Frame cell dims while the playback-drop is armed; repaint the
+    // Slice row so the dim appears/disappears (drawField only fires on
+    // edits and full redraws otherwise).
+    for (int col = 0; col < 3; ++col) {
+      const int focused = screenSampleSettingsData.cursorRow == 2 &&
+        screenSampleSettingsData.cursorCol == col;
+      settingsDrawField(col, 2, focused ? CellState::focus : CellState::normal);
+    }
+  }
 }
 
 static int inputScreenNavigation(int keys) {
+  // Leaving the screen stops the LAZY preview and clears the flag: the
+  // next screen's setup() never touches it, so without this the app-level
+  // auto-stop guard would stay armed forever (and the preview would keep
+  // sounding over the new screen).
+  if (sampleLazyPlaybackActive &&
+      (keys == keyOpt || keys == (keyLeft | keyShift) || keys == (keyRight | keyShift) ||
+       keys == (keyDown | keyShift) || keys == (keyUp | keyShift))) {
+    chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
+    sampleLazyPlaybackActive = 0;
+  }
   if (keys == keyOpt || keys == (keyLeft | keyShift)) {
     screenSetup(&screenInstrument, cInstrument);
     return 1;
@@ -1377,7 +1476,40 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
       drawSamplePreview();
     }
   }
+  // Re-arm the LAZY playback-drop on the EDIT release (see lazyEditArmed).
+  if (!isKeyDown && !(keys & keyEdit)) lazyEditArmed = 1;
   if (inputScreenNavigation(keys)) return 1;
+  // LAZY playback (Phase 3): tap PLAY toggles a full-sample playback that
+  // keeps running after the key is released, and while it runs every EDIT
+  // click drops a slice at the playback marker. Both intercepts only apply
+  // when the sample is in LAZY mode; everything else falls through to the
+  // normal screen input.
+  InstrumentSample* sample = currentSample();
+  if (sampleDecodeSliceMode(sample->slice) == sliceModeLazy && sample->data && sample->frameCount > 0) {
+    if (keys == keyPlay && isKeyDown) {
+      if (sampleLazyPlaybackActive) {
+        chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
+        sampleLazyPlaybackActive = 0;
+      } else if (!chipnomadGetPlaybackStatus(chipnomadState)->isPlaying) {
+        // Preview the whole sample at its root note (zero pitch offset),
+        // exactly like the instrument screen's note preview.
+        chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
+        chipnomadQueuePlaybackPreviewNote(chipnomadState, *pSongTrack,
+                                          instrumentFirstNote(&chipnomadState->project, cInstrument),
+                                          cInstrument);
+        sampleLazyPlaybackActive = 1;
+      }
+      // While the song is playing, PLAY falls through and stops it.
+      else return 0;
+      return 1;
+    }
+    if (sampleLazyPlaybackActive && isKeyDown && keys == keyEdit && lazyEditArmed &&
+        (tapCount == 1 || tapCount == 2)) {
+      settingsDropSliceAtPlayback(sample);
+      lazyEditArmed = 0;
+      return 1;
+    }
+  }
   return screenInput(&screenSampleSettingsData, isKeyDown, keys, tapCount);
 }
 

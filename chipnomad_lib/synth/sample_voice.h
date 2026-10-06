@@ -24,6 +24,16 @@ class SampleVoice {
   void render(float* output, size_t frames);
   bool active() const { return active_; }
   float envelopeLevel() const { return post_.envelopeLevel(); }
+  // Current playback position in source sample frames, whichever render
+  // path is active: the stretch processor's read cursor, the granular
+  // path's interpolated grain cursor, or the plain path's position.
+  // Read from the UI thread for the playback marker - same tolerated
+  // cross-thread pattern as the voice monitors.
+  double playbackFrame() const {
+    if (useStretch_) return stretch_.sourcePosition();
+    if (granular_) return grainPosition_[0] + direction_ * step_ * grainAge_[0];
+    return position_;
+  }
 
  private:
   const InstrumentSample* sample_;
@@ -130,6 +140,14 @@ int sampleSliceDelete(InstrumentSample* sample, uint8_t index);
 // region, it duplicates an existing bound or the count is at the cap.
 // Phase 3's LAZY playback-drop reuses this.
 int sampleSliceInsertAtFrame(InstrumentSample* sample, uint32_t frame);
+
+// Playback-drop variant of sampleSliceInsertAtFrame: rejects `frame` when it
+// sits within minGapFrames of an existing bound (or of the loop start), so
+// rapid EDIT taps don't pile up micro-slices. Returns the new slice's index
+// (and sets the caller's current slice), or -1 when rejected (too close,
+// outside the loop region, duplicate, count at the cap or not sliced).
+int sampleSliceInsertAtFrameGapped(InstrumentSample* sample, uint32_t frame,
+                                   uint32_t minGapFrames);
 
 // Moves the current slice's start frame by delta frames, clamped so the
 // bound stays inside its own slice (between the previous bound and the

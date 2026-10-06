@@ -219,6 +219,29 @@ int sampleSliceInsertAtFrame(InstrumentSample* sample, uint32_t frame) {
   return insertAt;
 }
 
+int sampleSliceInsertAtFrameGapped(InstrumentSample* sample, uint32_t frame,
+                                   uint32_t minGapFrames) {
+  if (!sample) return -1;
+  const uint8_t count = sampleSliceBoundCount(sample);
+  if (count == 0 || count >= PROJECT_SAMPLE_MAX_SLICES) return -1;
+  uint32_t loopStart = 0;
+  uint32_t loopEnd = sample->frameCount;
+  if (sample->frameCount > 0) {
+    sampleSliceLoopRegion(sample, sample->start, sample->end, &loopStart, &loopEnd);
+  }
+  if (frame < loopStart || frame >= loopEnd) return -1;
+  // Reject frames too close to an existing bound (or to the loop start, so
+  // the first slice never collapses to nothing).
+  if (frame - loopStart < minGapFrames) return -1;
+  for (uint8_t i = 0; i < count; ++i) {
+    const uint32_t bound = sample->sliceBounds[i];
+    if (frame > bound ? frame - bound < minGapFrames : bound - frame < minGapFrames) {
+      return -1;
+    }
+  }
+  return sampleSliceInsertAtFrame(sample, frame);
+}
+
 int32_t sampleSliceNudge(InstrumentSample* sample, uint8_t index, int32_t delta) {
   if (!sample) return -1;
   const uint8_t count = sampleSliceBoundCount(sample);
