@@ -1,5 +1,31 @@
 # ChooChooTracker changelog
 
+## Unreleased
+
+- Expanded the Sample Edit Slice row into three modes: **EQUAL** divides the
+  Start/End window evenly, **AUTO** places slices on transients found by a
+  spectral-flux detection (adjustable sensitivity, falls back to an even
+  division on silence), and **LAZY** starts with one whole-window slice that
+  grows by editing. Slice points are stored per instrument and saved in the
+  project as `- Sample slice bounds:`.
+- Added slice editing on the Slice row: navigate slices with EDIT + UP/DOWN,
+  split the current slice at its midpoint with EDIT (tap), delete it with
+  EDIT + OPT, and nudge its start frame with EDIT + LEFT/RIGHT (fine) or
+  UP/DOWN (coarse); markers stay inside their own slice.
+- Added the LAZY playback workflow: tap PLAY to toggle a full-sample preview
+  that keeps running after the key is released, with a bright position marker
+  on the waveform; every EDIT click while it plays drops a slice at the
+  playback position (slices closer than 50 ms to an existing one are
+  rejected). Song playback treats LAZY samples as unsliced.
+- Added a save-destination dialog for sliced samples: SAVE TO SAMPLE writes
+  the slice points into the WAV as cue chunks (visible as markers in DAWs),
+  SAVE TO PROJECT keeps them in the project only, and a "Don't ask again in
+  this project" checkbox stores the choice as `- Sample save choice:` in the
+  .cct.
+- Loading a WAV that contains cue chunks into an unsliced Sampler instrument
+  now seeds AUTO slicing from the cue positions.
+- Slice and Stretch are mutually exclusive: enabling one disables the other.
+
 ## v0.1.0-prealpha.5 (October 3, 2026)
 
 - Added a Mode row to the Scale screen with a second mode, Note Lock:

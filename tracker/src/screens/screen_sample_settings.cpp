@@ -96,7 +96,7 @@ static Bitmap* samplePlaybackMarkerBitmap;
 // Total slice count for the current sentinel (0 when off). Legacy samples
 // (sentinel set, bounds empty) still report the sentinel count - the
 // preview falls back to the even division for them.
-static uint8_t sliceTotalCount(const InstrumentSample* sample) {
+static uint8_t sampleSliceDivisions(const InstrumentSample* sample) {
   return sampleDecodeSliceCount(sample->slice);
 }
 
@@ -132,11 +132,6 @@ static Bitmap* ensurePreviewBitmap(Bitmap** bitmap) {
     *bitmap = NULL;
   }
   if (!*bitmap) *bitmap = gfxBitmapCreate(previewWidth, previewHeight);
-  return *bitmap;
-}
-
-static uint8_t sampleSliceDivisions(const InstrumentSample* sample) {
-  return sampleDecodeSliceCount(sample->slice);
 }
 
 // Which marker the view window follows: 0 none, 1 Start, 2 End,
