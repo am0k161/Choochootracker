@@ -615,8 +615,9 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
   Phrase notes select slices chromatically from **C-0**, and notes past the
   last slice stay on that last slice. Sliced notes do not transpose pitch or
   use Scale quantization, but **CRD** keeps the selected slice and transposes
-  its voices as a chord. Thin vertical lines mark each slice start on the
-  waveform; the current slice's line is brighter than the others.
+  its voices as a chord. Slice starts are marked on the waveform with short
+  two-pixel-wide lines (dark orange; the current slice's line is brighter),
+  and the slice under the cursor is shaded on the waveform.
   - **Mode** cycles `OFF` / `EQUAL` / `AUTO` / `LAZY` (EDIT + left/right or
     tap; EDIT + OPT turns slicing off). Switching modes initializes the slice
     points: **EQUAL** divides the Start/End window evenly into **Number**
@@ -626,32 +627,40 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
     exist asks for confirmation first, since it clears them. Slice and
     Stretch are mutually exclusive: enabling one disables the other, and the
     Slice cells are dimmed while Stretch drives the duration.
-  - **Number** shows the current slice (1-indexed). **EDIT + [UP/DOWN]**
-    moves between slices (and recenters a zoomed view on the slice start).
-    In EQUAL, **EDIT + [LEFT/RIGHT]** re-divides the window with a new count
-    (wiping manual edits); in AUTO, **EDIT + [LEFT/RIGHT]** re-detects with a
-    new target count and **EDIT + [UP/DOWN]** adjusts the detection
-    sensitivity (1-99, re-detecting on every step); in LAZY, **EDIT +
-    [LEFT/RIGHT]** also moves between slices - the count only grows through
-    editing. In every mode, **EDIT (tap)** splits the current slice at its
-    midpoint and **EDIT + OPT** deletes it (deleting the last slice turns
-    slicing off; bounds survive an OFF round-trip and come back when a mode
-    is picked again).
+  - **Number** shows the current slice (1-indexed). **EDIT + any direction**
+    moves between slices (the view recenters on the slice start while
+    zoomed). The slice count itself is set with **B + direction** while the
+    cursor rests anywhere on the Slice row: **B + [LEFT/RIGHT]** steps the
+    count by one (minimum 1, maximum 64), **B + [UP/DOWN]** cycles through
+    the power-of-two counts `2 / 4 / 8 / 16 / 32 / 64` with wrap-around.
+    Changing the count re-initializes the points: **EQUAL** re-divides the
+    window evenly, **AUTO** re-runs detection with the new target (the
+    detection sensitivity is derived from the count - more slices mean a
+    more sensitive threshold). **B + direction** is inert in LAZY, where
+    slices are placed by hand. **EDIT + OPT** on the Number or Frame cell
+    deletes the current slice (the first slice cannot be deleted; deleting
+    the last remaining slice turns slicing off; bounds survive an OFF
+    round-trip and come back when a mode is picked again).
   - **Frame** shows the current slice's start frame in hex. **EDIT +
-    [LEFT/RIGHT]** nudges it by one frame (zooming onto the marker while
-    **EDIT** is held), **EDIT + [UP/DOWN]** nudges by 16 and returns to the
-    full view. A marker stays inside its own slice: it cannot cross the
-    previous or next slice start. **EDIT (tap)** splits at the midpoint,
-    **EDIT + OPT** deletes the slice.
-  - **LAZY workflow**: with LAZY selected, tap **PLAY** to toggle a
-    full-sample playback that keeps running after the key is released (a
-    bright marker line follows the position on the waveform). While it
-    plays, every **EDIT** click drops a slice at the playback position
-    (slices closer than 50 ms to an existing one are rejected with `Too
-    close to slice`). Tap **PLAY** again to stop; **EDIT + OPT** on any
-    Slice cell deletes the current slice. The Frame cell dims while the
-    playback-drop is armed. LAZY slices are for editing only: song playback
-    treats a LAZY sample as unsliced and plays the whole Start/End window.
+    [LEFT/RIGHT]** nudges it by ten frames (zooming onto the marker while
+    **EDIT** is held), **EDIT + [UP/DOWN]** nudges by one hundred and
+    returns to the full view. A marker stays inside its own slice: it
+    cannot cross the previous or next slice start. **EDIT + OPT** deletes
+    the slice.
+  - **LAZY workflow**: with LAZY selected, tap **PLAY** to start a one-shot
+    full-sample playback - it plays once from the start and stops by
+    itself (a green two-pixel marker follows the position on the
+    waveform); tapping **PLAY** again stops it early. While it plays,
+    every **EDIT** click drops a slice at the playback position, no matter
+    where the cursor is (slices closer than 50 ms to an existing one are
+    rejected with `Too close to slice`). Playing the sample again keeps
+    the existing chops and adds new ones at every tapped position, in
+    order. The same browsing and editing rules as the other modes apply to
+    hand-placed slices: **EDIT + direction** on **Number** browses them,
+    **Frame** adjusts the selected start, **EDIT + OPT** deletes the
+    current slice. The Frame cell dims while the playback-drop is armed.
+    LAZY slices are for editing only: song playback treats a LAZY sample
+    as unsliced and plays the whole Start/End window.
 - **Process** selects a destructive editing operation: **Crop**, **Normalize**, **Delete**, **Silence**, **Fade In**, **Fade Out** or **Reverse** (EDIT + left/right cycles, tap cycles forward, EDIT + OPT sets none). **GO** (same row) runs the selected operation on the current selection, or on the whole sample when the selection is empty. **Crop** keeps only the selection; **Normalize** scales the selection so its peak reaches full scale (both channels share one gain so the stereo image is preserved); **Delete** removes the selection and joins the tails (deleting the whole sample is rejected); **Silence** zeroes it; **Fade In**/**Fade Out** ramp the selection linearly from/to silence; **Reverse** plays the selection backwards (frames are swapped in place, both channels of a frame move together, length and markers are unchanged). Crop and Delete require a selection — with an empty selection they show `Select region first`. Every operation pauses audio briefly, keeps a one-level undo, and marks the sample as changed in RAM: the file on disk is not touched until the Save flows (see below), and leaving the screen discards the undo slot.
 - **UNDO** (next to GO) swaps the sample back with the state before the last operation. It is dimmed until an operation runs, toggles between the pre-op and post-op states on repeated presses, and is cleared when the screen is re-entered.
 - **File** holds the save flows. The instrument stores the full path of the WAV it was loaded from; these flows write that file or point the instrument at a new one. They never touch the instrument name.
