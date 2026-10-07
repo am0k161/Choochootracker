@@ -1309,7 +1309,20 @@ static void updateSampleVoices(ChipNomadState* state) {
     if (track->note.fx[fxSCF].isOn) cutoff = instrumentFXCutoff(track->note.fx[fxSCF].fxValue);
     if (track->note.fx[fxSRS].isOn) resonance = track->note.fx[fxSRS].fxValue;
     if (track->note.fx[fxSSP].isOn) speedPercent = track->note.fx[fxSSP].fxValue * 500 / 255;
-    if (track->note.fx[fxSLP].isOn) loopMode = track->note.fx[fxSLP].fxValue;
+    // SPL playback modes: 00 forward, 01 reverse, 02 loop, 03 ping-pong.
+    uint8_t forceReverse = 0;
+    if (track->note.fx[fxSLP].isOn) {
+      uint8_t playbackMode = track->note.fx[fxSLP].fxValue;
+      forceReverse = playbackMode == 1 ? 1 : 0;
+      loopMode = playbackMode == 3 ? 2 : (playbackMode == 2 ? 1 : 0);
+    }
+    // SLI plays the numbered slice regardless of the note pitch (sliced
+    // instruments only; 00 keeps the normal note mapping).
+    int sliOverride = track->note.fx[fxSLI].isOn && sliceCount &&
+      track->note.fx[fxSLI].fxValue >= 1;
+    uint8_t sliSlice = sliOverride
+      ? (uint8_t)((track->note.fx[fxSLI].fxValue - 1) % sliceCount) : 0;
+    if (sliOverride) sliceIndex = sliSlice;
     for (int i = 0; i < 4; i++) {
       PlaybackModState* mod = &track->note.modulation[i];
       if (!mod->modulation) continue;
@@ -1363,6 +1376,7 @@ static void updateSampleVoices(ChipNomadState* state) {
           // Same wrap-around mapping as the main slice index above.
           voiceSliceIndex = pitch % sliceCount;
         }
+        if (sliOverride) voiceSliceIndex = sliSlice;
       } else if (track->chordPitchFinal[slot] != EMPTY_VALUE_8) {
         int noteCents = project->linearPitch ? project->pitchTable.values[track->chordPitchFinal[slot]]
           : track->chordPitchFinal[slot] * 100;
@@ -1374,7 +1388,7 @@ static void updateSampleVoices(ChipNomadState* state) {
       voices[slot]->configure(sample, (float)voicePitchCents, gain / track->chordVoiceCount, (float)speedPercent, start, end, (uint8_t)loopMode,
                               (uint16_t)cutoff, (uint8_t)resonance, attack, decay, sustain, release, shape,
                               sliceCount, voiceSliceIndex, sample->stretchMode, project->tickRate,
-                              sample->speedAlgorithm);
+                              sample->speedAlgorithm, forceReverse);
     }
   }
 }

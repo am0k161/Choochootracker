@@ -423,7 +423,7 @@ TEST_CASE("v4 projects preserve LFO wavetable settings") {
   REQUIRE(projectSave(&saved, path) == 0);
   INFO(projectFileError);
   REQUIRE(projectLoad(&loaded, path) == 0);
-  CHECK(projectFileVersion == 6);
+  CHECK(projectFileVersion == 7);
   const Modulation& reloaded = loaded.instruments[0].modulation[2];
   CHECK(reloaded.p1 == static_cast<uint8_t>(LFOShape::wavetable));
   CHECK(reloaded.p2 == static_cast<uint8_t>(LFOTrigger::chain));
@@ -446,7 +446,7 @@ TEST_CASE("phrase FX groups put the active engine after Track FX") {
   CHECK(std::strcmp(fxGroups[1].name, "Track FX") == 0);
   CHECK(fxGroups[1].columns == 4);
   CHECK(fxGroups[1].fxList[3].fx == fxCRD);
-  CHECK(getInstrumentDefinition(InstrumentType::Sample)->fxList[2].fx == fxSTA);
+  CHECK(getInstrumentDefinition(InstrumentType::Sample)->fxList[4].fx == fxSTA);
   CHECK(fxGroups[2].instType == InstrumentType::AY1);
   CHECK(fxGroups[11].instType == InstrumentType::AChChid);
   CHECK(fxGroups[12].instType == InstrumentType::DrumSynth);

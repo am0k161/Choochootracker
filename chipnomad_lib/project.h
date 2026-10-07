@@ -207,6 +207,10 @@ enum FX {
   // Track insert addresses: appended; existing and reserved IDs remain stable.
   fxF11, fxF12, fxF13, fxF14, fxF15, fxF16, fxF17, fxF18, fxF21, fxF22, fxF23, fxF24, fxF25, fxF26, fxF27, fxF28,
 
+  // Sample slice select: plays the numbered slice regardless of the note.
+  // Appended to preserve project FX IDs.
+  fxSLI,
+
   // Total count - must be last
   fxTotalCount
 };

@@ -113,6 +113,13 @@ with rhythm patterns:
   the shifted notes are snapped back into the scale; Sampler instruments with
   **Slice** on stay chromatic. Nothing is erased: the 8th press restores the
   notes the selection held when the cycle started, then the cycle starts over.
+- **OPT + UP** on a selection covering the volume column only (no note,
+  instrument or FX cells) randomizes velocities instead of mutating: the
+  first press applies the Minimal pattern (each volume shifts by up to
+  +-20), the second Medium (up to +-50), the third Random (completely
+  random values), and the fourth restores the volumes the selection held
+  when the cycle started. Releasing **OPT** resets the cycle to Minimal.
+  Rows without a volume are left untouched.
 - **OPT + DOWN** spreads the placed notes of sliced Sampler instruments in
   the selection into a chromatic run: each instrument's first note (highest
   in the sequencer) keeps its value and every following note of that
@@ -142,6 +149,13 @@ with rhythm patterns:
 - Every fill press erases the selection's notes before writing, and placed
   notes carry the last used instrument; releasing **OPT** resets the cycles
   to their first step.
+- While a selection is active and no other message is showing, the status
+  bar rotates a reminder of these combos every 2.5 seconds: `EDIT + DIR =
+  batch note edit`, `Double-tap EDIT: resample selection`, `OPT + LEFT =
+  pattern fill`, `OPT + RIGHT = random fill`, `OPT + UP =
+  mutate/randomize velocity` and `OPT + DOWN = random arp/slice spread`.
+  Entering or leaving selection mode restarts the rotation; any action
+  message replaces the hint until it expires.
 
 ### Playback
 
@@ -682,6 +696,15 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
     like on every other screen. LAZY slices play back in the sequencer just
     like EQUAL and AUTO: phrase notes map chromatically from **C-0** onto
     the hand-placed slices, wrapping around past the last one.
+  - **Combo hints**: while the cursor rests on a Slice row cell and no other
+    message is showing, the status bar rotates a hint for that cell every
+    2.5 seconds. On **Mode** it describes the current mode (`EQUAL: Divides
+    sample in equal parts`, `AUTO: Divides sample based on transients`,
+    `LAZY: Press Play and add slices with EDIT`); on **Number** it
+    alternates `OPT + DIR = change slice count` and `EDIT + DIR = browse
+    slices`; on **Frame** it shows `Adjust slice start`. Moving the cursor
+    restarts the rotation; any action message replaces the hint until it
+    expires.
 - **Process** selects a destructive editing operation: **Crop**, **Normalize**, **Delete**, **Silence**, **Fade In**, **Fade Out** or **Reverse** (EDIT + left/right cycles, tap cycles forward, EDIT + OPT sets none). **GO** (same row) runs the selected operation on the current selection, or on the whole sample when the selection is empty. **Crop** keeps only the selection; **Normalize** scales the selection so its peak reaches full scale (both channels share one gain so the stereo image is preserved); **Delete** removes the selection and joins the tails (deleting the whole sample is rejected); **Silence** zeroes it; **Fade In**/**Fade Out** ramp the selection linearly from/to silence; **Reverse** plays the selection backwards (frames are swapped in place, both channels of a frame move together, length and markers are unchanged). Crop and Delete require a selection — with an empty selection they show `Select region first`. Every operation pauses audio briefly, keeps a one-level undo, and marks the sample as changed in RAM: the file on disk is not touched until the Save flows (see below), and leaving the screen discards the undo slot.
 - **UNDO** (next to GO) swaps the sample back with the state before the last operation. It is dimmed until an operation runs, toggles between the pre-op and post-op states on repeated presses, and is cleared when the screen is re-entered.
 - **File** holds the save flows. The instrument stores the full path of the WAV it was loaded from; these flows write that file or point the instrument at a new one. They never touch the instrument name.
@@ -1025,6 +1048,8 @@ The value is interpreted as a signed `8-bit` relative change (`01` adds `1`, `FF
 
 | FX | Value | Meaning |
 |---|---|---|
+| `SPL` | `00-03` | Playback mode: `00` Forward, `01` Reverse, `02` Loop, `03` Ping-Pong |
+| `SLI` | `00-FF` | Play the numbered slice (`01` = first slice) regardless of the note; `00` keeps normal note mapping. Requires slice mode enabled on the instrument |
 | `SPT` | signed `XX` | Sample transposition in semitones |
 | `SST` | `00-FF` | Normalised playback start |
 | `STA` | `00-FF` | Alias of `SST` (normalised playback start) |
@@ -1033,7 +1058,6 @@ The value is interpreted as a signed `8-bit` relative change (`01` adds `1`, `FF
 | `SCF` | `00-FF` | Exponential cutoff, `20 Hz` to `20 kHz` |
 | `SRS` | `00-FF` | Exponential filter resonance |
 | `SSP` | `00-FF` | Sample speed, mapped from `0%` to `500%` |
-| `SLP` | `00-02` | Loop mode: Off, Loop, Ping-Pong |
 
 ### AY FX shared by AY instruments
 

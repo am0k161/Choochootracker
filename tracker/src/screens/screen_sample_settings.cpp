@@ -138,6 +138,49 @@ static InstrumentSample* currentSample(void) {
   return &chipnomadState->project.instruments[cInstrument].chip.sample;
 }
 
+// Contextual combo hints (session-only): while the cursor rests on a Slice
+// row cell, draw() rotates a hint for that cell in the message bar every
+// 2.5 s (150 frames at 60 FPS). The rotation pauses while any other
+// message is active and restarts from the first hint when the cursor
+// moves to a different cell.
+static int hintPhase = 0;
+static int hintCursorRow = -1;
+static int hintCursorCol = -1;
+
+// Advance the rotating hint for the given cell. Called from draw() when no
+// other message is showing; each call displays the next hint for 2.5 s.
+static void settingsUpdateHint(int row, int col) {
+  if (row != hintCursorRow || col != hintCursorCol) {
+    // Cursor moved to a different cell: restart the rotation.
+    hintCursorRow = row;
+    hintCursorCol = col;
+    hintPhase = 0;
+  }
+  if (row == 2 && col == 0) {
+    // Slice mode cell: describe the mode the pointer rests on.
+    const SliceMode mode = sampleDecodeSliceMode(currentSample()->slice);
+    static const char* modeHints[] = {
+      "EQUAL: Divides sample in equal parts",
+      "AUTO: Divides sample based on transients",
+      "LAZY: Press Play and add slices with EDIT",
+    };
+    if (mode >= sliceModeEqual && mode <= sliceModeLazy) {
+      screenMessage(150, "%s", modeHints[mode - 1]);
+    }
+    // OFF shows nothing: the cell itself already says OFF.
+  } else if (row == 2 && col == 1) {
+    // Slice number cell: alternate the two combos.
+    static const char* numHints[] = {
+      "OPT + DIR = change slice count",
+      "EDIT + DIR = browse slices",
+    };
+    screenMessage(150, "%s", numHints[hintPhase++ % 2]);
+  } else if (row == 2 && col == 2) {
+    // Slice frame cell: single static hint.
+    screenMessage(150, "Adjust slice start");
+  }
+}
+
 static Bitmap* ensurePreviewBitmap(Bitmap** bitmap) {
   if (*bitmap && ((*bitmap)->widthChars != previewWidth || (*bitmap)->heightChars != previewHeight)) {
     gfxBitmapFree(*bitmap);
@@ -1520,6 +1563,12 @@ static void draw(void) {
   const int wasActive = sampleLazyPlaybackActive;
   const PlaybackStatus* playback = chipnomadGetPlaybackStatus(chipnomadState);
   SampleVoice* voice = chipnomadState->sampleVoices[*pSongTrack][0];
+  // Rotating combo hints for the Slice row cells: only when no other
+  // message (action feedback, error) is showing.
+  if (!screenGetActiveMessage()[0]) {
+    settingsUpdateHint(screenSampleSettingsData.cursorRow,
+                       screenSampleSettingsData.cursorCol);
+  }
   if (sampleLazyPlaybackActive) {
     // The preview can end on its own (one-shot sample finished, or the
     // track was stopped from elsewhere): drop the flag when the phrase row

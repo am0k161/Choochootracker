@@ -302,7 +302,7 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
                             uint16_t cutoffHz, uint8_t resonance, int attack, int decay,
                             int sustain, int release, int envelopeShape, uint8_t sliceCount,
                             uint8_t sliceIndex, uint8_t stretchMode, float tickRateHz,
-                            uint8_t speedAlgorithm) {
+                            uint8_t speedAlgorithm, uint8_t forceReverse) {
   sample_ = sample;
   post_.setGain(gain);
   if (!sample_ || !sample_->data || sample_->frameCount == 0) return;
@@ -312,7 +312,15 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
   useStretch_ = sliceCount == 0 &&
     (stretchMode != 0 || (speedAlgorithm == 1 && speedPercent != 0));
   if (useStretch_) {
-    stretch_.configure(sample, stretchMode, speedPercent, tickRateHz, pitchCents / 100.0f, start, end);
+    // The stretcher derives reverse playback from the marker order; swap
+    // the markers when SPL 01 forces reverse on an ascending window.
+    uint8_t stretchStart = start;
+    uint8_t stretchEnd = end;
+    if (forceReverse && start <= end) {
+      stretchStart = end;
+      stretchEnd = start;
+    }
+    stretch_.configure(sample, stretchMode, speedPercent, tickRateHz, pitchCents / 100.0f, stretchStart, stretchEnd);
   }
 
   uint32_t startFrame;
@@ -342,7 +350,7 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
       startFrame_ = sample_->sliceBounds[sliceIndex];
       endFrame_ = sliceIndex + 1 < sliceCount ? sample_->sliceBounds[sliceIndex + 1]
                                               : loopEndFrame;
-      reverse_ = false;
+      reverse_ = forceReverse != 0;
     } else {
       uint32_t sliceStart, sliceEnd;
       sampleSliceFrames(loopLength, sliceCount, sliceIndex, &sliceStart, &sliceEnd);
@@ -350,14 +358,23 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
       // Map slice to absolute frame positions within the loop region
       startFrame_ = loopStartFrame + sliceStart;
       endFrame_ = loopStartFrame + sliceEnd;
-      reverse_ = false;
+      reverse_ = forceReverse != 0;
     }
   } else {
     startFrame = sampleMarkerToStartFrame(sample_->frameCount, start);
     endFrame = sampleMarkerToEndFrame(sample_->frameCount, end);
-    reverse_ = start > end;
-    startFrame_ = reverse_ ? endFrame - 1 : startFrame;
-    endFrame_ = reverse_ ? startFrame + 1 : endFrame;
+    // SPL 01 forces reverse regardless of the marker order; the legacy
+    // Start > End marker convention still applies when not forced. The
+    // window is stored ascending either way - reverse playback walks it
+    // from the high end down (see noteOn).
+    reverse_ = forceReverse != 0 || start > end;
+    if (startFrame > endFrame) {
+      uint32_t swap = startFrame;
+      startFrame = endFrame;
+      endFrame = swap;
+    }
+    startFrame_ = startFrame;
+    endFrame_ = endFrame;
   }
   if (endFrame_ <= startFrame_) endFrame_ = startFrame_ + 1;
   if (endFrame_ > sample_->frameCount) endFrame_ = sample_->frameCount;
@@ -388,7 +405,7 @@ void SampleVoice::noteOn() {
     post_.noteOn(true);
     return;
   }
-  position_ = startFrame_;
+  position_ = reverse_ ? (double)endFrame_ - 1.0 : startFrame_;
   direction_ = reverse_ ? -1 : 1;
   grainExhausted_ = false;
   grainPosition_[0] = reverse_ ? endFrame_ - 1 : startFrame_;
@@ -428,7 +445,9 @@ float SampleVoice::grainSampleAt(double position, int channel) const {
     return 0.0f;
   }
   uint32_t frame = (uint32_t)position;
-  uint32_t next = frame + 1 < endFrame_ ? frame + 1 : frame;
+  uint32_t next = direction_ > 0
+    ? (frame + 1 < endFrame_ ? frame + 1 : frame)
+    : (frame > startFrame_ ? frame - 1 : frame);
   int sourceChannel = sample_->channels == 1 ? 0 : channel;
   float a = sample_->data[frame * sample_->channels + sourceChannel] / 32768.0f;
   float b = sample_->data[next * sample_->channels + sourceChannel] / 32768.0f;
@@ -494,7 +513,9 @@ void SampleVoice::render(float* output, size_t frames) {
           grainPosition_[grain] = nextGrainPosition_;
           nextGrainPosition_ += direction_ * step_ * grainHop_ * timeStretch_;
           grainAge_[grain] = 0;
-          if (loopMode_ == 0 && nextGrainPosition_ >= endFrame_) grainExhausted_ = true;
+          if (loopMode_ == 0 && (reverse_
+            ? nextGrainPosition_ <= startFrame_
+            : nextGrainPosition_ >= endFrame_)) grainExhausted_ = true;
         }
       }
       for (int channel = 0; channel < 2; ++channel) {
@@ -508,9 +529,11 @@ void SampleVoice::render(float* output, size_t frames) {
       }
       grainAge_[0]++;
       grainAge_[1]++;
+      double head0 = grainPosition_[0] + direction_ * step_ * grainAge_[0];
+      double head1 = grainPosition_[1] + direction_ * step_ * grainAge_[1];
       if (grainExhausted_ && loopMode_ == 0 &&
-          grainPosition_[0] + step_ * grainAge_[0] >= endFrame_ &&
-          grainPosition_[1] + step_ * grainAge_[1] >= endFrame_) { kill(); break; }
+          (reverse_ ? head0 <= startFrame_ && head1 <= startFrame_
+                    : head0 >= endFrame_ && head1 >= endFrame_)) { kill(); break; }
     } else {
       for (int channel = 0; channel < 2; channel++) {
         output[i * 2 + channel] = post_.process(sampleAt(position_, channel), channel);

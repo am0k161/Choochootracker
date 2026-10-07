@@ -26,6 +26,21 @@ static int arpCycleIndex = 0;
 // 1 = the random arp phase has taken over (reset with the cycles).
 static int arpSlicePhase = 0;
 
+// Selection-mode combo hints (session-only): while a selection is active,
+// draw() rotates a hint for the selection combos in the message bar every
+// 2.5 s (150 frames at 60 FPS). The rotation pauses while any other
+// message is active and restarts from the first hint when selection mode
+// is entered or left.
+static int selectionHintPhase = 0;
+static int selectionHintActive = 0;
+
+// Velocity randomize (B+UP on a velocity-only selection): the first press
+// of a hold captures the selection's volumes so the 4th press can restore
+// them; presses 1-3 apply the Minimal (+-20), Medium (+-50) and Random
+// (fully random) patterns.
+static uint16_t velocityOriginalVolumes[16];
+static int velocityCycleIndex = 0;
+
 static int getColumnCount(int row);
 static void drawStatic(void);
 static void drawField(int col, int row, CellState state);
@@ -82,6 +97,7 @@ static void init(void) {
   mutateCycleIndex = 0;
   arpCycleIndex = 0;
   arpSlicePhase = 0;
+  velocityCycleIndex = 0;
 }
 
 static void setup(int input) {
@@ -93,6 +109,7 @@ static void setup(int input) {
   mutateCycleIndex = 0;
   arpCycleIndex = 0;
   arpSlicePhase = 0;
+  velocityCycleIndex = 0;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -194,8 +211,36 @@ static void drawSelection(int col1, int row1, int col2, int row2) {
   gfxRect(x, y, w, h);
 }
 
+// Advance the rotating selection-mode hint. Called from draw() while a
+// selection is active and no other message is showing; each call displays
+// the next hint for 2.5 s.
+static void selectionUpdateHint(void) {
+  if (!selectionHintActive) {
+    // Selection mode was just entered: restart the rotation.
+    selectionHintActive = 1;
+    selectionHintPhase = 0;
+  }
+  static const char* hints[] = {
+    "EDIT + DIR = batch note edit",
+    "Double-tap EDIT: resample selection",
+    "OPT + LEFT = pattern fill",
+    "OPT + RIGHT = random fill",
+    "OPT + UP = mutate/randomize velocity",
+    "OPT + DOWN = random arp/slice spread",
+  };
+  screenMessage(150, "%s", hints[selectionHintPhase++ % 6]);
+}
+
 static void draw(void) {
   if (isFxEdit) return;
+
+  // Rotating combo hints while a selection is active: only when no other
+  // message (action feedback, error) is showing.
+  if (screen.selectMode == 1) {
+    if (!screenGetActiveMessage()[0]) selectionUpdateHint();
+  } else {
+    selectionHintActive = 0;
+  }
 
   gfxClearRect(0, 3, 1, screenVisibleRows());
   gfxSetFgColor(appSettings.colorScheme.textInfo);
@@ -646,6 +691,34 @@ static void randomArpPress(int startRow, int endRow) {
   arpCycleIndex++;
 }
 
+// Velocity randomize: cycle through three randomizing patterns and reset
+// on the 4th press. Only runs when the selection covers the volume column
+// exclusively (single column, col 2) - with any other selection the
+// mutate feature handles B+UP instead.
+static const char* velocityApplyPattern(int startRow, int endRow, int pattern) {
+  // pattern 0 = Minimal (up to +-20), 1 = Medium (up to +-50),
+  // 2 = Random (completely random values)
+  for (int r = startRow; r <= endRow; r++) {
+    uint16_t volume = phraseRows[r].volume;
+    if (volume == EMPTY_VALUE_16) continue;
+    uint16_t next;
+    if (pattern == 2) {
+      next = (uint16_t)(utilsRandom() % (PHRASE_VOLUME_MAX + 1));
+    } else {
+      const int range = pattern == 0 ? 20 : 50;
+      // Delta in [-range, +range]; clamp to the 0..127 volume range.
+      int delta = (int)(utilsRandom() % (2 * range + 1)) - range;
+      int value = (int)volume + delta;
+      if (value < 0) value = 0;
+      if (value > PHRASE_VOLUME_MAX) value = PHRASE_VOLUME_MAX;
+      next = (uint16_t)value;
+    }
+    phraseRows[r].volume = next;
+  }
+  static const char* labels[] = {"VELOCITY +-20", "VELOCITY +-50", "VELOCITY RANDOM"};
+  return labels[pattern];
+}
+
 // Returns 1 when the combo was consumed by the fill/mutate/spread/arp
 // features. Key-downs are only consumed while a selection is active and
 // includes the note column - outside select mode B+LEFT/RIGHT/UP/DOWN
@@ -658,6 +731,36 @@ static int fillInput(int isKeyDown, int keys) {
       keys != (keyOpt | keyUp) && keys != (keyOpt | keyDown)) return 0;
     int startCol, startRow, endCol, endRow;
     getSelectionBounds(&screen, &startCol, &startRow, &endCol, &endRow);
+    // Velocity randomize: B+UP on a velocity-only selection (single
+    // column, col 2) cycles the randomizing patterns instead of mutate.
+    if (keys == (keyOpt | keyUp) && startCol == endCol && startCol == 2) {
+      // The fill supersedes a pending copy-on-Opt-release.
+      screenClearOptPressed();
+      if (velocityCycleIndex == 0) {
+        // First press of a hold: capture the selection's volumes so the
+        // 4th press can restore them.
+        for (int r = startRow; r <= endRow; r++) {
+          velocityOriginalVolumes[r] = phraseRows[r].volume;
+        }
+      }
+      if (velocityCycleIndex < 3) {
+        // Presses 1-3 apply the Minimal, Medium and Random patterns.
+        const char* label = velocityApplyPattern(startRow, endRow,
+                                                 velocityCycleIndex);
+        screenMessage(MESSAGE_TIME, "%s", label);
+        velocityCycleIndex++;
+      } else {
+        // 4th press: restore the volumes captured on the first press.
+        for (int r = startRow; r <= endRow; r++) {
+          phraseRows[r].volume = velocityOriginalVolumes[r];
+        }
+        screenMessage(MESSAGE_TIME, "RESTORED");
+        velocityCycleIndex = 0;
+      }
+      projectModified = 1;
+      fullRedraw();
+      return 1;
+    }
     if (startCol != 0) return 0; // Features are scoped to the note column
     // The fill supersedes a pending copy-on-Opt-release.
     screenClearOptPressed();
@@ -742,6 +845,7 @@ static int fillInput(int isKeyDown, int keys) {
     mutateCycleIndex = 0;
     arpCycleIndex = 0;
     arpSlicePhase = 0;
+    velocityCycleIndex = 0;
   }
   return 0;
 }

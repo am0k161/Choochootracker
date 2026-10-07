@@ -14,7 +14,7 @@
 
 // Shared state
 char projectFileError[41];
-int projectFileVersion = 6;  // Default to current version
+int projectFileVersion = 7;  // Default to current version
 static char chipNames[][16] = { "AY8910" };
 
 // Peek/consume implementation - single global buffer (ChipNomad is single-threaded)
@@ -242,6 +242,11 @@ static uint8_t scanFX(char* str, Project* p) {
   buf[3] = 0;
 
   if (!strcmp(buf, "---")) return EMPTY_VALUE_8;
+
+  // Legacy file spelling of the sample playback FX (shown as SPL in the
+  // UI). The AY2 Pulse Low Level FX owns the "SPL" name in this flat
+  // namespace, so the sample FX keeps "SLP" in files and resolves here.
+  if (!strcmp(buf, "SLP")) return fxSLP;
 
   // Scan all FX groups
   extern FXGroup fxGroups[];
@@ -707,7 +712,9 @@ static int projectLoadInternal(FILE* file, Project* project) {
 
   // Detect version
   if (strlen(version) > 0) {
-    if (strncmp(version, " 6.0", 4) == 0) {
+    if (strncmp(version, " 7.0", 4) == 0) {
+      projectFileVersion = 7;
+    } else if (strncmp(version, " 6.0", 4) == 0) {
       projectFileVersion = 6;
     } else if (strncmp(version, " 5.0", 4) == 0) {
       projectFileVersion = 5;
@@ -1024,6 +1031,25 @@ static int projectLoadInternal(FILE* file, Project* project) {
     for (int table = 0; table < PROJECT_MAX_TABLES; ++table) for (int row = 0; row < 16; ++row) for (int fx = 0; fx < 4; ++fx)
       if (p.tables[table].rows[row].fx[fx][0] == fxSDT) p.tables[table].rows[row].fx[fx][1] = convert(p.tables[table].rows[row].fx[fx][1]);
   }
+  if (projectFileVersion < 7) {
+    // SPL redefinition: SLP 1=loop / 2=ping-pong became SPL 01=reverse /
+    // 02=loop / 03=ping-pong. Shift the old loop values so existing songs
+    // keep their playback mode.
+    for (int phrase = 0; phrase < PROJECT_MAX_PHRASES; ++phrase)
+      for (int row = 0; row < 16; ++row)
+        for (int fx = 0; fx < 3; ++fx)
+          if (p.phrases[phrase].rows[row].fx[fx][0] == fxSLP &&
+              p.phrases[phrase].rows[row].fx[fx][1] >= 1 &&
+              p.phrases[phrase].rows[row].fx[fx][1] <= 2)
+            p.phrases[phrase].rows[row].fx[fx][1] += 1;
+    for (int table = 0; table < PROJECT_MAX_TABLES; ++table)
+      for (int row = 0; row < 16; ++row)
+        for (int fx = 0; fx < 4; ++fx)
+          if (p.tables[table].rows[row].fx[fx][0] == fxSLP &&
+              p.tables[table].rows[row].fx[fx][1] >= 1 &&
+              p.tables[table].rows[row].fx[fx][1] <= 2)
+            p.tables[table].rows[row].fx[fx][1] += 1;
+  }
   projectFree(project);
   *project = p;
   return 0;
@@ -1281,7 +1307,6 @@ static int projectSavePitchTable(FILE* file, Project* project) {
 }
 
 static int projectSaveSong(FILE* file, Project* project) {
-  extern FXName fxNames[256];
 
   fprintf(file, "\n## Song\n\n```\n");
 
@@ -1362,8 +1387,15 @@ static int projectSaveGrooves(FILE* file, Project* project) {
   return 0;
 }
 
+// File spelling of an FX name. SPL (sample playback) keeps its legacy
+// "SLP" spelling: the AY2 Pulse Low Level FX already owns "SPL" in the
+// flat FX namespace scanFX resolves, so writing "SPL" for the sample FX
+// would hijack loads of both old and new files.
+static const char* fxSaveName(uint8_t fx) {
+  return fx == fxSLP ? "SLP" : fxNames[fx].name;
+}
+
 static int projectSavePhrases(FILE* file, Project* project) {
-  extern FXName fxNames[256];
 
   fprintf(file, "\n## Phrases\n\n");
 
@@ -1375,11 +1407,11 @@ static int projectSavePhrases(FILE* file, Project* project) {
           noteName(project, project->phrases[c].rows[d].note),
           byteToHexOrEmpty(project->phrases[c].rows[d].instrument),
           volumeToHexOrEmpty(project->phrases[c].rows[d].volume),
-          fxNames[project->phrases[c].rows[d].fx[0][0]].name,
+          fxSaveName(project->phrases[c].rows[d].fx[0][0]),
           byteToHex(project->phrases[c].rows[d].fx[0][1]),
-          fxNames[project->phrases[c].rows[d].fx[1][0]].name,
+          fxSaveName(project->phrases[c].rows[d].fx[1][0]),
           byteToHex(project->phrases[c].rows[d].fx[1][1]),
-          fxNames[project->phrases[c].rows[d].fx[2][0]].name,
+          fxSaveName(project->phrases[c].rows[d].fx[2][0]),
           byteToHex(project->phrases[c].rows[d].fx[2][1])
         );
       }
@@ -1391,7 +1423,6 @@ static int projectSavePhrases(FILE* file, Project* project) {
 }
 
 int saveTable(FILE* file, int idx, Table* table) {
-  extern FXName fxNames[256];
 
   fprintf(file, "\n### Table %X (Retrig: %s)\n\n```\n", idx, tableRetriggerModeName(table->retriggerMode));
   for (int d = 0; d < 16; d++) {
@@ -1399,10 +1430,10 @@ int saveTable(FILE* file, int idx, Table* table) {
       table->rows[d].pitchFlag ? '=' : '~',
       byteToHex(table->rows[d].pitchOffset),
       byteToHexOrEmpty(table->rows[d].volume),
-      fxNames[table->rows[d].fx[0][0]].name, byteToHex(table->rows[d].fx[0][1]),
-      fxNames[table->rows[d].fx[1][0]].name, byteToHex(table->rows[d].fx[1][1]),
-      fxNames[table->rows[d].fx[2][0]].name, byteToHex(table->rows[d].fx[2][1]),
-      fxNames[table->rows[d].fx[3][0]].name, byteToHex(table->rows[d].fx[3][1]));
+      fxSaveName(table->rows[d].fx[0][0]), byteToHex(table->rows[d].fx[0][1]),
+      fxSaveName(table->rows[d].fx[1][0]), byteToHex(table->rows[d].fx[1][1]),
+      fxSaveName(table->rows[d].fx[2][0]), byteToHex(table->rows[d].fx[2][1]),
+      fxSaveName(table->rows[d].fx[3][0]), byteToHex(table->rows[d].fx[3][1]));
   }
   fprintf(file, "```\n");
   return 0;
@@ -1455,7 +1486,7 @@ static int projectSaveAYWavetables(FILE* file, Project* project) {
 }
 
 static int projectSaveInternal(FILE* file, Project* project) {
-  fprintf(file, "# ChooChooTracker Module 6.0\n\n");
+  fprintf(file, "# ChooChooTracker Module 7.0\n\n");
 
   fprintf(file, "- Title: %s\n", project->title);
   fprintf(file, "- Author: %s\n", project->author);
