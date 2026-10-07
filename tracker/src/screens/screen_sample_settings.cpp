@@ -82,9 +82,13 @@ static int pendingDirtyRestore;
 // the folder browser.
 static char saveAsName[64];
 
-// Mode the user asked for while the LAZY-override confirmation dialog is
-// up (0 = none pending). Applied by the confirm callback.
-static int pendingSliceMode;
+// Stashed slice setting captured when leaving EQUAL/AUTO for LAZY: the
+// sentinel (mode + count) and the bounds array. Switching back restores
+// it verbatim - no detection re-run, no confirmation dialog. Keyed by
+// instrument index so one sample's stash never leaks into another.
+static int sliceStashInstrument = -1;
+static uint8_t sliceStashSlice;
+static uint32_t sliceStashBounds[PROJECT_SAMPLE_MAX_SLICES];
 
 static Bitmap* samplePreviewBitmap;
 static Bitmap* sampleSliceMarkerBitmap;
@@ -634,10 +638,15 @@ static void settingsDrawField(int col, int row, CellState state) {
       gfxClearRect(sliceNumX, fieldRow0 + row, sliceNumW, 1);
       if (dimmed || mode == sliceModeOff) gfxSetFgColor(appSettings.colorScheme.textEmpty);
       char text[8];
-      // 1-indexed current slice, clamped into the live count
-      int shown = currentSlice < count ? currentSlice : (count > 0 ? count - 1 : 0);
-      snprintf(text, sizeof(text), "%02d", shown + 1);
-      gfxPrint(sliceNumX, fieldRow0 + row, text);
+      // The box shows the number of slices set (also live while the count
+      // is changed with B+direction); the browsed slice is indicated on
+      // the waveform by its brighter marker and the black band.
+      if (mode == sliceModeOff) {
+        gfxPrint(sliceNumX, fieldRow0 + row, "-");
+      } else {
+        snprintf(text, sizeof(text), "%02d", count);
+        gfxPrint(sliceNumX, fieldRow0 + row, text);
+      }
     } else {
       gfxClearRect(sliceFrameX, fieldRow0 + row, sliceFrameW, 1);
       if (dimmed || mode == sliceModeOff) gfxSetFgColor(appSettings.colorScheme.textEmpty);
@@ -793,21 +802,6 @@ static void settingsReturnFromDialog(int keepDirty) {
 }
 
 static void settingsCancelDialog(void) {
-  settingsReturnFromDialog(1);
-}
-
-// Confirm callback for the LAZY-override dialog: apply the pending mode
-// switch (clears the chops). Re-entering the screen resets the session
-// state, so the work happens here before the round trip.
-static void settingsSliceModeConfirmed(void) {
-  InstrumentSample* sample = currentSample();
-  if (pendingSliceMode == sliceModeLazy) {
-    sampleSliceInitLazy(sample);
-    if (sample->stretchMode != 0) sample->stretchMode = 0;
-    currentSlice = 0;
-    projectModified = 1;
-  }
-  pendingSliceMode = 0;
   settingsReturnFromDialog(1);
 }
 
@@ -1053,8 +1047,9 @@ static void settingsRunAutoDetect(InstrumentSample* sample, uint8_t count) {
 
 // Mode cell (col 0): cycle Off / EQUAL / AUTO / LAZY. Switching to a mode
 // initializes the bounds (EQUAL: even division; AUTO: spectral-flux
-// detection; LAZY: single whole-loop slice). Switching to LAZY with
-// existing chops asks for confirmation first.
+// detection; LAZY: single whole-loop slice). Leaving EQUAL/AUTO for LAZY
+// stashes the chops; leaving LAZY to EQUAL/AUTO restores the stash
+// verbatim, so no confirmation dialog is needed anywhere.
 static int settingsSliceModeEdit(InstrumentSample* sample, CellEditAction action) {
   SliceMode mode = sampleDecodeSliceMode(sample->slice);
   uint8_t nextMode = (uint8_t)mode;
@@ -1072,16 +1067,23 @@ static int settingsSliceModeEdit(InstrumentSample* sample, CellEditAction action
   if (nextMode == (uint8_t)mode) return 0;
 
   if (nextMode == sliceModeLazy) {
-    // Switching to LAZY overrides existing chops; ask before wiping them.
-    const uint8_t count = sampleDecodeSliceCount(sample->slice);
-    if (count > 1) {
-      pendingSliceMode = sliceModeLazy;
-      confirmSetup("Switching to LAZY will clear existing chops. Continue?",
-                   settingsSliceModeConfirmed, settingsCancelDialog);
-      screenSetup(&screenConfirm, 0);
-      return 1;
+    // Leaving EQUAL/AUTO for LAZY: stash the chops so switching back
+    // restores them verbatim - the setting is never lost, so no
+    // confirmation is needed.
+    if (mode == sliceModeEqual || mode == sliceModeAuto) {
+      sliceStashInstrument = cInstrument;
+      sliceStashSlice = sample->slice;
+      memcpy(sliceStashBounds, sample->sliceBounds, sizeof(sliceStashBounds));
     }
     sampleSliceInitLazy(sample);
+  } else if (mode == sliceModeLazy && sliceStashInstrument == cInstrument &&
+             (nextMode == sliceModeEqual || nextMode == sliceModeAuto)) {
+    // Back from LAZY: restore the stashed setting instead of
+    // re-initializing (no detection re-run, no even re-division). The
+    // stashed mode wins over the cycled-to one - this is the "move back".
+    sample->slice = sliceStashSlice;
+    memcpy(sample->sliceBounds, sliceStashBounds, sizeof(sample->sliceBounds));
+    sliceStashInstrument = -1;
   } else if (nextMode == sliceModeOff) {
     // Off keeps the bounds in memory so toggling back restores them.
     sample->slice = 0;
@@ -1393,10 +1395,11 @@ static void setup(int input) {
   // with the default markers - so the process tools act on the region out
   // of the box. Both are session-only editor state, re-derived on every
   // entry; the undo slot is dropped too - undo never survives leaving the
-  // screen. The dirty flag is restored from pendingDirtyRestore when a
-  // dialog round trip re-enters.
+  // screen, and neither does the LAZY stash. The dirty flag is restored
+  // from pendingDirtyRestore when a dialog round trip re-enters.
   InstrumentSample* sample = currentSample();
   sampleOpFreeUndo(&editorUndo);
+  sliceStashInstrument = -1;
   zoomOutFull(sample, &editorView);
   editorSelection.start = sampleMarkerToStartFrame(sample->frameCount, sample->start);
   editorSelection.end = sampleMarkerToEndFrame(sample->frameCount, sample->end);
