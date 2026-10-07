@@ -127,6 +127,12 @@ class AudioCommandQueue {
         case kStartChain: playbackStartChain(playback, command.a, command.b, command.c, command.d); break;
         case kStartPhrase: playbackStartPhrase(playback, command.a, command.b, command.c, command.d); break;
         case kStartPhraseRow: playbackStartPhraseRow(playback, command.a, const_cast<PhraseRow*>(&command.row)); break;
+        case kStartPhraseRowFull:
+          // Set the bypass AFTER playbackStartPhraseRow: resetTrack inside
+          // clears the flag, so setting it first would be undone.
+          playbackStartPhraseRow(playback, command.a, const_cast<PhraseRow*>(&command.row));
+          playback->tracks[command.a].sliceBypass = 1;
+          break;
         case kQueuePhrase: playbackQueuePhrase(playback, command.a, command.b, command.c); break;
         case kStartLiveChain: playbackStartLiveChain(playback, command.a, command.b); break;
         case kQueueLiveChain: playbackQueueLiveChain(playback, command.a, command.b, command.c); break;
@@ -175,7 +181,7 @@ class AudioCommandQueue {
   template <typename T> struct Slot { T value; std::atomic<int> state{kFree}; };
   struct Settings { uint64_t trackMask = ~UINT64_C(0); LoopRange loopRange{}; uint8_t loopDirty = 0; };
   struct AudioCommand { uint8_t type; int a, b, c, d; PhraseRow row; };
-  enum CommandType { kStartSong, kStartChain, kStartPhrase, kStartPhraseRow, kQueuePhrase, kPreviewNote, kStopPreview, kClearTrackFX, kStartLiveChain, kQueueLiveChain, kSetScale };
+  enum CommandType { kStartSong, kStartChain, kStartPhrase, kStartPhraseRow, kQueuePhrase, kPreviewNote, kStopPreview, kClearTrackFX, kStartLiveChain, kQueueLiveChain, kSetScale, kStartPhraseRowFull };
   static constexpr unsigned int kSlotCount = 3;
   static constexpr unsigned int kCommandCapacity = 64;
 
@@ -703,6 +709,12 @@ int chipnomadQueuePlaybackStartPhrase(ChipNomadState* state, int trackIdx, int s
 }
 int chipnomadQueuePlaybackStartPhraseRow(ChipNomadState* state, int trackIdx, const PhraseRow* row) {
   return state && state->audioCommands && row ? state->audioCommands->pushCommand(3, trackIdx, 0, 0, 0, row) : 0;
+}
+// Full-sample one-shot preview of a LAZY sample: same as StartPhraseRow but
+// sets the track's sliceBypass flag so the voice ignores slice mapping and
+// plays the whole region.
+int chipnomadQueuePlaybackStartPhraseRowFull(ChipNomadState* state, int trackIdx, const PhraseRow* row) {
+  return state && state->audioCommands && row ? state->audioCommands->pushCommand(11, trackIdx, 0, 0, 0, row) : 0;
 }
 int chipnomadQueuePlaybackQueuePhrase(ChipNomadState* state, int trackIdx, int songRow, int chainRow) {
   return state && state->audioCommands ? state->audioCommands->pushCommand(4, trackIdx, songRow, chainRow) : 0;
@@ -1259,9 +1271,11 @@ static void updateSampleVoices(ChipNomadState* state) {
     int loopMode = sample->loopMode;
     uint8_t start = sample->start;
     uint8_t end = sample->end;
-    // D3: LAZY slices are chosen by editing, not by pitch - song playback
-    // treats LAZY as slice=0 (full-sample playback).
-    uint8_t sliceCount = sampleActsAsSliced(sample) ? sampleDecodeSliceCount(sample->slice) : 0;
+    // D3 (updated): LAZY slices now map chromatically like EQUAL/AUTO. The
+    // only exception is the one-shot full-sample preview (kStartPhraseRowFull
+    // sets sliceBypass), which plays the whole region regardless of pitch.
+    uint8_t sliceCount = track->sliceBypass ? 0
+      : (sampleActsAsSliced(sample) ? sampleDecodeSliceCount(sample->slice) : 0);
     uint8_t sliceIndex = 0;
     int cutoff = sample->filterCutoffHz;
     int resonance = sample->filterResonance;

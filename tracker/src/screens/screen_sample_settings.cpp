@@ -188,6 +188,12 @@ static int lazyEditArmed;
 // first frame broke the marker and the app-level key-up guard.
 static int lazyPlaybackSeenActive;
 
+// Set while an A-tap slice preview (EDIT tap on the Number or Frame cell)
+// is sounding. Hold-preview semantics come from app.cpp's auto-stop on
+// keys==0 release; this flag only guards re-entry (a second tap while the
+// preview still sounds restarts it) and the navigation stop.
+static int slicePreviewActive;
+
 // Smallest zoomed window in frames
 static constexpr uint32_t kMinViewSpan = 8;
 
@@ -957,6 +963,33 @@ static void settingsClampCurrentSlice(const InstrumentSample* sample) {
   }
 }
 
+// A-tap slice preview (EDIT tap on the Number or Frame cell): plays the
+// currently selected slice as a one-shot phrase row, in every slice mode.
+// The row's note IS the slice index (0-based) - sliced samples map notes
+// chromatically to slices, so C-0 plays slice 0, C#0 slice 1, and so on.
+// fxSLP=0 forces one-shot playback; the preview stops when the key is
+// released (app.cpp auto-stop) or another preview replaces it.
+static void settingsSlicePreviewCurrent(InstrumentSample* sample) {
+  if (sample->stretchMode != 0) return;
+  if (!sample->data || sample->frameCount == 0) return;
+  if (sampleDecodeSliceMode(sample->slice) == sliceModeOff) return;
+  if (sampleLazyPlaybackActive) return; // LAZY playback-drop owns EDIT
+  PhraseRow row;
+  memset(&row, 0, sizeof(row));
+  row.note = (uint8_t)currentSlice;
+  row.instrument = cInstrument;
+  row.volume = PHRASE_VOLUME_MAX;
+  row.fx[0][0] = fxSLP;
+  row.fx[0][1] = 0; // one-shot
+  row.fx[1][0] = EMPTY_VALUE_8;
+  row.fx[1][1] = EMPTY_VALUE_8;
+  row.fx[2][0] = EMPTY_VALUE_8;
+  row.fx[2][1] = EMPTY_VALUE_8;
+  chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
+  chipnomadQueuePlaybackStartPhraseRow(chipnomadState, *pSongTrack, &row);
+  slicePreviewActive = 1;
+}
+
 // LAZY playback-drop (Phase 3): while the full sample is playing back
 // (tap PLAY toggles it), every EDIT click drops a slice at the playback
 // marker's position. The marker is read straight from the track's sample
@@ -1172,13 +1205,18 @@ static int settingsSliceFrameEdit(InstrumentSample* sample, CellEditAction actio
 
 // Dispatch for the three Slice row cells. EDIT+OPT (clear) deletes the
 // current slice from the Number and Frame cells (the first slice cannot be
-// deleted - there is no previous slice to join into).
+// deleted - there is no previous slice to join into). EDIT tap/double-tap
+// on those cells previews the current slice (works in every slice mode).
 static int settingsOnEditSlice(int col, CellEditAction action, InstrumentSample* sample) {
   // Slice is inert while Stretch drives the duration.
   if (sample->stretchMode != 0) return 0;
   if (action == CellEditAction::clear && col != 0) {
     // EDIT+OPT deletes the current slice from any cell
     return settingsSliceDeleteCurrent(sample);
+  }
+  if ((action == CellEditAction::tap || action == CellEditAction::doubleTap) && col != 0) {
+    settingsSlicePreviewCurrent(sample);
+    return 1;
   }
   if (col == 0) return settingsSliceModeEdit(sample, action);
   if (col == 1) return settingsSliceNumberEdit(sample, action);
@@ -1413,6 +1451,7 @@ static void setup(int input) {
     sampleLazyPlaybackActive = 0;
   }
   lazyEditArmed = 1;
+  slicePreviewActive = 0;
   sampleDirtyToDisk = pendingDirtyRestore;
   pendingDirtyRestore = 0;
   // Legacy AUTO sentinel with empty bounds (old project saved before
@@ -1527,6 +1566,13 @@ static int inputScreenNavigation(int isKeyDown, int keys) {
     chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
     sampleLazyPlaybackActive = 0;
   }
+  // Leaving the screen also stops a running A-tap slice preview.
+  if (isKeyDown && slicePreviewActive &&
+      (keys == keyOpt || keys == (keyLeft | keyShift) || keys == (keyRight | keyShift) ||
+       keys == (keyDown | keyShift) || keys == (keyUp | keyShift))) {
+    chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
+    slicePreviewActive = 0;
+  }
   if (isKeyDown && (keys == keyOpt || keys == (keyLeft | keyShift))) {
     screenSetup(&screenInstrument, cInstrument);
     return 1;
@@ -1563,6 +1609,9 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
   }
   // Re-arm the LAZY playback-drop on the EDIT release (see lazyEditArmed).
   if (!isKeyDown && !(keys & keyEdit)) lazyEditArmed = 1;
+  // The A-tap slice preview ends with the key: app.cpp stops the phrase row
+  // on the keys==0 release (hold-preview semantics); the flag follows.
+  if (!isKeyDown && keys == 0) slicePreviewActive = 0;
   if (inputScreenNavigation(isKeyDown, keys)) return 1;
   // Slice count (B+direction on the Slice row): B+Left/Right = count +-1,
   // B+Up/Down = cycle 2,4,8,16,32,64 with wrap-around. EQUAL re-inits the
@@ -1624,9 +1673,11 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
   }
   // LAZY playback (Phase 3): tap PLAY toggles a full-sample playback that
   // keeps running after the key is released, and while it runs every EDIT
-  // click drops a slice at the playback marker. Both intercepts only apply
-  // when the sample is in LAZY mode; everything else falls through to the
-  // normal screen input.
+  // click drops a slice at the playback marker. SHIFT+PLAY is left alone:
+  // it falls through to the app-level handler and starts phrase playback
+  // like on every other screen. Both intercepts only apply when the sample
+  // is in LAZY mode; everything else falls through to the normal screen
+  // input.
   InstrumentSample* sample = currentSample();
   if (sampleDecodeSliceMode(sample->slice) == sliceModeLazy && sample->data && sample->frameCount > 0) {
     if (keys == keyPlay && isKeyDown) {
@@ -1638,7 +1689,10 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
         // One-shot full-sample playback at the root note: a custom phrase
         // row with fxSLP=0 forces loopMode 0 (one-shot) on the sample voice
         // regardless of the sample's own loop setting, so the playback
-        // runs once from the start and stops by itself.
+        // runs once from the start and stops by itself. The Full command
+        // sets the track's sliceBypass flag so the voice ignores slice
+        // mapping (LAZY slices map chromatically now) and plays the whole
+        // region.
         PhraseRow row;
         memset(&row, 0, sizeof(row));
         row.note = instrumentFirstNote(&chipnomadState->project, cInstrument);
@@ -1651,7 +1705,7 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
         row.fx[2][0] = EMPTY_VALUE_8;
         row.fx[2][1] = EMPTY_VALUE_8;
         chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
-        chipnomadQueuePlaybackStartPhraseRow(chipnomadState, *pSongTrack, &row);
+        chipnomadQueuePlaybackStartPhraseRowFull(chipnomadState, *pSongTrack, &row);
         sampleLazyPlaybackActive = 1;
       }
       // While the song is playing, PLAY falls through and stops it.

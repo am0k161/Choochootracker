@@ -71,7 +71,7 @@ TEST_CASE("sampleActsAsSliced truth table") {
   sample.slice = sampleEncodeSlice(sliceModeAuto, 8);
   CHECK(sampleActsAsSliced(&sample) == 1);
   sample.slice = sampleEncodeSlice(sliceModeLazy, 8);
-  CHECK(sampleActsAsSliced(&sample) == 0);
+  CHECK(sampleActsAsSliced(&sample) == 1);
   CHECK(sampleActsAsSliced(NULL) == 0);
 }
 

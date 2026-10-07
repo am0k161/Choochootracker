@@ -120,17 +120,19 @@ TEST_CASE("SampleVoice loops and grain time keeps rendering") {
   for (float value : output) CHECK(std::isfinite(value));
 }
 
-TEST_CASE("sampleNormalizeSlice keeps even counts and rejects others") {
+TEST_CASE("sampleNormalizeSlice accepts counts 1..64 and rejects 0 and overflow") {
   CHECK(sampleNormalizeSlice(0) == 0);
+  CHECK(sampleNormalizeSlice(1) == 1);
   CHECK(sampleNormalizeSlice(2) == 2);
+  CHECK(sampleNormalizeSlice(3) == 3);
   CHECK(sampleNormalizeSlice(4) == 4);
+  CHECK(sampleNormalizeSlice(6) == 6);
   CHECK(sampleNormalizeSlice(8) == 8);
   CHECK(sampleNormalizeSlice(16) == 16);
   CHECK(sampleNormalizeSlice(32) == 32);
-  CHECK(sampleNormalizeSlice(1) == 0);
-  CHECK(sampleNormalizeSlice(6) == 0);
-  CHECK(sampleNormalizeSlice(3) == 0);
-  CHECK(sampleNormalizeSlice(64) == 0);
+  CHECK(sampleNormalizeSlice(64) == 64);
+  CHECK(sampleNormalizeSlice(65) == 0);
+  CHECK(sampleNormalizeSlice(255) == 0);
 }
 
 TEST_CASE("sampleSliceFrames splits the whole sample evenly and clamps extras") {
@@ -817,14 +819,23 @@ TEST_CASE("SampleVoice plays stored slice bounds and legacy fallback identically
   voice.render(output, 4);
   CHECK(std::fabs(output[0] - pcm[4] / 32768.0f) < 0.01f);
 
-  // LAZY never slices in song playback: the caller passes sliceCount 0
-  // (sampleActsAsSliced is false for LAZY) and the voice plays the region.
+  // LAZY slices map chromatically like EQUAL/AUTO: with bounds present the
+  // caller passes the decoded count and the voice plays the selected window.
   InstrumentSample lazy = makeSliceSample(32, 0, 255);
   lazy.data = pcm;
   lazy.sustain = 255;
   lazy.filterCutoffHz = 20000;
   sampleSliceInitLazy(&lazy);
-  CHECK(sampleActsAsSliced(&lazy) == 0);
+  CHECK(sampleActsAsSliced(&lazy) == 1);
+  // Slice 1 of 1 starts at frame 0 (single hand-placed slice covers all).
+  voice.configure(&lazy, 0.0f, 1.0f, 100.0f, lazy.start, lazy.end, 0,
+                  lazy.filterCutoffHz, lazy.filterResonance, -1, -1, -1, -1, -1, 1, 1);
+  voice.noteOn();
+  voice.render(output, 4);
+  CHECK(std::fabs(output[0] - pcm[0] / 32768.0f) < 0.01f);
+
+  // sliceBypass (kStartPhraseRowFull) still forces the whole region: the
+  // caller passes sliceCount 0 and the voice plays the full sample.
   voice.configure(&lazy, 0.0f, 1.0f, 100.0f, lazy.start, lazy.end, 0,
                   lazy.filterCutoffHz, lazy.filterResonance, -1, -1, -1, -1, -1, 0, 0);
   voice.noteOn();

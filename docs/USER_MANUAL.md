@@ -625,13 +625,17 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
     points: **EQUAL** divides the Start/End window evenly into **Number**
     parts; **AUTO** runs a transient detection over the window and places a
     slice on every onset it finds (up to **Number**); **LAZY** starts with one
-    slice covering the whole window. Switching to LAZY when chops already
-    exist asks for confirmation first, since it clears them. Slice and
-    Stretch are mutually exclusive: enabling one disables the other, and the
-    Slice cells are dimmed while Stretch drives the duration.
-  - **Number** shows the current slice (1-indexed). **EDIT + any direction**
-    moves between slices (the view recenters on the slice start while
-    zoomed). The slice count itself is set with **B + direction** while the
+    slice covering the whole window. Switching to LAZY stashes the current
+    EQUAL/AUTO setting (count and bounds), and switching back to EQUAL or
+    AUTO restores it verbatim - no confirmation is asked and nothing is
+    lost. Slice and Stretch are mutually exclusive: enabling one disables
+    the other, and the Slice cells are dimmed while Stretch drives the
+    duration.
+  - **Number** shows the number of slices set (also live while the count is
+    changed with **B + direction**); the browsed slice is indicated on the
+    waveform by its brighter marker and the black band. **EDIT + any
+    direction** moves between slices (the view recenters on the slice start
+    while zoomed). The slice count itself is set with **B + direction** while the
     cursor rests anywhere on the Slice row: **B + [LEFT/RIGHT]** steps the
     count by one (minimum 1, maximum 64), **B + [UP/DOWN]** cycles through
     the power-of-two counts `2 / 4 / 8 / 16 / 32 / 64` with wrap-around.
@@ -653,6 +657,9 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
     returns to the full view. A marker stays inside its own slice: it
     cannot cross the previous or next slice start. **EDIT + OPT** deletes
     the slice.
+  - **EDIT (tap)** on the **Number** or **Frame** cell previews the currently
+    selected slice as a one-shot playback (works in every slice mode; the
+    preview stops when the key is released or when you leave the screen).
   - **LAZY workflow**: with LAZY selected, tap **PLAY** to start a one-shot
     full-sample playback - it plays once from the start and stops by
     itself (a green two-pixel marker follows the position on the
@@ -665,8 +672,10 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
     hand-placed slices: **EDIT + direction** on **Number** browses them,
     **Frame** adjusts the selected start, **EDIT + OPT** deletes the
     current slice. The Frame cell dims while the playback-drop is armed.
-    LAZY slices are for editing only: song playback treats a LAZY sample
-    as unsliced and plays the whole Start/End window.
+    **SHIFT + PLAY** is not intercepted in LAZY: it starts phrase playback
+    like on every other screen. LAZY slices play back in the sequencer just
+    like EQUAL and AUTO: phrase notes map chromatically from **C-0** onto
+    the hand-placed slices.
 - **Process** selects a destructive editing operation: **Crop**, **Normalize**, **Delete**, **Silence**, **Fade In**, **Fade Out** or **Reverse** (EDIT + left/right cycles, tap cycles forward, EDIT + OPT sets none). **GO** (same row) runs the selected operation on the current selection, or on the whole sample when the selection is empty. **Crop** keeps only the selection; **Normalize** scales the selection so its peak reaches full scale (both channels share one gain so the stereo image is preserved); **Delete** removes the selection and joins the tails (deleting the whole sample is rejected); **Silence** zeroes it; **Fade In**/**Fade Out** ramp the selection linearly from/to silence; **Reverse** plays the selection backwards (frames are swapped in place, both channels of a frame move together, length and markers are unchanged). Crop and Delete require a selection — with an empty selection they show `Select region first`. Every operation pauses audio briefly, keeps a one-level undo, and marks the sample as changed in RAM: the file on disk is not touched until the Save flows (see below), and leaving the screen discards the undo slot.
 - **UNDO** (next to GO) swaps the sample back with the state before the last operation. It is dimmed until an operation runs, toggles between the pre-op and post-op states on repeated presses, and is cleared when the screen is re-entered.
 - **File** holds the save flows. The instrument stores the full path of the WAV it was loaded from; these flows write that file or point the instrument at a new one. They never touch the instrument name.
@@ -1151,7 +1160,7 @@ The Scale screen controls the global 12-TET scale engine. The **Mode** row selec
 - **Quantizer** (default): phrase entry remains chromatic; when enabled, notes are rounded downward immediately before reaching the sound engine, so changing root or scale reharmonizes a song without editing its phrases.
 - **Note Lock**: notes typed into phrases are snapped to the nearest note of the scale as they are entered, so only scale notes can be written. Fresh entries and decreases snap down; `EDIT + RIGHT` / `EDIT + UP` raise the note to the next scale note above. Entry always follows the project scale on this screen: changing the root or scale immediately affects newly entered notes on the enabled tracks, while notes already stored stay untouched. `SCL` FX is unavailable in this mode and any `SCL` already written is ignored. Playback quantization of plain notes is bypassed (entry is already locked); chord quantization via `CRD` still applies.
 
-Both modes share the same root, scale, **Custom** note editing and track checkboxes. Each of the eight track checkboxes decides which tracks the mode applies to. The scale engine is bypassed for non-12-note pitch tables and for Sampler instruments whose **Slice** mode is EQUAL or AUTO (their notes select slices chromatically from C-0; LAZY samples play the whole window); MIDI input is not part of this version.
+Both modes share the same root, scale, **Custom** note editing and track checkboxes. Each of the eight track checkboxes decides which tracks the mode applies to. The scale engine is bypassed for non-12-note pitch tables and for Sampler instruments whose **Slice** mode is EQUAL, AUTO or LAZY (their notes select slices chromatically from C-0); MIDI input is not part of this version.
 
 - **Linear pitch** selects the pitch-table mode. **Off** is the default and the hardware-validated setting for correct AY, Braids and Plaits octave tracking.
 - **Tick rate** sets tracker timing and displays the corresponding BPM (`tick rate x 60 / 24`).

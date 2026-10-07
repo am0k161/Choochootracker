@@ -114,6 +114,7 @@ static void resetTrack(PlaybackState* state, int trackIdx) {
   track->note.auxTable.tableIdx = EMPTY_VALUE_8;
   track->mode = PlaybackMode::stopped;
   track->queue.liveAction = LiveQueueAction::none;
+  track->sliceBypass = 0;
 
   resetNoteFX(state, trackIdx);
 

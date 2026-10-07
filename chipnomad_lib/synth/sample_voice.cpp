@@ -55,7 +55,9 @@ void SampleVoice::init(float outputSampleRate) {
 }
 
 uint8_t sampleNormalizeSlice(uint8_t slice) {
-  if (slice == 2 || slice == 4 || slice == 8 || slice == 16 || slice == 32) return slice;
+  // Accept any count 1..64: EQUAL/AUTO use power-of-2 counts, but LAZY
+  // slices are hand-placed and may use any count.
+  if (slice >= 1 && slice <= 64) return slice;
   return 0;
 }
 
@@ -96,7 +98,7 @@ uint8_t sampleNormalizeSliceEx(uint8_t slice) {
 int sampleActsAsSliced(const InstrumentSample* sample) {
   if (!sample) return 0;
   const SliceMode mode = sampleDecodeSliceMode(sample->slice);
-  return mode != sliceModeOff && mode != sliceModeLazy;
+  return mode != sliceModeOff;
 }
 
 // --- Slice bounds editing (Phase 1, universal editing model) -------------

@@ -89,8 +89,8 @@ uint8_t sampleDecodeSliceCount(uint8_t slice);
 // range). Used when loading so unknown bytes never become live slices.
 uint8_t sampleNormalizeSliceEx(uint8_t slice);
 struct InstrumentSample;
-// 1 when the sample's slice setting makes notes select slices (EQUAL and
-// AUTO do; LAZY does not - its slices are chosen by editing, not by pitch).
+// 1 when the sample's slice setting makes notes select slices (EQUAL, AUTO
+// and LAZY do; LAZY slices are hand-placed but still map C-0 upwards).
 int sampleActsAsSliced(const InstrumentSample* sample);
 
 // --- Slice bounds editing (Phase 1, universal editing model) -------------

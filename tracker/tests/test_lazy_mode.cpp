@@ -19,16 +19,16 @@
 
 TEST_SUITE("lazy_mode") {
 
-// --- Sentinel semantics (regression: LAZY must NOT act as sliced) --------
+// --- Sentinel semantics (LAZY acts as sliced since chromatic mapping) ----
 
-TEST_CASE("LAZY sentinel does not act as sliced for playback") {
+TEST_CASE("LAZY sentinel acts as sliced for playback") {
   CHECK(sampleActsAsSliced(nullptr) == 0);
   InstrumentSample sample;
   std::memset(&sample, 0, sizeof(sample));
   sample.slice = sampleEncodeSlice(sliceModeLazy, 1);
-  CHECK(sampleActsAsSliced(&sample) == 0);
+  CHECK(sampleActsAsSliced(&sample) == 1);
   sample.slice = sampleEncodeSlice(sliceModeLazy, 64);
-  CHECK(sampleActsAsSliced(&sample) == 0);
+  CHECK(sampleActsAsSliced(&sample) == 1);
   sample.slice = sampleEncodeSlice(sliceModeEqual, 4);
   CHECK(sampleActsAsSliced(&sample) == 1);
   sample.slice = sampleEncodeSlice(sliceModeAuto, 4);
@@ -269,17 +269,17 @@ struct LazyEngine {
 
 }  // namespace
 
-TEST_CASE("LAZY preview plays the full sample, ignoring slice bounds") {
+TEST_CASE("LAZY preview maps notes to slices like EQUAL") {
   EngineSample sample;
   sample.init(44100); // 1 second
-  // A mid-sample bound that EQUAL playback would jump to
+  // A mid-sample bound that distinguishes the slices
   sample.s.slice = sampleEncodeSlice(sliceModeLazy, 2);
   sample.s.sliceBounds[0] = 0;
   sample.s.sliceBounds[1] = 44100 / 2;
 
   LazyEngine engine(sample.s, 0);
-  engine.startPreview(0);
-  // Render one tick (50 Hz tick rate -> 882 frames per tick)
+  // Note 0 (C-0) selects slice 0: LAZY slices map chromatically now.
+  chipnomadQueuePlaybackPreviewNote(engine.state, 0, 0, 0);
   engine.render(882);
 
   const PlaybackStatus* status = chipnomadGetPlaybackStatus(engine.state);
@@ -289,8 +289,38 @@ TEST_CASE("LAZY preview plays the full sample, ignoring slice bounds") {
 
   SampleVoice* voice = engine.state->sampleVoices[0][0];
   REQUIRE(voice->active());
-  // The plain path cursor starts at the loop start (frame 0), NOT at the
-  // slice bound - LAZY ignores bounds for playback.
+  // Slice 0 starts at bound 0, so the cursor sits at the loop start.
+  const double pos = voice->playbackFrame();
+  CHECK(pos < 1000.0);
+  CHECK(pos >= 0.0);
+}
+
+TEST_CASE("LAZY full-sample preview (sliceBypass) ignores slice bounds") {
+  EngineSample sample;
+  sample.init(44100); // 1 second
+  sample.s.slice = sampleEncodeSlice(sliceModeLazy, 2);
+  sample.s.sliceBounds[0] = 0;
+  sample.s.sliceBounds[1] = 44100 / 2;
+
+  LazyEngine engine(sample.s, 0);
+  // Note 1 would select slice 1 (bound 22050); the kStartPhraseRowFull
+  // bypass must ignore slice mapping and play the whole region instead.
+  PhraseRow row;
+  std::memset(&row, 0, sizeof(row));
+  row.note = engine.state->project.pitchTable.octaveSize * 4 + 1;
+  row.instrument = 0;
+  row.volume = PHRASE_VOLUME_MAX;
+  chipnomadQueuePlaybackStartPhraseRowFull(engine.state, 0, &row);
+  engine.render(882);
+
+  const PlaybackStatus* status = chipnomadGetPlaybackStatus(engine.state);
+  CHECK(status->tracks[0].mode == PlaybackMode::phraseRow);
+  CHECK(status->isPlaying == 1);
+
+  SampleVoice* voice = engine.state->sampleVoices[0][0];
+  REQUIRE(voice->active());
+  // The bypassed voice starts at the loop start (frame 0), NOT at the
+  // slice bound.
   const double pos = voice->playbackFrame();
   CHECK(pos < 1000.0);
   CHECK(pos >= 0.0);
@@ -410,8 +440,8 @@ TEST_CASE("LAZY preview survives the PLAY release (app-level guard)") {
 // in the test build (screen_sample_settings.cpp is not linked into tests):
 //
 // 1. Slice row, Mode cell: cycle to LAZY -> single whole-loop slice; with
-//    existing chops a confirmation dialog appears ("Switching to LAZY will
-//    clear existing chops. Continue?").
+//    existing EQUAL/AUTO chops they are stashed (no dialog), and cycling
+//    back to EQUAL/AUTO restores them verbatim.
 // 2. Tap PLAY on the sample screen in LAZY mode: full-sample playback
 //    starts and KEEPS RUNNING after the key is released (app.cpp guard:
 //    sampleLazyPlaybackActive suppresses the phrase-row auto-stop).
@@ -426,11 +456,17 @@ TEST_CASE("LAZY preview survives the PLAY release (app-level guard)") {
 //    un-dims.
 // 8. The Frame cell dims while the playback-drop is armed (drawField dim
 //    condition includes sampleLazyPlaybackActive for col 2).
-// 9. Leaving the screen (or a dialog round trip) stops the preview and
-//    resets the flag (setup() clears sampleLazyPlaybackActive).
+// 9. Leaving the screen stops the preview and resets the flag (setup()
+//    clears sampleLazyPlaybackActive).
 // 10. PLAY while the song is playing falls through and stops the song
 //     (no preview starts).
 // 11. Slice markers drawn during LAZY playback reflect the dropped bounds
 //     immediately (settingsRepaintSlice after each drop).
+// 12. SHIFT + PLAY in LAZY starts phrase playback like on every other
+//     screen (the PLAY intercept is an exact key match, so SHIFT+PLAY
+//     falls through to the app-level handler).
+// 13. EDIT tap on the Number or Frame cell previews the current slice in
+//     every slice mode; releasing the key stops it (app.cpp auto-stop),
+//     and the preview does not arm the LAZY playback-drop.
 
 }  // TEST_SUITE("lazy_mode")
