@@ -91,6 +91,7 @@ static Bitmap* sampleSliceMarkerBitmap;
 static Bitmap* sampleStartMarkerBitmap;
 static Bitmap* sampleEndMarkerBitmap;
 static Bitmap* sampleSelectionBitmap;
+static Bitmap* sampleSliceBandBitmap;
 static Bitmap* samplePlaybackMarkerBitmap;
 
 // Total slice count for the current sentinel (0 when off). Legacy samples
@@ -286,7 +287,8 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
   Bitmap* startMarker = ensurePreviewBitmap(&sampleStartMarkerBitmap);
   Bitmap* endMarker = ensurePreviewBitmap(&sampleEndMarkerBitmap);
   Bitmap* selectionBand = ensurePreviewBitmap(&sampleSelectionBitmap);
-  if (!waveform || !markers || !startMarker || !endMarker || !selectionBand) return;
+  Bitmap* sliceBand = ensurePreviewBitmap(&sampleSliceBandBitmap);
+  if (!waveform || !markers || !startMarker || !endMarker || !selectionBand || !sliceBand) return;
 
   // Calculate actual start/end positions in frames
   uint32_t frameCount = sample->frameCount;
@@ -354,9 +356,9 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
   // visual separation (color coding TBD); its start marker is drawn
   // brighter (255) than the others (160).
   gfxBitmapClear(markers);
+  const int boundsPopulated = sample->sliceBounds[0] != 0 ||
+    (slices > 1 && sample->sliceBounds[1] != 0);
   if (slices) {
-    const int boundsPopulated = sample->sliceBounds[0] != 0 ||
-      (slices > 1 && sample->sliceBounds[1] != 0);
     for (int i = 0; i < slices; ++i) {
       uint32_t position;
       if (boundsPopulated) {
@@ -375,31 +377,33 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
         if (x + 1 < width) markers->data[y * width + x + 1] = brightness;
       }
     }
-    // Active-slice band: black background over the columns covered by the
-    // current slice's frame range (waveform pixels stay visible on top -
-    // the band only fills background pixels).
-    if (currentSlice >= 0 && currentSlice < slices) {
-      const uint32_t sliceStart = boundsPopulated
-        ? sample->sliceBounds[currentSlice]
-        : startFrame + (uint32_t)((uint64_t)(endFrame > startFrame ? (endFrame - startFrame) : frameCount) * currentSlice / slices);
-      uint32_t sliceEnd;
-      if (boundsPopulated) {
-        sliceEnd = currentSlice + 1 < slices ? sample->sliceBounds[currentSlice + 1] : endFrame;
-      } else {
-        uint32_t loopLength = endFrame > startFrame ? (endFrame - startFrame) : frameCount;
-        if (loopLength == 0) loopLength = frameCount;
-        sliceEnd = startFrame + (uint32_t)((uint64_t)loopLength * (currentSlice + 1) / slices);
-      }
-      if (sliceEnd > frameCount) sliceEnd = frameCount;
-      if (sliceStart < sliceEnd) {
-        for (int x = 0; x < width; x++) {
-          uint32_t columnStart = view->viewStart + (uint64_t)x * viewSpan / width;
-          uint32_t columnEnd = view->viewStart + (uint64_t)(x + 1) * viewSpan / width;
-          if (columnEnd > view->viewEnd) columnEnd = view->viewEnd;
-          if (columnEnd <= sliceStart || columnStart >= sliceEnd) continue;
-          for (int y = 0; y < height; y++) {
-            if (waveform->data[y * width + x] == 0) waveform->data[y * width + x] = 1;
-          }
+  }
+  // Active-slice band: opaque background over the columns covered by the
+  // current slice's frame range. Drawn in black UNDER the waveform: the
+  // waveform's opaque pixels cover the band, its transparent background
+  // lets the band show through.
+  gfxBitmapClear(sliceBand);
+  if (currentSlice >= 0 && currentSlice < slices) {
+    const uint32_t sliceStart = boundsPopulated
+      ? sample->sliceBounds[currentSlice]
+      : startFrame + (uint32_t)((uint64_t)(endFrame > startFrame ? (endFrame - startFrame) : frameCount) * currentSlice / slices);
+    uint32_t sliceEnd;
+    if (boundsPopulated) {
+      sliceEnd = currentSlice + 1 < slices ? sample->sliceBounds[currentSlice + 1] : endFrame;
+    } else {
+      uint32_t loopLength = endFrame > startFrame ? (endFrame - startFrame) : frameCount;
+      if (loopLength == 0) loopLength = frameCount;
+      sliceEnd = startFrame + (uint32_t)((uint64_t)loopLength * (currentSlice + 1) / slices);
+    }
+    if (sliceEnd > frameCount) sliceEnd = frameCount;
+    if (sliceStart < sliceEnd) {
+      for (int x = 0; x < width; x++) {
+        uint32_t columnStart = view->viewStart + (uint64_t)x * viewSpan / width;
+        uint32_t columnEnd = view->viewStart + (uint64_t)(x + 1) * viewSpan / width;
+        if (columnEnd > view->viewEnd) columnEnd = view->viewEnd;
+        if (columnEnd <= sliceStart || columnStart >= sliceEnd) continue;
+        for (int y = 0; y < height; y++) {
+          sliceBand->data[y * width + x] = 255;
         }
       }
     }
@@ -430,16 +434,17 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
 static void drawSamplePreview(void) {
   // Clear the waveform area and space for frame
   gfxClearRect(0, previewRow, previewWidth, previewHeight);
+  // Draw the slice band in black UNDER the waveform: the waveform's opaque
+  // pixels cover the band, its transparent background lets the band show
+  // through.
+  if (sampleSliceBandBitmap) {
+    gfxSetFgColor(0x000000); // Black
+    gfxDrawBitmap(sampleSliceBandBitmap, 0, previewRow);
+  }
   // Draw the waveform with light blue color for active area
   if (samplePreviewBitmap) {
     gfxSetFgColor(0xADD8E6); // Light blue
     gfxDrawBitmap(samplePreviewBitmap, 0, previewRow);
-  }
-  // Active-slice band: alpha 1 pixels render as near-black background
-  // (waveform pixels stay untouched, so the wave stays visible on top)
-  if (sampleSliceMarkerBitmap) {
-    gfxSetFgColor(0x000000); // Black
-    gfxDrawBitmap(sampleSliceMarkerBitmap, 0, previewRow);
   }
   // Draw the selection band + handles (scheme info color, distinct from the
   // yellow/orange playback markers)
@@ -1255,7 +1260,7 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
     }
     marker = col == 0 ? kViewAnchorStart : kViewAnchorEnd;
   } else if (row == 1) {
-    // Select row: processing-selection handles. Fine steps move fifteen
+    // Select row: processing-selection handles. Fine steps move twenty
     // frames and zoom onto the handle; coarse steps jump frameCount/64 (min 16)
     // and return to the full-sample view. Tap copies the matching Region
     // marker position; clear empties the whole selection. Start/End are
@@ -1275,8 +1280,8 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
       editorSelection.end = 0;
       handled = 1;
     } else {
-      // Fine steps move fifteen frames; coarse steps jump frameCount/64 (min 16)
-      uint32_t step = 15;
+      // Fine steps move twenty frames; coarse steps jump frameCount/64 (min 16)
+      uint32_t step = 20;
       if (action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig) {
         step = frameCount / 64;
         if (step < 16) step = 16;
@@ -1489,30 +1494,40 @@ static void draw(void) {
   }
 }
 
-static int inputScreenNavigation(int keys) {
+static int inputScreenNavigation(int isKeyDown, int keys) {
+  // Bare B on the slice number box is reserved for the B+direction slice
+  // count editing: it must not navigate back (and must not stop the LAZY
+  // preview as a side effect). The press is consumed here; SHIFT+LEFT
+  // still exits the screen from anywhere.
+  if (keys == keyOpt && screenSampleSettingsData.cursorRow == 2 &&
+      screenSampleSettingsData.cursorCol == 1) {
+    return 1;
+  }
   // Leaving the screen stops the LAZY preview and clears the flag: the
   // next screen's setup() never touches it, so without this the app-level
   // auto-stop guard would stay armed forever (and the preview would keep
-  // sounding over the new screen).
-  if (sampleLazyPlaybackActive &&
+  // sounding over the new screen). Key-down only: key-up events carry the
+  // still-held buttons, so releasing a direction while B is held must not
+  // fire the navigation.
+  if (isKeyDown && sampleLazyPlaybackActive &&
       (keys == keyOpt || keys == (keyLeft | keyShift) || keys == (keyRight | keyShift) ||
        keys == (keyDown | keyShift) || keys == (keyUp | keyShift))) {
     chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
     sampleLazyPlaybackActive = 0;
   }
-  if (keys == keyOpt || keys == (keyLeft | keyShift)) {
+  if (isKeyDown && (keys == keyOpt || keys == (keyLeft | keyShift))) {
     screenSetup(&screenInstrument, cInstrument);
     return 1;
   }
-  if (keys == (keyRight | keyShift)) {
+  if (isKeyDown && keys == (keyRight | keyShift)) {
     screenSetup(&screenTable, cInstrument);
     return 1;
   }
-  if (keys == (keyDown | keyShift)) {
+  if (isKeyDown && keys == (keyDown | keyShift)) {
     screenSetup(&screenInstrumentPool, cInstrument);
     return 1;
   }
-  if (keys == (keyUp | keyShift)) {
+  if (isKeyDown && keys == (keyUp | keyShift)) {
     screenSetup(&screenModulation, cInstrument);
     return 1;
   }
@@ -1536,7 +1551,7 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
   }
   // Re-arm the LAZY playback-drop on the EDIT release (see lazyEditArmed).
   if (!isKeyDown && !(keys & keyEdit)) lazyEditArmed = 1;
-  if (inputScreenNavigation(keys)) return 1;
+  if (inputScreenNavigation(isKeyDown, keys)) return 1;
   // Slice count (B+direction on the Slice row): B+Left/Right = count +-1,
   // B+Up/Down = cycle 2,4,8,16,32,64 with wrap-around. EQUAL re-inits the
   // even division, AUTO re-runs detection with the new count. LAZY is

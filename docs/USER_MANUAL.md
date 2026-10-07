@@ -609,7 +609,7 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
 - Edits live in RAM only until a save flow writes them: the project stores the sample's file path and reloads the WAV from disk on the next project load, so leaving the tracker without **Save**/**Save As** discards process operations (the `*` marker is the warning). Loading a different sample into the instrument also discards unsaved edits and resets the Region to the full sample (Start `00`, End `FF`).
 - **Region** sets the playback Start/End markers, also available on the Sampler instrument screen. They set normalised playback boundaries (`00-FF`); if Start is after End, the sample plays in reverse. **EDIT + [LEFT/RIGHT]** fine-adjusts the marker in steps of one (`01`) and zooms the waveform around it while **EDIT** is held; **EDIT + [UP/DOWN]** coarse-adjusts (step 16) and returns the view to the full sample. **EDIT + OPT** resets the marker to its default (Start `00`, End `FF`).
 - The waveform view zooms to a fixed window of one second of audio around the edited marker and pans to keep it visible; samples that fit inside the window stay at the full 1:1 view. The zoom is transient: it lasts while **EDIT** is held, and releasing **EDIT** returns to the full 1:1 view, as do coarse steps. Entering the screen always resets the view to the full sample.
-- **Select** sets a processing selection in absolute frames, independent of the playback Start/End markers. **EDIT + [LEFT/RIGHT]** moves a handle fifteen frames and zooms onto it while **EDIT** is held; **EDIT + [UP/DOWN]** jumps by `frameCount/64` (minimum 16) and returns to the full-sample view. **EDIT (tap)** on a handle copies the current Start or End marker position to it. **EDIT + OPT** on either handle empties the whole selection. When the selection is empty both handles show `-`; when the handles are inverted they swap automatically. The selection is session-only editor state: it is not saved with the project, and entering the screen seeds it with the playback Region span (the whole sample with the default markers).
+- **Select** sets a processing selection in absolute frames, independent of the playback Start/End markers. **EDIT + [LEFT/RIGHT]** moves a handle twenty frames and zooms onto it while **EDIT** is held; **EDIT + [UP/DOWN]** jumps by `frameCount/64` (minimum 16) and returns to the full-sample view. **EDIT (tap)** on a handle copies the current Start or End marker position to it. **EDIT + OPT** on either handle empties the whole selection. When the selection is empty both handles show `-`; when the handles are inverted they swap automatically. The selection is session-only editor state: it is not saved with the project, and entering the screen seeds it with the playback Region span (the whole sample with the default markers).
 - **Slice** is a single row with three value cells - **Mode**, **Number** and
   **Frame** - and is saved with the instrument. Off plays the Start/End window.
   Phrase notes select slices chromatically from **C-0**, and notes past the
@@ -617,7 +617,8 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
   use Scale quantization, but **CRD** keeps the selected slice and transposes
   its voices as a chord. Slice starts are marked on the waveform with short
   two-pixel-wide lines (dark orange; the current slice's line is brighter),
-  and the slice under the cursor is shaded on the waveform.
+  and the slice under the cursor gets a black background band on the
+  waveform.
   - **Mode** cycles `OFF` / `EQUAL` / `AUTO` / `LAZY` (EDIT + left/right or
     tap; EDIT + OPT turns slicing off). Switching modes initializes the slice
     points: **EQUAL** divides the Start/End window evenly into **Number**
@@ -633,14 +634,18 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
     cursor rests anywhere on the Slice row: **B + [LEFT/RIGHT]** steps the
     count by one (minimum 1, maximum 64), **B + [UP/DOWN]** cycles through
     the power-of-two counts `2 / 4 / 8 / 16 / 32 / 64` with wrap-around.
-    Changing the count re-initializes the points: **EQUAL** re-divides the
-    window evenly, **AUTO** re-runs detection with the new target (the
-    detection sensitivity is derived from the count - more slices mean a
-    more sensitive threshold). **B + direction** is inert in LAZY, where
-    slices are placed by hand. **EDIT + OPT** on the Number or Frame cell
-    deletes the current slice (the first slice cannot be deleted; deleting
-    the last remaining slice turns slicing off; bounds survive an OFF
-    round-trip and come back when a mode is picked again).
+    **B** alone is inert on the Number cell (it is reserved for these
+    combos and does not leave the screen there); on the other cells, and
+    everywhere else on the screen, **B** still goes back to the instrument
+    view. **SHIFT + LEFT** exits the screen from anywhere. Changing the
+    count re-initializes the points: **EQUAL** re-divides the window
+    evenly, **AUTO** re-runs detection with the new target (the detection
+    sensitivity is derived from the count - more slices mean a more
+    sensitive threshold). **B + direction** is inert in LAZY, where slices
+    are placed by hand. **EDIT + OPT** on the Number or Frame cell deletes
+    the current slice (the first slice cannot be deleted; deleting the last
+    remaining slice turns slicing off; bounds survive an OFF round-trip and
+    come back when a mode is picked again).
   - **Frame** shows the current slice's start frame in hex. **EDIT +
     [LEFT/RIGHT]** nudges it by ten frames (zooming onto the marker while
     **EDIT** is held), **EDIT + [UP/DOWN]** nudges by one hundred and
