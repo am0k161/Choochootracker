@@ -381,13 +381,17 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
   // Active-slice band: opaque background over the columns covered by the
   // current slice's frame range. Drawn in black UNDER the waveform: the
   // waveform's opaque pixels cover the band, its transparent background
-  // lets the band show through.
+  // lets the band show through. The frame range is kept for the selection
+  // fill below, which skips these columns so the band stays pure black
+  // (the tint would otherwise wash it out to near-background).
   gfxBitmapClear(sliceBand);
+  uint32_t sliceStart = 0;
+  uint32_t sliceEnd = 0;
+  int sliceHasRange = 0;
   if (currentSlice >= 0 && currentSlice < slices) {
-    const uint32_t sliceStart = boundsPopulated
+    sliceStart = boundsPopulated
       ? sample->sliceBounds[currentSlice]
       : startFrame + (uint32_t)((uint64_t)(endFrame > startFrame ? (endFrame - startFrame) : frameCount) * currentSlice / slices);
-    uint32_t sliceEnd;
     if (boundsPopulated) {
       sliceEnd = currentSlice + 1 < slices ? sample->sliceBounds[currentSlice + 1] : endFrame;
     } else {
@@ -397,6 +401,7 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
     }
     if (sliceEnd > frameCount) sliceEnd = frameCount;
     if (sliceStart < sliceEnd) {
+      sliceHasRange = 1;
       for (int x = 0; x < width; x++) {
         uint32_t columnStart = view->viewStart + (uint64_t)x * viewSpan / width;
         uint32_t columnEnd = view->viewStart + (uint64_t)(x + 1) * viewSpan / width;
@@ -418,6 +423,10 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
       uint32_t columnEnd = view->viewStart + (uint64_t)(x + 1) * viewSpan / width;
       if (columnEnd > view->viewEnd) columnEnd = view->viewEnd;
       if (columnEnd <= selection->start || columnStart >= selection->end) continue;
+      // Skip the active slice's columns: its black band must not be
+      // washed out by the tint (this is what keeps it maximally dark
+      // and distinct from the tinted rest of the preview).
+      if (sliceHasRange && columnEnd > sliceStart && columnStart < sliceEnd) continue;
       for (int y = 0; y < height; y++) selectionBand->data[y * width + x] = 96;
     }
     int selStartX = frameToPixel(selection->start, view, width, 0);

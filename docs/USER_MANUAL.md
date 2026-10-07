@@ -618,7 +618,8 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
   its voices as a chord. Slice starts are marked on the waveform with short
   two-pixel-wide lines (dark orange; the current slice's line is brighter),
   and the slice under the cursor gets a black background band on the
-  waveform.
+  waveform (the selection tint is not drawn over the band, so it stays
+  fully black and clearly distinct from the rest of the preview).
   - **Mode** cycles `OFF` / `EQUAL` / `AUTO` / `LAZY` (EDIT + left/right or
     tap; EDIT + OPT turns slicing off). Switching modes initializes the slice
     points: **EQUAL** divides the Start/End window evenly into **Number**
