@@ -682,8 +682,9 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
     preview stops when the key is released or when you leave the screen).
   - **LAZY workflow**: with LAZY selected, tap **PLAY** to start a one-shot
     full-sample playback - it plays once from the start and stops by
-    itself (a green two-pixel marker follows the position on the
-    waveform); tapping **PLAY** again stops it early. While it plays,
+    itself at the sample's original pitch and speed (a green two-pixel
+    marker follows the position on the waveform); tapping **PLAY** again
+    stops it early. While it plays,
     every **EDIT** click drops a slice at the playback position, no matter
     where the cursor is (slices closer than 50 ms to an existing one are
     rejected with `Too close to slice`). Playing the sample again keeps
@@ -697,14 +698,15 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
     like EQUAL and AUTO: phrase notes map chromatically from **C-0** onto
     the hand-placed slices, wrapping around past the last one.
   - **Combo hints**: while the cursor rests on a Slice row cell and no other
-    message is showing, the status bar rotates a hint for that cell every
-    2.5 seconds. On **Mode** it describes the current mode (`EQUAL: Divides
-    sample in equal parts`, `AUTO: Divides sample based on transients`,
-    `LAZY: Press Play and add slices with EDIT`); on **Number** it
-    alternates `OPT + DIR = change slice count` and `EDIT + DIR = browse
-    slices`; on **Frame** it shows `Adjust slice start`. Moving the cursor
-    restarts the rotation; any action message replaces the hint until it
-    expires.
+    message is showing, the status bar shows a hint for that cell. On
+    **Mode** the hint is bound to the active mode and stays up while the
+    cursor rests there (`EQUAL: Divides sample in equal parts`, `AUTO:
+    Divides sample based on transients`, `LAZY: Press Play and add slices
+    with EDIT`) - switching modes swaps the text immediately, and OFF
+    clears the bar. On **Number** it alternates every 2.5 seconds between
+    `OPT + DIR = change slice count` and `EDIT + DIR = browse slices`; on
+    **Frame** it shows `Adjust slice start`. Moving the cursor restarts
+    the rotation; any action message replaces the hint until it expires.
 - **Process** selects a destructive editing operation: **Crop**, **Normalize**, **Delete**, **Silence**, **Fade In**, **Fade Out** or **Reverse** (EDIT + left/right cycles, tap cycles forward, EDIT + OPT sets none). **GO** (same row) runs the selected operation on the current selection, or on the whole sample when the selection is empty. **Crop** keeps only the selection; **Normalize** scales the selection so its peak reaches full scale (both channels share one gain so the stereo image is preserved); **Delete** removes the selection and joins the tails (deleting the whole sample is rejected); **Silence** zeroes it; **Fade In**/**Fade Out** ramp the selection linearly from/to silence; **Reverse** plays the selection backwards (frames are swapped in place, both channels of a frame move together, length and markers are unchanged). Crop and Delete require a selection — with an empty selection they show `Select region first`. Every operation pauses audio briefly, keeps a one-level undo, and marks the sample as changed in RAM: the file on disk is not touched until the Save flows (see below), and leaving the screen discards the undo slot.
 - **UNDO** (next to GO) swaps the sample back with the state before the last operation. It is dimmed until an operation runs, toggles between the pre-op and post-op states on repeated presses, and is cleared when the screen is re-entered.
 - **File** holds the save flows. The instrument stores the full path of the WAV it was loaded from; these flows write that file or point the instrument at a new one. They never touch the instrument name.

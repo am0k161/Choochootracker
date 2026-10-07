@@ -7,7 +7,6 @@
 #include "waveform_display.h"
 #include "file_browser.h"
 #include "screen_enter_name.h"
-#include "project_utils.h"
 #include "synth/sample_voice.h"
 #include "synth/sample_ops.h"
 #include "synth/sample_transient.h"
@@ -139,25 +138,40 @@ static InstrumentSample* currentSample(void) {
 }
 
 // Contextual combo hints (session-only): while the cursor rests on a Slice
-// row cell, draw() rotates a hint for that cell in the message bar every
-// 2.5 s (150 frames at 60 FPS). The rotation pauses while any other
-// message is active and restarts from the first hint when the cursor
-// moves to a different cell.
+// row cell, draw() shows a hint for that cell in the message bar. The mode
+// cell's hint is bound to the active slice mode: it is re-issued every
+// frame, so it appears as soon as the mode is active, switches instantly
+// when the mode changes and disappears when the mode turns OFF. The Number
+// and Frame cells rotate their hints every 2.5 s (150 frames at 60 FPS).
+// All hints pause while any other message is active and restart from the
+// first hint when the cursor moves to a different cell.
 static int hintPhase = 0;
 static int hintCursorRow = -1;
 static int hintCursorCol = -1;
+// Text the hint system last put in the message bar ("" = none). The bar is
+// shared with action feedback, so draw() compares the active message
+// against this to tell our hint apart from a foreign message.
+static char hintOwnedText[48];
 
-// Advance the rotating hint for the given cell. Called from draw() when no
-// other message is showing; each call displays the next hint for 2.5 s.
-static void settingsUpdateHint(int row, int col) {
-  if (row != hintCursorRow || col != hintCursorCol) {
+// Advance the hint for the given cell. Called from draw() when the message
+// bar is empty or holds the hint we set. ownsBar tells whether the bar
+// currently shows our hint (timed hints only re-arm after expiring or a
+// cell change; the persistent mode hint re-arms every frame).
+static void settingsUpdateHint(int row, int col, int ownsBar) {
+  const int changed = row != hintCursorRow || col != hintCursorCol;
+  if (changed) {
     // Cursor moved to a different cell: restart the rotation.
     hintCursorRow = row;
     hintCursorCol = col;
     hintPhase = 0;
   }
+  const char* issued = NULL;
+  int persistent = 0;
   if (row == 2 && col == 0) {
-    // Slice mode cell: describe the mode the pointer rests on.
+    // Slice mode cell: describe the mode the pointer rests on. The hint
+    // is bound to the mode itself (no timed rotation): re-issued every
+    // frame so a mode switch swaps the text immediately, and OFF clears
+    // the bar (the cell itself already says OFF).
     const SliceMode mode = sampleDecodeSliceMode(currentSample()->slice);
     static const char* modeHints[] = {
       "EQUAL: Divides sample in equal parts",
@@ -165,19 +179,33 @@ static void settingsUpdateHint(int row, int col) {
       "LAZY: Press Play and add slices with EDIT",
     };
     if (mode >= sliceModeEqual && mode <= sliceModeLazy) {
-      screenMessage(150, "%s", modeHints[mode - 1]);
+      issued = modeHints[mode - 1];
+      persistent = 1;
     }
-    // OFF shows nothing: the cell itself already says OFF.
   } else if (row == 2 && col == 1) {
     // Slice number cell: alternate the two combos.
     static const char* numHints[] = {
       "OPT + DIR = change slice count",
       "EDIT + DIR = browse slices",
     };
-    screenMessage(150, "%s", numHints[hintPhase++ % 2]);
+    issued = numHints[hintPhase];
+    if (!ownsBar || changed) hintPhase = (hintPhase + 1) % 2;
   } else if (row == 2 && col == 2) {
     // Slice frame cell: single static hint.
-    screenMessage(150, "Adjust slice start");
+    issued = "Adjust slice start";
+  }
+  if (issued) {
+    if (persistent || !ownsBar || changed) {
+      screenMessage(persistent ? 2 : 150, "%s", issued);
+      // Copy the bar text (post-truncation) so the ownership comparison
+      // next frame matches exactly what is displayed.
+      snprintf(hintOwnedText, sizeof(hintOwnedText), "%s",
+               screenGetActiveMessage());
+    }
+  } else if (hintOwnedText[0]) {
+    // No hint for this cell (e.g. the mode turned OFF): drop our hint.
+    screenClearMessage();
+    hintOwnedText[0] = '\0';
   }
 }
 
@@ -1522,6 +1550,11 @@ static void setup(int input) {
   }
   lazyEditArmed = 1;
   slicePreviewActive = 0;
+  // Hint state never survives leaving the screen either.
+  hintCursorRow = -1;
+  hintCursorCol = -1;
+  hintPhase = 0;
+  hintOwnedText[0] = '\0';
   // The Number box starts in the count display on every screen entry.
   sliceNumShowsCount = 1;
   sampleDirtyToDisk = pendingDirtyRestore;
@@ -1563,11 +1596,18 @@ static void draw(void) {
   const int wasActive = sampleLazyPlaybackActive;
   const PlaybackStatus* playback = chipnomadGetPlaybackStatus(chipnomadState);
   SampleVoice* voice = chipnomadState->sampleVoices[*pSongTrack][0];
-  // Rotating combo hints for the Slice row cells: only when no other
-  // message (action feedback, error) is showing.
-  if (!screenGetActiveMessage()[0]) {
+  // Slice row combo hints: the bar is ours when it is empty or shows the
+  // hint we set; a foreign message (action feedback, error) pauses the
+  // hints until it expires.
+  const char* activeMessage = screenGetActiveMessage();
+  if (activeMessage[0] == '\0') {
     settingsUpdateHint(screenSampleSettingsData.cursorRow,
-                       screenSampleSettingsData.cursorCol);
+                       screenSampleSettingsData.cursorCol, 0);
+  } else if (strcmp(activeMessage, hintOwnedText) == 0) {
+    settingsUpdateHint(screenSampleSettingsData.cursorRow,
+                       screenSampleSettingsData.cursorCol, 1);
+  } else {
+    hintOwnedText[0] = '\0';
   }
   if (sampleLazyPlaybackActive) {
     // The preview can end on its own (one-shot sample finished, or the
@@ -1766,16 +1806,20 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
         chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
         sampleLazyPlaybackActive = 0;
       } else if (!chipnomadGetPlaybackStatus(chipnomadState)->isPlaying) {
-        // One-shot full-sample playback at the root note: a custom phrase
-        // row with fxSLP=0 forces loopMode 0 (one-shot) on the sample voice
-        // regardless of the sample's own loop setting, so the playback
-        // runs once from the start and stops by itself. The Full command
-        // sets the track's sliceBypass flag so the voice ignores slice
-        // mapping (LAZY slices map chromatically now) and plays the whole
-        // region.
+        // One-shot full-sample playback at the sample's original pitch: a
+        // custom phrase row with fxSLP=0 forces loopMode 0 (one-shot) on
+        // the sample voice regardless of the sample's own loop setting, so
+        // the playback runs once from the start and stops by itself. The
+        // Full command sets the track's sliceBypass flag so the voice
+        // ignores slice mapping (LAZY slices map chromatically now) and
+        // the row's note pitch; the root note keeps the row valid on its
+        // own (the first sequencer note used to leak in here and stretch
+        // the preview to match it).
         PhraseRow row;
         memset(&row, 0, sizeof(row));
-        row.note = instrumentFirstNote(&chipnomadState->project, cInstrument);
+        int rootNote = chipnomadState->project.pitchTable.octaveSize * 4;
+        if (rootNote >= chipnomadState->project.pitchTable.length) rootNote = 0;
+        row.note = (uint8_t)rootNote;
         row.instrument = cInstrument;
         row.volume = PHRASE_VOLUME_MAX;
         row.fx[0][0] = fxSLP;

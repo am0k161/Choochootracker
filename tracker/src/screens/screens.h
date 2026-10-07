@@ -132,6 +132,8 @@ void screenMessage(int time, const char* format, ...);
 // screenTitle draws through its own gfxTitle* calls (see screenDraw()), so it
 // needs this to show a message instead of the normal gfxPrint-based banner.
 const char* screenGetActiveMessage(void);
+// Clear the message bar immediately (timed or not) and stop its timer.
+void screenClearMessage(void);
 void screensInitAll(void);
 void drawScreenMap(void);
 enum ScreenPlaybackLevel screenGetPlaybackLevel(const AppScreen* screen);

@@ -157,6 +157,13 @@ const char* screenGetActiveMessage(void) {
   return messageBuffer;
 }
 
+void screenClearMessage(void) {
+  ScreenOverlayCoordinates overlay;
+  messageTimer = -1;
+  messageBuffer[0] = '\0';
+  gfxClearRect(0, 19, 40, 1);
+}
+
 void screensInitAll(void) {
   screenTitle.init();
   screenSong.init();

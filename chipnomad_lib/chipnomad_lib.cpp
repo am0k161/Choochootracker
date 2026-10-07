@@ -712,7 +712,8 @@ int chipnomadQueuePlaybackStartPhraseRow(ChipNomadState* state, int trackIdx, co
 }
 // Full-sample one-shot preview of a LAZY sample: same as StartPhraseRow but
 // sets the track's sliceBypass flag so the voice ignores slice mapping and
-// plays the whole region.
+// the row's note pitch, playing the whole region at the sample's original
+// pitch and speed.
 int chipnomadQueuePlaybackStartPhraseRowFull(ChipNomadState* state, int trackIdx, const PhraseRow* row) {
   return state && state->audioCommands && row ? state->audioCommands->pushCommand(11, trackIdx, 0, 0, 0, row) : 0;
 }
@@ -1273,7 +1274,8 @@ static void updateSampleVoices(ChipNomadState* state) {
     uint8_t end = sample->end;
     // D3 (updated): LAZY slices now map chromatically like EQUAL/AUTO. The
     // only exception is the one-shot full-sample preview (kStartPhraseRowFull
-    // sets sliceBypass), which plays the whole region regardless of pitch.
+    // sets sliceBypass), which plays the whole region at the sample's
+    // original pitch - the row's note is ignored entirely.
     uint8_t sliceCount = track->sliceBypass ? 0
       : (sampleActsAsSliced(sample) ? sampleDecodeSliceCount(sample->slice) : 0);
     uint8_t sliceIndex = 0;
@@ -1290,6 +1292,9 @@ static void updateSampleVoices(ChipNomadState* state) {
         // first one instead of sticking on the last slice.
         sliceIndex = pitch % sliceCount;
       }
+    } else if (track->sliceBypass) {
+      // Full-sample preview: no note transposition - the sample plays at
+      // its original pitch regardless of the row's note.
     } else if (track->chordPitchFinal[0] != EMPTY_VALUE_8) {
       int rootNote = project->pitchTable.octaveSize * 4;
       if (rootNote >= project->pitchTable.length) rootNote = 0;

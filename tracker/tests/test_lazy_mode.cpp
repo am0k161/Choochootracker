@@ -326,6 +326,42 @@ TEST_CASE("LAZY full-sample preview (sliceBypass) ignores slice bounds") {
   CHECK(pos >= 0.0);
 }
 
+TEST_CASE("LAZY full-sample preview plays at original pitch regardless of note") {
+  // Regression: the preview row used the first sequencer note mapped to the
+  // instrument (e.g. C-0 = 0), and with sliceBypass the engine applied the
+  // full note-to-root delta (root = C-4), stretching the sample 4 octaves
+  // down. The bypass must ignore the note entirely: the sample plays at its
+  // original pitch and speed.
+  EngineSample sample;
+  sample.init(44100); // 1 second
+  sample.s.slice = sampleEncodeSlice(sliceModeLazy, 2);
+  sample.s.sliceBounds[0] = 0;
+  sample.s.sliceBounds[1] = 44100 / 2;
+
+  // C-0 (note 0) is 4 octaves below the root: without the fix the voice
+  // would advance at 1/16 speed and stay near frame 0.
+  LazyEngine engine(sample.s, 0);
+  PhraseRow row;
+  std::memset(&row, 0, sizeof(row));
+  row.note = 0;
+  row.instrument = 0;
+  row.volume = PHRASE_VOLUME_MAX;
+  chipnomadQueuePlaybackStartPhraseRowFull(engine.state, 0, &row);
+  engine.render(882);
+
+  const PlaybackStatus* status = chipnomadGetPlaybackStatus(engine.state);
+  CHECK(status->tracks[0].mode == PlaybackMode::phraseRow);
+  CHECK(status->isPlaying == 1);
+
+  SampleVoice* voice = engine.state->sampleVoices[0][0];
+  REQUIRE(voice->active());
+  // Original speed: one tick (882 frames) advances the cursor by ~882
+  // frames. At the buggy 1/16 speed it would sit below ~60.
+  const double pos = voice->playbackFrame();
+  CHECK(pos > 700.0);
+  CHECK(pos < 1100.0);
+}
+
 TEST_CASE("notes past the slice count wrap around") {
   // Regression: notes >= sliceCount used to clamp to the last slice, so a
   // phrase playing D-5..A-5 over a 4-slice chop kept retriggering the last

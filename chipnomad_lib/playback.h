@@ -126,8 +126,10 @@ struct PlaybackTrackState {
 
   // One-shot full-sample preview of a LAZY sample (kStartPhraseRowFull):
   // forces sliceCount 0 in updateSampleVoices so the voice plays the whole
-  // region instead of mapping the row's note to a slice. Cleared by
-  // resetTrack so every stop path restores normal slice mapping.
+  // region instead of mapping the row's note to a slice, and skips the
+  // note transposition so the sample plays at its original pitch and
+  // speed. Cleared by resetTrack so every stop path restores normal slice
+  // mapping.
   uint8_t sliceBypass;
 };
 
