@@ -326,6 +326,46 @@ TEST_CASE("LAZY full-sample preview (sliceBypass) ignores slice bounds") {
   CHECK(pos >= 0.0);
 }
 
+TEST_CASE("notes past the slice count wrap around") {
+  // Regression: notes >= sliceCount used to clamp to the last slice, so a
+  // phrase playing D-5..A-5 over a 4-slice chop kept retriggering the last
+  // slice. The mapping now wraps (note % count).
+  EngineSample sample;
+  sample.init(44100);
+  sample.s.slice = sampleEncodeSlice(sliceModeEqual, 4);
+  sample.s.sliceBounds[0] = 0;
+  sample.s.sliceBounds[1] = 11025;
+  sample.s.sliceBounds[2] = 22050;
+  sample.s.sliceBounds[3] = 33075;
+
+  LazyEngine engine(sample.s, 0);
+  // Retrigger notes 4..7 back to back: each wraps to slice note % 4. (No
+  // StopPreview between notes: the stop render exits before rendering any
+  // frames, leaving the next render to burn the pending tick as silence and
+  // delaying the next preview command by one render.)
+  for (int note = 4; note < 8; ++note) {
+    chipnomadQueuePlaybackPreviewNote(engine.state, 0, note, 0);
+    engine.render(882);
+    SampleVoice* voice = engine.state->sampleVoices[0][0];
+    REQUIRE(voice->active());
+    const double pos = voice->playbackFrame();
+    const double bound = 11025.0 * (note % 4);
+    // One tick (882 frames at step 1.0) has played past the slice bound.
+    CHECK(pos >= bound);
+    CHECK(pos < bound + 2000.0);
+  }
+
+  // High keyboard notes (D-5 = 62) also wrap: 62 % 4 = 2
+  const int octaveSize = engine.state->project.pitchTable.octaveSize;
+  chipnomadQueuePlaybackPreviewNote(engine.state, 0, octaveSize * 5 + 2, 0);
+  engine.render(882);
+  SampleVoice* voice = engine.state->sampleVoices[0][0];
+  REQUIRE(voice->active());
+  const double pos = voice->playbackFrame();
+  CHECK(pos >= 22050.0);
+  CHECK(pos < 24000.0);
+}
+
 TEST_CASE("EQUAL preview starts at the selected slice bound") {
   EngineSample sample;
   sample.init(44100);

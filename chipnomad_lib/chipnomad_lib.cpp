@@ -1285,8 +1285,10 @@ static void updateSampleVoices(ChipNomadState* state) {
     if (sliceCount) {
       uint8_t pitch = track->chordPitchFinal[0] != EMPTY_VALUE_8 ? track->chordPitchFinal[0] : track->note.pitchFinal;
       if (pitch != EMPTY_VALUE_8) {
-        sliceIndex = pitch;
-        if (sliceIndex >= sliceCount) sliceIndex = sliceCount - 1;
+        // Notes map chromatically from C-0 and wrap around: note N selects
+        // slice N % count, so runs past the last slice cycle back to the
+        // first one instead of sticking on the last slice.
+        sliceIndex = pitch % sliceCount;
       }
     } else if (track->chordPitchFinal[0] != EMPTY_VALUE_8) {
       int rootNote = project->pitchTable.octaveSize * 4;
@@ -1358,8 +1360,8 @@ static void updateSampleVoices(ChipNomadState* state) {
       if (sliceCount) {
         uint8_t pitch = track->chordPitchFinal[slot] != EMPTY_VALUE_8 ? track->chordPitchFinal[slot] : track->note.pitchFinal;
         if (pitch != EMPTY_VALUE_8) {
-          voiceSliceIndex = pitch;
-          if (voiceSliceIndex >= sliceCount) voiceSliceIndex = sliceCount - 1;
+          // Same wrap-around mapping as the main slice index above.
+          voiceSliceIndex = pitch % sliceCount;
         }
       } else if (track->chordPitchFinal[slot] != EMPTY_VALUE_8) {
         int noteCents = project->linearPitch ? project->pitchTable.values[track->chordPitchFinal[slot]]

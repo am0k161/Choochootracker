@@ -613,7 +613,8 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
 - **Slice** is a single row with three value cells - **Mode**, **Number** and
   **Frame** - and is saved with the instrument. Off plays the Start/End window.
   Phrase notes select slices chromatically from **C-0**, and notes past the
-  last slice stay on that last slice. Sliced notes do not transpose pitch or
+  last slice wrap around to the beginning (note N plays slice `N % count`,
+  so a run past the last slice cycles back to the first one). Sliced notes do not transpose pitch or
   use Scale quantization, but **CRD** keeps the selected slice and transposes
   its voices as a chord. Slice starts are marked on the waveform with short
   two-pixel-wide lines (dark orange; the current slice's line is brighter),
@@ -631,9 +632,14 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
     lost. Slice and Stretch are mutually exclusive: enabling one disables
     the other, and the Slice cells are dimmed while Stretch drives the
     duration.
-  - **Number** shows the number of slices set (also live while the count is
-    changed with **B + direction**); the browsed slice is indicated on the
-    waveform by its brighter marker and the black band. **EDIT + any
+  - **Number** is a dual display. By default it shows the number of slices
+    set (also live while the count is changed with **B + direction**);
+    clicking **EDIT** on the cell (or browsing with **EDIT + direction**)
+    switches it to the 1-indexed current slice (`01`..`count`), and it
+    stays in that edit view until you change the count with **B +
+    direction** or change the **Mode**, which return it to the count. The
+    browsed slice is also indicated on the waveform by its brighter
+    marker and the black band. **EDIT + any
     direction** moves between slices (the view recenters on the slice start
     while zoomed). The slice count itself is set with **B + direction** while the
     cursor rests anywhere on the Slice row: **B + [LEFT/RIGHT]** steps the
@@ -675,7 +681,7 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
     **SHIFT + PLAY** is not intercepted in LAZY: it starts phrase playback
     like on every other screen. LAZY slices play back in the sequencer just
     like EQUAL and AUTO: phrase notes map chromatically from **C-0** onto
-    the hand-placed slices.
+    the hand-placed slices, wrapping around past the last one.
 - **Process** selects a destructive editing operation: **Crop**, **Normalize**, **Delete**, **Silence**, **Fade In**, **Fade Out** or **Reverse** (EDIT + left/right cycles, tap cycles forward, EDIT + OPT sets none). **GO** (same row) runs the selected operation on the current selection, or on the whole sample when the selection is empty. **Crop** keeps only the selection; **Normalize** scales the selection so its peak reaches full scale (both channels share one gain so the stereo image is preserved); **Delete** removes the selection and joins the tails (deleting the whole sample is rejected); **Silence** zeroes it; **Fade In**/**Fade Out** ramp the selection linearly from/to silence; **Reverse** plays the selection backwards (frames are swapped in place, both channels of a frame move together, length and markers are unchanged). Crop and Delete require a selection — with an empty selection they show `Select region first`. Every operation pauses audio briefly, keeps a one-level undo, and marks the sample as changed in RAM: the file on disk is not touched until the Save flows (see below), and leaving the screen discards the undo slot.
 - **UNDO** (next to GO) swaps the sample back with the state before the last operation. It is dimmed until an operation runs, toggles between the pre-op and post-op states on repeated presses, and is cleared when the screen is re-entered.
 - **File** holds the save flows. The instrument stores the full path of the WAV it was loaded from; these flows write that file or point the instrument at a new one. They never touch the instrument name.

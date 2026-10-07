@@ -55,6 +55,13 @@ static const char* sliceModeLabels[] = {"OFF", "EQUAL", "AUTO", "LAZY"};
 // sliceBounds). Never saved with the project.
 static int currentSlice;
 
+// Number box display state (session-only): 1 shows the slice count (the
+// default), 0 shows the 1-indexed current slice ("edit view"). EDIT
+// interactions with the current slice (browse, A-tap preview, frame
+// nudge, delete) switch to the slice number; B+direction count editing
+// or a slice mode change returns to the count.
+static int sliceNumShowsCount = 1;
+
 // Process toolbox: one selected operation plus GO/UNDO buttons. The op is
 // cycled with Edit+Left/Right; Edit+Opt clears it to "none".
 static const char* processOpLabels[] = {"Crop", "Normalize", "Delete", "Silence", "Fade In", "Fade Out", "Reverse"};
@@ -644,13 +651,19 @@ static void settingsDrawField(int col, int row, CellState state) {
       gfxClearRect(sliceNumX, fieldRow0 + row, sliceNumW, 1);
       if (dimmed || mode == sliceModeOff) gfxSetFgColor(appSettings.colorScheme.textEmpty);
       char text[8];
-      // The box shows the number of slices set (also live while the count
-      // is changed with B+direction); the browsed slice is indicated on
-      // the waveform by its brighter marker and the black band.
+      // Dual display: the box shows the slice count by default (also live
+      // while the count is changed with B+direction) and the 1-indexed
+      // current slice in edit view (entered by EDIT interactions with the
+      // current slice, left by B+direction or a mode change). The browsed
+      // slice is also indicated on the waveform by its brighter marker
+      // and the black band.
       if (mode == sliceModeOff) {
         gfxPrint(sliceNumX, fieldRow0 + row, "-");
-      } else {
+      } else if (sliceNumShowsCount) {
         snprintf(text, sizeof(text), "%02d", count);
+        gfxPrint(sliceNumX, fieldRow0 + row, text);
+      } else {
+        snprintf(text, sizeof(text), "%02d", currentSlice + 1);
         gfxPrint(sliceNumX, fieldRow0 + row, text);
       }
     } else {
@@ -1017,6 +1030,8 @@ static void settingsDropSliceAtPlayback(InstrumentSample* sample) {
   }
   currentSlice = index;
   projectModified = 1;
+  // Dropping a slice is a current-slice edit: show the slice number.
+  sliceNumShowsCount = 0;
   settingsRepaintSlice(sample, -1);
 }
 
@@ -1041,6 +1056,8 @@ static int settingsSliceDeleteCurrent(InstrumentSample* sample) {
   }
   settingsClampCurrentSlice(sample);
   projectModified = 1;
+  // Deleting is a current-slice edit: show the slice number.
+  sliceNumShowsCount = 0;
   settingsRepaintSlice(sample, -1);
   return 1;
 }
@@ -1098,6 +1115,9 @@ static int settingsSliceModeEdit(InstrumentSample* sample, CellEditAction action
     return 0;
   }
   if (nextMode == (uint8_t)mode) return 0;
+
+  // A mode change returns the Number box to the count display.
+  sliceNumShowsCount = 1;
 
   if (nextMode == sliceModeLazy) {
     // Leaving EQUAL/AUTO for LAZY: stash the chops so switching back
@@ -1159,6 +1179,8 @@ static int settingsSliceNumberEdit(InstrumentSample* sample, CellEditAction acti
     if (next >= count) next = count - 1;
     if (next == currentSlice) return 0;
     currentSlice = next;
+    // Browsing enters the edit view: the Number box shows the slice.
+    sliceNumShowsCount = 0;
     // Recenter the zoomed view on the new slice's start (the full view
     // shows every marker anyway).
     if (editorView.viewEnd - editorView.viewStart < sample->frameCount) {
@@ -1197,6 +1219,8 @@ static int settingsSliceFrameEdit(InstrumentSample* sample, CellEditAction actio
       zoomHoldActive = 0;
     }
     projectModified = 1;
+    // Nudging the frame is a current-slice edit: show the slice number.
+    sliceNumShowsCount = 0;
     settingsRepaintSlice(sample, 2);
     return 1;
   }
@@ -1216,6 +1240,9 @@ static int settingsOnEditSlice(int col, CellEditAction action, InstrumentSample*
   }
   if ((action == CellEditAction::tap || action == CellEditAction::doubleTap) && col != 0) {
     settingsSlicePreviewCurrent(sample);
+    // Clicking A enters the edit view: the Number box shows the slice.
+    sliceNumShowsCount = 0;
+    settingsDrawField(1, 2, col == 1 ? CellState::focus : CellState::normal);
     return 1;
   }
   if (col == 0) return settingsSliceModeEdit(sample, action);
@@ -1452,6 +1479,8 @@ static void setup(int input) {
   }
   lazyEditArmed = 1;
   slicePreviewActive = 0;
+  // The Number box starts in the count display on every screen entry.
+  sliceNumShowsCount = 1;
   sampleDirtyToDisk = pendingDirtyRestore;
   pendingDirtyRestore = 0;
   // Legacy AUTO sentinel with empty bounds (old project saved before
@@ -1659,6 +1688,8 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
       }
       if (reinit && next != count) {
         screenClearOptPressed();
+        // Count editing returns the Number box to the count display.
+        sliceNumShowsCount = 1;
         if (mode == sliceModeAuto) {
           settingsRunAutoDetect(sample, (uint8_t)next);
         } else {
