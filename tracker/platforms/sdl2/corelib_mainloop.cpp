@@ -145,7 +145,6 @@ void mainLoopRun(void (*draw)(void), void (*onEvent)(MainLoopEventData eventData
     int moved;
   } gesture = {};
 #ifdef ANDROID_BUILD
-  extern void androidPerformTouchHaptic(void);
   struct StickFinger { SDL_FingerID fingerId; } stickFingers[2] = {{-1}, {-1}};
 #endif
 #ifndef ANDROID_BUILD
@@ -395,9 +394,6 @@ void mainLoopRun(void (*draw)(void), void (*onEvent)(MainLoopEventData eventData
           numActiveFingers++;
           if (buttonTouches[buttonIndex]++ == 0) {
             gfxSetButtonPressed(buttonIndex, 1);
-#ifdef ANDROID_BUILD
-            androidPerformTouchHaptic();
-#endif
             eventData.type = MainLoopEvent::keyDown;
             eventData.data.input = (InputCode){InputDeviceType::logical, buttons[buttonIndex].key};
             onEvent(eventData);

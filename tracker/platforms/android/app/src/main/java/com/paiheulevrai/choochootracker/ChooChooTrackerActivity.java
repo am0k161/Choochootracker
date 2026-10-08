@@ -24,7 +24,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.provider.OpenableColumns;
-import android.view.HapticFeedbackConstants;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
@@ -150,16 +149,6 @@ public final class ChooChooTrackerActivity extends SDLActivity {
     };
 
     public static native void nativeMidiMessage(byte[] data, long timestamp);
-
-    public void performTouchHaptic() {
-        runOnUiThread(() -> {
-            if (getWindow() == null) return;
-            int feedback = Build.VERSION.SDK_INT >= 27
-                    ? HapticFeedbackConstants.KEYBOARD_TAP
-                    : HapticFeedbackConstants.VIRTUAL_KEY;
-            getWindow().getDecorView().performHapticFeedback(feedback);
-        });
-    }
 
     @Override protected String[] getLibraries() {
         return new String[] { "SDL2", "chipnomad" };

@@ -168,11 +168,6 @@ void gfxTitleEnd(void);
 void gfxTitlePrint(int x, int y, const char* text);
 void gfxToggleFullscreen(void);
 
-// Desktop screenshot CLI support. The default remains the native 640x480
-// window; callers opt in before gfxSetup and save the fully composed frame.
-void gfxSetCaptureSize(int width, int height);
-int gfxCapturePNG(const char* path);
-
 }
 
 

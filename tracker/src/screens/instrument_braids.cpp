@@ -37,8 +37,6 @@ static void openModelSelection() {
   screenSetup(&screenSelectionPopup, 0);
 }
 
-void braidsOpenModelMenu(void) { openModelSelection(); }
-
 static int getColumnCount(int row) {
   if (row < 3) return instrumentCommonColumnCount(row);
   if (row == 3) return 1;

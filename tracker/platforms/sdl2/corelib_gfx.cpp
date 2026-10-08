@@ -9,9 +9,6 @@
 #include <string.h>
 #include <stdarg.h>
 #include <math.h>
-#include <vector>
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "../../../font-generator/stb_image_write.h"
 
 #ifdef TOUCH_INPUT
 #include "button_icons.h"
@@ -44,8 +41,6 @@ static uint32_t cursorColor = 0;
 static char printBuffer[PRINT_BUFFER_SIZE];
 static int screenW;
 static int screenH;
-static int captureW;
-static int captureH;
 static int logicalW;
 static int logicalH;
 #ifdef ANDROID_BUILD
@@ -223,45 +218,9 @@ static void layoutVirtualPad(void) {
   if (layoutW < layoutH) {
 #ifdef ANDROID_BUILD
     SDL_Rect canvas = getTrackerViewport();
-    const int panelTop = canvas.y + canvas.h + gap;
-    const int panelHeight = layoutH - panelTop - margin;
-    const int dpadSizeByWidth = layoutW * 36 / 100;
-    const int dpadSizeByHeight = panelHeight * 42 / 100;
-    const int dpadSize = dpadSizeByWidth < dpadSizeByHeight ? dpadSizeByWidth : dpadSizeByHeight;
-    const int actionSizeByWidth = layoutW * 22 / 100;
-    const int actionSizeByHeight = panelHeight * 24 / 100;
-    const int actionSize = actionSizeByWidth < actionSizeByHeight ? actionSizeByWidth : actionSizeByHeight;
-    const int buttonSize = actionSize;
-    const int menuButtonWidth = layoutW * 28 / 100;
-    const int stickSizeByWidth = layoutW * 21 / 100;
-    const int stickSizeByHeight = panelHeight * 22 / 100;
-    const int stickSize = stickSizeByWidth < stickSizeByHeight ? stickSizeByWidth : stickSizeByHeight;
-    const int motionSizeByWidth = layoutW * 95 / 1000;
-    const int motionSizeByHeight = panelHeight * 11 / 100;
-    const int motionSize = motionSizeByWidth < motionSizeByHeight ? motionSizeByWidth : motionSizeByHeight;
-    const int dpadX = layoutW * 10 / 100;
-    const int leftActionX = layoutW * 53 / 100;
-    const int rightActionX = layoutW * 77 / 100;
-    const int controlsTop = panelTop + layoutW * 5 / 100;
-    const int actionRowY = controlsTop + panelHeight * 6 / 100;
-    const int menuRowY = controlsTop + panelHeight * 42 / 100;
-    const int stickY = panelTop + panelHeight * 82 / 100;
-    const int motionY = panelTop + panelHeight * 84 / 100;
-    dpadRect = (SDL_Rect){dpadX, controlsTop, dpadSize, dpadSize};
-    dpadUpRect = (SDL_Rect){dpadX + dpadSize / 3, controlsTop, dpadSize / 3, dpadSize / 3};
-    dpadDownRect = (SDL_Rect){dpadX + dpadSize / 3, controlsTop + dpadSize * 2 / 3, dpadSize / 3, dpadSize / 3};
-    dpadLeftRect = (SDL_Rect){dpadX, controlsTop + dpadSize / 3, dpadSize / 3, dpadSize / 3};
-    dpadRightRect = (SDL_Rect){dpadX + dpadSize * 2 / 3, controlsTop + dpadSize / 3, dpadSize / 3, dpadSize / 3};
-    aButtonRect = (SDL_Rect){leftActionX, actionRowY, actionSize, actionSize};
-    bButtonRect = (SDL_Rect){rightActionX, controlsTop, actionSize, actionSize};
-    selectButtonRect = (SDL_Rect){layoutW * 21 / 100, menuRowY, menuButtonWidth, buttonSize};
-    startButtonRect = (SDL_Rect){layoutW * 51 / 100, menuRowY, menuButtonWidth, buttonSize};
-    leftStickRect = (SDL_Rect){layoutW * 8 / 100, stickY, stickSize, stickSize};
-    rightStickRect = (SDL_Rect){layoutW * 71 / 100, stickY, stickSize, stickSize};
-    recButtonRect = (SDL_Rect){layoutW * 375 / 1000, motionY, motionSize, motionSize};
-    delButtonRect = (SDL_Rect){layoutW * 54 / 100, motionY, motionSize, motionSize};
 #else
     SDL_Rect canvas = {0, 0, layoutW, layoutH};
+#endif
     const int y = canvas.y + canvas.h + gap;
     const int dpadSize = (layoutW - margin * 3) / 2;
     const int actionSize = btnSize * 7 / 4;
@@ -287,7 +246,6 @@ static void layoutVirtualPad(void) {
     const int motionY = stickY + (stickSize - motionH) / 2;
     recButtonRect = (SDL_Rect){layoutW / 2 - gap - motionW, motionY, motionW, motionH};
     delButtonRect = (SDL_Rect){layoutW / 2 + gap, motionY, motionW, motionH};
-#endif
   } else {
     int sideBand = (layoutW - layoutH * 4 / 3) / 2;
     if (sideBand < margin * 3 + btnSize * 2) sideBand = margin * 3 + btnSize * 2;
@@ -584,8 +542,8 @@ int gfxSetup(int *screenWidth, int *screenHeight) {
   // Desktop deliberately uses the tracker's native window size.  Do not
   // restore a DPI-scaled drawable size from a prior run as a window size.
 #ifdef DESKTOP_BUILD
-  screenW = captureW > 0 ? captureW : 640;
-  screenH = captureH > 0 ? captureH : 480;
+  screenW = 640;
+  screenH = 480;
   if (screenWidth != NULL) *screenWidth = screenW;
   if (screenHeight != NULL) *screenHeight = screenH;
 #else
@@ -763,25 +721,6 @@ void gfxSetBgColor(int rgb) {
 
 void gfxSetCursorColor(int rgb) {
   cursorColor = rgb;
-}
-
-void gfxSetCaptureSize(int width, int height) {
-  captureW = width;
-  captureH = height;
-}
-
-int gfxCapturePNG(const char* path) {
-  if (!path || !path[0] || !renderer || screenW <= 0 || screenH <= 0) return 1;
-  gfxUpdateScreen();
-  SDL_SetRenderTarget(renderer, NULL);
-  std::vector<uint8_t> pixels((size_t)screenW * (size_t)screenH * 4);
-  if (SDL_RenderReadPixels(renderer, NULL, SDL_PIXELFORMAT_ABGR8888, pixels.data(), screenW * 4) != 0) {
-    useCompositionTarget();
-    return 1;
-  }
-  int result = stbi_write_png(path, screenW, screenH, 4, pixels.data(), screenW * 4) ? 0 : 1;
-  useCompositionTarget();
-  return result;
 }
 
 static void setColor(int rgb) {
@@ -1491,6 +1430,11 @@ void gfxDrawHUD(void) {
   if (physicalH > physicalW) {
     drawButton(&recButtonRect, icon_rec, 8);
     drawButton(&delButtonRect, icon_del, 9);
+    const int separatorY = (selectButtonRect.y + selectButtonRect.h + leftStickRect.y) / 2;
+    SDL_SetRenderDrawColor(renderer, (appSettings.colorScheme.textInfo >> 16) & 0xff,
+      (appSettings.colorScheme.textInfo >> 8) & 0xff, appSettings.colorScheme.textInfo & 0xff, 255);
+    SDL_RenderDrawLine(renderer, dpadRect.x, separatorY,
+      physicalW - dpadRect.x - 1, separatorY);
     drawStick(&leftStickRect, 0);
     drawStick(&rightStickRect, 2);
   }

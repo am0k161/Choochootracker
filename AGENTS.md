@@ -21,16 +21,6 @@
 - Linux AppImage: run `make -j4 -f Makefile.linux appimage` from `tracker`.
   Writes `releases/ChooChooTracker-<date>-<version>-x86_64.AppImage`. See
   `docs/build-notes.md` for what it bundles and why.
-  For speed under WSL2, copy `tracker`, `chipnomad_lib`, `docs`, and `LICENSE`
-  into the Linux filesystem (for example `/tmp/choochootracker-build`) before
-  building; compiling the monolithic DSP command from `/mnt/c` can take an
-  excessive amount of time. When invoking `make` through PowerShell/`wsl.exe`,
-  pass linker overrides as make arguments so spaces are preserved:
-  `CPP_LIBS=-pthread XTRA_LIBS=-Wl,--no-as-needed\\ -lSDL2\\ -lm\\ -lasound`.
-  Verify the required runtime libraries exist before packaging; if
-  `libsamplerate.so.0` is absent, do not silently claim the standard bundle is
-  complete—install/use the expected Linux build environment or explicitly
-  document the reduced bundle.
 - Web: Emscripten is already installed at `.tmp/emsdk`. Use PowerShell, not
   MSYS2 Bash. The SDK requires its bundled Python:
 
@@ -59,9 +49,3 @@
 - Before an alpha commit, update `docs/USER_MANUAL.md`. Never update in-app help.
 - The worktree can contain user changes and deletions. Stage only files that
   belong to the current task; never include unrelated deletions in a commit.
-
-## GitHub Markdown
-
-- When creating or editing GitHub Markdown through the CLI, pass real newline
-  characters (for example a PowerShell here-string), never literal `\n` escape
-  sequences.

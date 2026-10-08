@@ -25,7 +25,6 @@ void instrumentFMToneDrawCursor(int col);
 void instrumentFMSetContext(int instrument, InstrumentType type);
 void instrumentFMToneDrawField(int col, CellState state);
 int instrumentFMToneEdit(int col, CellEditAction action);
-int instrumentCapturePopup(const char* name);
 
 extern ScreenData screenInstrumentAY;
 extern ScreenData screenInstrumentAY2;
