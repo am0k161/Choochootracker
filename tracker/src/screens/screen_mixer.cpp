@@ -6,6 +6,7 @@
 #include "meter_display.h"
 #include "monitor_display.h"
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <stdio.h>
 #include <string.h>
@@ -17,14 +18,15 @@ static uint8_t autoMixPreview[PROJECT_MAX_TRACKS];
 static uint8_t autoMixOriginal[PROJECT_MAX_TRACKS];
 static Bitmap* stereoImage;
 static Bitmap* spectrum;
+static std::chrono::steady_clock::time_point spectrumRefresh;
 
-static Bitmap* analyzerBitmap(Bitmap*& bitmap, int columns, int rows) {
+static Bitmap* analyzerBitmap(Bitmap*& bitmap, int columns, int rows, bool clear = true) {
   if (bitmap && (bitmap->widthPixels != columns * gfxGetCharWidth() || bitmap->heightPixels != rows * gfxGetCharHeight())) {
     gfxBitmapFree(bitmap);
     bitmap = NULL;
   }
   if (!bitmap) bitmap = gfxBitmapCreate(columns, rows);
-  if (bitmap) gfxBitmapClear(bitmap);
+  if (bitmap && clear) gfxBitmapClear(bitmap);
   return bitmap;
 }
 
@@ -36,7 +38,7 @@ static void analyzerPixel(Bitmap* bitmap, int x, int y, uint8_t value) {
 static void drawAnalyzers(void) {
   constexpr int imageColumns = 17, spectrumColumns = 17, rows = 5;
   Bitmap* image = analyzerBitmap(stereoImage, imageColumns, rows);
-  Bitmap* fft = analyzerBitmap(spectrum, spectrumColumns, rows);
+  Bitmap* fft = analyzerBitmap(spectrum, spectrumColumns, rows, false);
   const float (*samples)[2] = monitorDisplayMixStereoSamples();
   if (image) {
     const int w = image->widthPixels, h = image->heightPixels;
@@ -50,18 +52,34 @@ static void drawAnalyzers(void) {
       analyzerPixel(image, x, y, 255);
     }
   }
-  if (fft && samples) {
+  static float sine[128], cosine[128], window[128];
+  static bool spectrumLutReady = false;
+  if (!spectrumLutReady) {
     constexpr float pi = 3.14159265358979323846f;
+    for (int i = 0; i < 128; ++i) {
+      cosine[i] = cosf(2.0f * pi * i / 128.0f);
+      sine[i] = sinf(2.0f * pi * i / 128.0f);
+      window[i] = 0.5f - 0.5f * cosf(2.0f * pi * i / 127.0f);
+    }
+    spectrumLutReady = true;
+  }
+  // A DFT still does thousands of arithmetic operations per draw even though
+  // its trigonometric terms come from LUTs. Keep this noncritical diagnostic
+  // display below the PortMaster audio deadline.
+  const auto now = std::chrono::steady_clock::now();
+  if (fft && samples &&
+      (spectrumRefresh == std::chrono::steady_clock::time_point() ||
+       std::chrono::duration<float>(now - spectrumRefresh).count() >= 1.0f / 20.0f)) {
+    gfxBitmapClear(fft);
     const int w = fft->widthPixels, h = fft->heightPixels, bands = 17, bandWidth = std::max(1, w / bands);
     for (int band = 0; band < bands; ++band) {
       const int bin = 1 + band * 3;
       float real = 0, imaginary = 0;
       for (int i = 0; i < 128; ++i) {
         float sample = (samples[i][0] + samples[i][1]) * 0.5f;
-        float window = 0.5f - 0.5f * cosf(2.0f * pi * i / 127.0f);
-        float phase = 2.0f * pi * bin * i / 128.0f;
-        real += sample * window * cosf(phase);
-        imaginary -= sample * window * sinf(phase);
+        const int phase = (bin * i) & 127;
+        real += sample * window[i] * cosine[phase];
+        imaginary -= sample * window[i] * sine[phase];
       }
       float amplitude = sqrtf(real * real + imaginary * imaginary) * 4.0f / 128.0f;
       float db = 20.0f * log10f(std::max(amplitude, 0.001f));
@@ -69,6 +87,7 @@ static void drawAnalyzers(void) {
       for (int x = band * bandWidth; x < std::min(w, (band + 1) * bandWidth - 1); ++x)
         for (int y = 0; y < level; ++y) analyzerPixel(fft, x, h - 1 - y, 255);
     }
+    spectrumRefresh = now;
   }
   gfxSetFgColor(appSettings.colorScheme.textInfo);
   gfxClearRect(0, 14, 35, 6);
