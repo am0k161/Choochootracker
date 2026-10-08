@@ -1,6 +1,7 @@
 #pragma once
 #include "project.h"
 #include "preset_zip.h"
+#include "external_presets.h"
 #include <string>
 #include <vector>
 
@@ -36,6 +37,6 @@ private:
   std::vector<Location> stack_;
   std::vector<Item> items_;
   PresetZip archive_;
-  std::vector<InstrumentDX7> voices_;
+  std::vector<ExternalPreset> voices_;
   size_t scanBudget_ = size_t(-1);
 };

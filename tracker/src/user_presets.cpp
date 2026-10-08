@@ -77,13 +77,15 @@ bool UserPresets::bytes(const std::string& path, std::vector<uint8_t>& data, std
 }
 bool UserPresets::addPreset(const std::string& name, const std::string& path, std::string& error) {
   const auto ext = extension(path);
-  if (ext != ".cni" && !(type_ == InstrumentType::DX7 && ext == ".syx")) return true;
+  if (ext != ".cni" && !externalPresetExtension(type_,path)) return true;
   std::vector<uint8_t> data;
-  if (!bytes(path, data, error)) return false;
-  if (ext == ".syx") {
-    std::vector<InstrumentDX7> parsed;
-    if (!importDX7SysEx(data.data(), data.size(), parsed, error)) return false;
-    if (parsed.size() == 1) items_.push_back({parsed[0].presetName, path, Kind::preset, 0});
+  std::string reason;
+  if (!bytes(path, data, reason)) { error=reason; return false; }
+  if (ext != ".cni") {
+    std::vector<ExternalPreset> parsed;
+    if (!importExternalPresets(type_,path,data,parsed,reason)) { error=reason; return false; }
+    if(!reason.empty())error=reason;
+    if (parsed.size() == 1) items_.push_back({parsed[0].name, path, Kind::preset, parsed[0].sourceIndex});
     else items_.push_back({name, path, Kind::bank});
   } else {
     std::string label; InstrumentType type;
@@ -108,9 +110,9 @@ bool UserPresets::refresh(std::string& error) {
   if (location.bank) {
     std::vector<uint8_t> data;
     if (!bytes(location.zip ? location.member : location.path, data, error) ||
-        !importDX7SysEx(data.data(), data.size(), voices_, error)) return false;
+        !importExternalPresets(type_, location.zip ? location.member : location.path, data, voices_, error)) return false;
     for (size_t n = 0; n < voices_.size(); ++n)
-      items_.push_back({voices_[n].presetName, location.zip ? location.member : location.path, Kind::preset, int(n)});
+      items_.push_back({voices_[n].name, location.zip ? location.member : location.path, Kind::preset, voices_[n].sourceIndex});
     return true;
   }
   std::string skipped;
@@ -160,7 +162,7 @@ bool UserPresets::refresh(std::string& error) {
     if ((a.kind == Kind::preset) != (b.kind == Kind::preset)) return b.kind == Kind::preset;
     return a.name < b.name;
   });
-  if (!skipped.empty()) error = "Some user presets were skipped";
+  if (!skipped.empty()) error = skipped;
   return true;
 }
 bool UserPresets::enter(size_t index, std::string& error) {
@@ -228,7 +230,7 @@ bool UserPresets::load(size_t index, Project* destination, int slot, std::string
   return load(reference(index),destination,slot,error);
 }
 bool UserPresets::load(const Reference& item, Project* destination, int slot, std::string& error) {
-  if(!destination||slot<0||slot>=PROJECT_MAX_INSTRUMENTS)return false;
+  if(!destination||slot<0||slot>=PROJECT_MAX_INSTRUMENTS||!PresetZip::safePath(item.path)||(!item.archive.empty()&&!PresetZip::safePath(item.archive)))return false;
   error.clear();
   auto staged = std::make_unique<Project>(); projectInit(staged.get());
   std::vector<uint8_t> data; bool ok;
@@ -236,21 +238,18 @@ bool UserPresets::load(const Reference& item, Project* destination, int slot, st
   if(item.archive.empty())ok=readPresetFile((fs::path(root)/item.path).string(),data,error);
   else {PresetZip zip;ok=zip.open((fs::path(root)/item.archive).string(),error)&&zip.read(item.path,data,error);}
   if (ok && item.voice >= 0) {
-    std::vector<InstrumentDX7> parsed;
-    ok = importDX7SysEx(data.data(), data.size(), parsed, error) && size_t(item.voice) < parsed.size();
-    if (ok) {
-      auto& inst = staged->instruments[0];
-      getInstrumentFunctions(InstrumentType::DX7).init(&inst); inst.type = InstrumentType::DX7;
-      inst.chip.dx7 = parsed[item.voice];
-      snprintf(inst.name, sizeof(inst.name), "%s", inst.chip.dx7.presetName);
-    }
+    std::vector<ExternalPreset> parsed;
+    ok = importExternalPresets(type_,item.path,data,parsed,error);
+    auto selected=std::find_if(parsed.begin(),parsed.end(),[&](const ExternalPreset& p){return p.sourceIndex==item.voice;});
+    ok=ok&&selected!=parsed.end();
+    if(ok){staged->instruments[0]=selected->instrument;staged->tables[0]=selected->table;}
   } else if (ok) ok = instrumentLoadMemory(staged.get(), data.data(), data.size(), 0) == 0;
   ok = ok && userPresetCompatible(type_, staged->instruments[0].type);
   if (ok) {
     instrumentClear(&destination->instruments[slot]);
     destination->instruments[slot] = staged->instruments[0];
     destination->instruments[slot].type = type_;
-    if(item.voice<0)destination->tables[slot] = staged->tables[0];
+    if(extension(item.path)!=".syx")destination->tables[slot] = staged->tables[0];
     staged->instruments[0] = {};
   } else if (error.empty()) error = "Invalid or incompatible user preset";
   projectFree(staged.get()); return ok;

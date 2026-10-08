@@ -1387,16 +1387,80 @@ presets through the normal file browser, for **1,140 packaged native presets**.
 Source revisions, hashes, full notices and original source data accompany the
 new collections under `licenses/chip-banks/expansion`.
 
-`instruments/banks/` currently provides automatic drop-in discovery only for
-DX7 `.syx` banks. The shipped banks for every engine are stored as individual
-native `.cni` files in `instruments/chips/`, grouped by `catalog.tsv` (FM) and
-`builtins.tsv` (Sega/GB inventory). Bank is a browsing group; it does not imply
-SysEx. OPL source banks use WOPLX, Genesis sources use WOPN/TFI, and Arcade
-sources use OPM. OPLL/VRC7 store eight-byte tone programs; Sega/GB store native
-register settings and envelopes. The factory converter turns these into the
-same native instrument format. Only the formats explicitly listed for the
-user importer above are supported there. Selected native patch data is stored
-inside each saved project, including custom edits.
+### Portable factory collections and USER presets
+
+Native chip instruments use **Bank:** to choose ALL, an included collection or
+USER. **Preset:** chooses a sound within that selection. Hold EDIT and press
+Left or Right on either row to cycle; a short EDIT tap opens its chooser.
+
+Included collections are ZIP packs under `instruments/FACTORY/`. USER files go
+under `instruments/USER/<engine>/`: `dx7`, `opll`, `vrc7`, `opl2`, `opl3`,
+`genesis`, `arcade`, `sid`, `sega`, `gb-pulse`, or `gb-noise`.
+Browse folders directly or put a ZIP of compatible presets there. ZIPs remain
+intact on disk. All these folders accept compatible `.cni` files; CNI is
+ChooChoo/ChipNomad's portable instrument format, not a chip manufacturer's standard.
+The USER browser also reads the following source formats, including inside ZIPs:
+
+| USER folder | Additional formats |
+| --- | --- |
+| `dx7` | Yamaha DX7/TX7 `.syx` single voices and 32-voice banks |
+| `genesis` | `.tfi`, DefleMask `.dmp`, Furnace `.fui` |
+| `arcade` | VOPM `.opm` banks, DefleMask `.dmp`, Furnace `.fui` |
+| `opl2`, `opl3` | `.wopl`, `.opli`, `.woplx`, `.sbi`, Furnace `.fui` |
+| `opll`, `vrc7` | Furnace `.fui` custom patches and fixed ROM selections |
+| `sega`, `gb-pulse`, `gb-noise` | Furnace `.fui`, DefleMask `.dmp` |
+| `sid` | GoatTracker 2 `.ins` (GTI5), Furnace `.fui` |
+
+A bank opens into compatible voices. Unsupported files or features report a
+reason; incompatible voices in a mixed bank are excluded while their source
+numbers remain stable. Loading is transactional: a rejected preset leaves the
+current instrument unchanged. Source presets replace the instrument's tracker
+table with an empty one, except DX7 SysEx, which preserves its existing table.
+CNI restores its saved table. Loaded patches are owned by the song and continue
+to work after moving or deleting the source pack.
+
+WOPL banks can contain unused slots without an explicit blank flag. The browser
+omits unnamed slots whose active operators are fully attenuated and have no
+attack. Unnamed playable voices remain available as `Program N [Bbank]` or
+`Drum N [Bbank]`, using the source's zero-based program and bank numbers.
+An unnamed single OPLI instrument uses its filename. Named silent patches are
+retained.
+
+Furnace support covers legacy single-instrument versions 29–112 and feature-based
+`FINS` versions 127–251. DefleMask support covers version 11 OPN, OPM, Sega PSG
+and Game Boy instruments. These are instrument imports, not complete tracker
+players: animated FM/operator macros, source-song FM LFO settings, samples,
+Game Boy hardware command sequences, relative SID pulse/filter macros and SID
+ring/sync dependencies are currently rejected. Constant OPLL ROM selection is
+supported; VRC7 uses its own ROM for that selection. SID-Wizard `.swi` and SID
+music files (`.sid`) are not instrument imports in this build.
+
+Supported PSG/GB/SID sequences are stored in the patch and played at 60 Hz for
+Furnace/DefleMask and 50 Hz for GoatTracker. Those files do not carry a complete
+song's playback configuration: use the original tracker when its song-specific
+tick rate, channel routing, hard-restart behavior or compatibility settings are
+required. For Sega PSG, a duty macro selects the noise voice; without one the
+import uses a tone voice. Game Boy files must be placed in the intended pulse or
+noise folder. Imported sequences currently remain embedded playback data; the
+instrument page edits base parameters, not the source tracker tables.
+
+USER preset cycling continues across files, folders, banks and ZIP packs in
+both directions, wrapping at the ends. Reopening the USER browser follows the
+current selection. ALL includes USER sounds under Unsorted for categorized
+engines; USER remains a separate top-level choice. Sega PSG and Game Boy use
+flat ALL/Factory lists and a hierarchical USER browser, without an Unsorted
+panel. Older DX7 files in `instruments/banks/dx7/` remain accessible in USER.
+
+An engine shows only its compatible included collections. Factory Presets
+combines the included OPLL/VRC7 tone sets for the selected engine; DX7 combines
+ChooChoo and YSE originals. Downloaded named collections remain separate.
+Fat Man 2-op is listed under OPL2 and Fat Man 4-op under OPL3. Compatible OPL2
+CNI files may still be used in OPL3 USER folders.
+
+Native-engine output uses fixed measured gain compensation rather than
+per-preset normalization. Existing native-instrument songs can therefore play
+at a different level; review the balance of saved mixes. The calibration method
+and bounds are documented in `scripts/README_MEASURE.md`.
 
 `native-chip-audition.cct` provides a short sequential audition across the original
 thirteen factory banks. Each section uses a different owned instrument, so it works with
@@ -1485,8 +1549,10 @@ engines are software processing after synthesis. aChChid instead uses its native
 FM synthesis itself. Track inserts remain available for additional processing.
 
 Native instruments save in CNI version 7 (8 when absolute commands are present),
-and native songs in CCT version 9. Stored FM preset bytes and instrument-page
-tone settings remain unchanged.
+and native songs in CCT version 9. Instruments containing imported sequences
+use CNI version 9 and songs containing them use CCT version 10. Older builds
+cannot open those newer sequence-bearing files. Stored FM preset bytes and
+instrument-page tone settings remain unchanged.
 
 ### Handheld workload guidance for native chips
 

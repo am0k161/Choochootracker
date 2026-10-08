@@ -1,4 +1,6 @@
 USER library for gb-pulse.
-Copy compatible CNI presets or ZIP collections here. Keep your own subfolders.
-Choose USER in the instrument bank/preset menu to browse. No TSV is required.
+Accepted source formats: CNI, DMP, FUI. Compatible subsets only; see USER_MANUAL.
+Copy files, ZIP collections or your own subfolders here. No TSV is required.
+Choose USER in the instrument bank/preset menu to browse and audition.
+Unsupported features report a reason and leave the current instrument intact.
 Preserve personal files during updates; do not include them in shared builds.

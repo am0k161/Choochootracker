@@ -30,7 +30,7 @@ User content never enters the factory manifest implicitly:
 python3 tools/chip_banks/import_bank.py SOURCE.tfi --output NEW_DIRECTORY --writer tracker/build/tests/chip_factory
 ```
 
-Supported: exact TFI42, original VOPM text fields (0/128 AM enable; no noise or
+The offline converter supports: exact TFI42, original VOPM text fields (0/128 AM enable; no noise or
 partial-pan adaptation), WOPLX BANK1, and checksum-validated original DX7 voice/
 32-voice/multi-message SysEx. Binary WOPL, arbitrary DMP, four-op Yamaha SysEx,
 DX7II/performance extensions, raw unframed dumps and bad-checksum overrides are
@@ -50,3 +50,25 @@ The packer preserves CNI bytes, includes source notices, verifies every entry,
 then updates both catalogs and removes only the verified loose generated files.
 It can also repack existing ZIP-backed catalogs. Do not run it on personal USER
 libraries or add user-provided banks to factory packages.
+
+The runtime USER browser now imports compatible source presets directly through
+`chipnomad_lib/external_presets.cpp`. The offline converter's format list above
+is independent of runtime support. See the USER_MANUAL source-format table and
+limits; community downloads stay outside factory assets and source control.
+
+The runtime importer follows the Furnace single-instrument specifications
+(`papers/newIns.md` and `papers/oldIns.md`, revision
+`68f2c61273808170ca4900c6abed815520105050`), the WOPL/OPLI specification from
+Wohlstand's OPL3 Bank Editor, and GoatTracker 2's documented GTI5 tables.
+Its sequence player is bounded, allocation-free during playback, and stores
+at most 512 source bytes per instrument. It does not run downloaded player code.
+`tracker/tests/test_external_presets.cpp` exercises malformed input, register
+mapping, sequences, audio chunking, owned file roundtrips and USER integration.
+An optional corpus audit uses `CHOOCHOO_COMMUNITY_PACKS`; normal tests do not
+require a download or include community bank contents in source control.
+
+To exercise your own ready USER folders and ZIP banks, set
+`CHOOCHOO_USER_PRESETS` to the directory containing the eleven engine folders
+and run the `External ready ZIP libraries browse and load through USER` test.
+These optional local audits use external data; no preset packs are bundled by
+the test suite.

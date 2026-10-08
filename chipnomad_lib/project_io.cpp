@@ -721,7 +721,9 @@ static int projectLoadInternal(FILE* file, Project* project) {
 
   // Detect version
   if (strlen(version) > 0) {
-    if (strncmp(version, " 9.0", 4) == 0) {
+    if (strncmp(version, " 10.0", 5) == 0) {
+      projectFileVersion = 10;
+    } else if (strncmp(version, " 9.0", 4) == 0) {
       projectFileVersion = 9;
     } else if (strncmp(version, " 8.0", 4) == 0) {
       projectFileVersion = 8;
@@ -1511,9 +1513,11 @@ static int projectSaveInternal(FILE* file, Project* project) {
   for (const auto& instrument : project->instruments) nativeChips |= (instrument.type==InstrumentType::SID || instrument.type==InstrumentType::DX7 || isOPLL(instrument.type) || (isOPL(instrument.type) || isFourOp(instrument.type)) || isSimpleChip(instrument.type));
   for (const auto& phrase : project->phrases) for (const auto& row : phrase.rows) for (const auto& fx : row.fx) nativeChips |= fx[0] >= fxFBR && fx[0] < fxTotalCount;
   for (const auto& table : project->tables) for (const auto& row : table.rows) for (const auto& fx : row.fx) nativeChips |= fx[0] >= fxFBR && fx[0] < fxTotalCount;
+  bool sourcePrograms=false;
+  for(const auto& i:project->instruments)sourcePrograms |= i.type==InstrumentType::SID?bool(i.chip.sid.program.format):isSimpleChip(i.type)?bool(i.chip.simpleChip.program.format):false;
   // Native formats 6-8 predate upstream's expanded phrase volume. Format 9
   // distinguishes new 00-7F songs while retaining their native patches and FX.
-  fprintf(file, "# ChooChooTracker Module %d.0\n\n", nativeChips ? 9 : 6);
+  fprintf(file, "# ChooChooTracker Module %d.0\n\n", sourcePrograms ? 10 : nativeChips ? 9 : 6);
 
   fprintf(file, "- Title: %s\n", project->title);
   fprintf(file, "- Author: %s\n", project->author);
@@ -1737,7 +1741,9 @@ int instrumentSave(Project* project, const char* path, int instrumentIdx) {
   for (const auto& row : project->tables[instrumentIdx].rows) for (const auto& fx : row.fx) nativeFormat |= fx[0] >= fxFBR && fx[0] < fxTotalCount;
   bool absoluteLevels=false;
   for(const auto& row:project->tables[instrumentIdx].rows)for(const auto& fx:row.fx)absoluteLevels |= fx[0]>=fxOL1&&fx[0]<=fxFBK;
-  fprintf(file, "# ChipNomad Instrument %d.0\n\n", absoluteLevels ? 8 : nativeFormat ? 7 : 5);
+  const auto& inst=project->instruments[instrumentIdx];
+  bool sourceProgram=inst.type==InstrumentType::SID?bool(inst.chip.sid.program.format):isSimpleChip(inst.type)?bool(inst.chip.simpleChip.program.format):false;
+  fprintf(file, "# ChipNomad Instrument %d.0\n\n", sourceProgram ? 9 : absoluteLevels ? 8 : nativeFormat ? 7 : 5);
   instrumentSaveData(file, 0, &project->instruments[instrumentIdx]);
   saveTable(file, 0, &project->tables[instrumentIdx]);
 
@@ -1755,7 +1761,9 @@ static int instrumentLoadInternal(FILE* file, Project* project, int instrumentId
 
   // Detect version
   if (strlen(line) > 22) {
-    if (strncmp(line + 22, " 8.0", 4) == 0) {
+    if (strncmp(line + 22, " 9.0", 4) == 0) {
+      projectFileVersion = 9;
+    } else if (strncmp(line + 22, " 8.0", 4) == 0) {
       projectFileVersion = 8;
     } else if (strncmp(line + 22, " 7.0", 4) == 0) {
       projectFileVersion = 7;
@@ -1813,7 +1821,7 @@ static int instrumentLoadStream(Project* project, FILE* file, int instrumentIdx)
   if (!file) return 1;
   int result;
   const char* header = peekLine(file);
-  if (header && (strncmp(header, "# ChipNomad Instrument 6.0", 25) == 0 || strncmp(header, "# ChipNomad Instrument 7.0", 25) == 0)) {
+  if (header && (strncmp(header, "# ChipNomad Instrument 6.0", 25) == 0 || strncmp(header, "# ChipNomad Instrument 7.0", 25) == 0 || strncmp(header, "# ChipNomad Instrument 8.0",25)==0 || strncmp(header,"# ChipNomad Instrument 9.0",25)==0)) {
     auto temporary = std::make_unique<Project>();
     projectInit(temporary.get());
     result = instrumentLoadInternal(file, temporary.get(), instrumentIdx);
