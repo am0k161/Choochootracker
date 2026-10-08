@@ -54,6 +54,8 @@ static void openEngineSelection() {
   screenSetup(&screenSelectionPopup, 0);
 }
 
+void plaitsOpenModelMenu(void) { openEngineSelection(); }
+
 static int getColumnCount(int row) {
   if (row < 3) return instrumentCommonColumnCount(row);
   if (row == 3) return 1;

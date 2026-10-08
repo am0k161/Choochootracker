@@ -37,10 +37,10 @@ Thank you for helping keep ChooChooTracker focused, playable, and fun.
 An instrument must expose parameters in its own screen, but also modulation destinations and lane FX. Don't forget these.
 
 Make sure the output volume is similar to the other instruments.
-Gain compensation may be required. There are some docs about that in /docs (measurements).
+Gain compensation may be required. See the measurement documentation in `docs/`.
 
 There are two types of instruments:
-- VCO, which reuses our standard filter/ADSR chain (such as PCM sample, Braids, Plaits, etc.)
+- VCOs, which reuse the standard filter/ADSR chain (such as PCM samples, Braids, and Plaits)
 - Voices, which have their own post-VCO chain (such as AY, aChChid, etc.)
 
 An engine can have different type of models, you can design a family of instruments (cf: Braids, Plaits, MME, etc.)

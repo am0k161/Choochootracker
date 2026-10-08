@@ -10,6 +10,17 @@
 
 static AAssetManager* assetManager = NULL;
 
+void androidPerformTouchHaptic(void) {
+    JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
+    jobject activity = (jobject)SDL_AndroidGetActivity();
+    if (!env || !activity) return;
+    jclass cls = env->GetObjectClass(activity);
+    jmethodID method = env->GetMethodID(cls, "performTouchHaptic", "()V");
+    if (method) env->CallVoidMethod(activity, method);
+    env->DeleteLocalRef(cls);
+    env->DeleteLocalRef(activity);
+}
+
 int androidGetWorkspacePath(char* buffer, int bufferSize) {
     JNIEnv* env = (JNIEnv*)SDL_AndroidGetJNIEnv();
     jobject activity = (jobject)SDL_AndroidGetActivity();

@@ -16,6 +16,7 @@
 #include "corelib_keymap.h"
 #include "screens/screen_quick_help.h"
 #include "screens/screen_instrument.h"
+#include "screens/screen_project.h"
 #include "midi/midi_router.h"
 #include "midi/midi_backend_desktop.h"
 #ifdef ANDROID_BUILD
@@ -537,6 +538,32 @@ void appDraw(void) {
   } else {
     gfxPrint(39, 19, " ");
   }
+}
+
+int appCaptureScreen(const char* name, const char* projectPath) {
+  if (!name) return 1;
+  if (projectPath && projectPath[0] && projectLoadFromPath(projectPath) != 0) return 1;
+  if (instrumentCapturePopup(name) == 0) { appDraw(); return 0; }
+  const AppScreen* screen = NULL;
+  int input = 0;
+  if (strcmp(name, "song") == 0) screen = &screenSong;
+  else if (strcmp(name, "chain") == 0) { screen = &screenChain; input = -1; }
+  else if (strcmp(name, "phrase") == 0) { screen = &screenPhrase; input = -1; }
+  else if (strcmp(name, "groove") == 0) screen = &screenGroove;
+  else if (strcmp(name, "mixer") == 0) screen = &screenMixer;
+  else if (strcmp(name, "instrument") == 0) screen = &screenInstrument;
+  else if (strcmp(name, "table") == 0) screen = &screenTable;
+  else if (strcmp(name, "modulation") == 0) screen = &screenModulation;
+  else if (strcmp(name, "project") == 0) screen = &screenProject;
+  else if (strcmp(name, "settings") == 0) screen = &screenSettings;
+  else if (strcmp(name, "graphics") == 0) screen = &screenGraphicsSettings;
+  else if (strcmp(name, "track-visuals") == 0) screen = &screenTrackVisuals;
+  else if (strcmp(name, "theme") == 0) screen = &screenColorTheme;
+  else if (strcmp(name, "insert-fx") == 0) { screen = &screenInsertFX; input = -1; }
+  if (!screen) return 1;
+  screenSetup(screen, input);
+  appDraw();
+  return 0;
 }
 
 /**

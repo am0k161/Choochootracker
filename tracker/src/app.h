@@ -12,6 +12,7 @@ extern "C" {
 void appSetup(void);
 void appCleanup(void);
 void appDraw(void);
+int appCaptureScreen(const char* name, const char* projectPath);
 void appSetStickLiveMode(StickLiveMode mode);
 void appOnEvent(MainLoopEventData eventData);
 // Drop held-button state after changing the input mapping. A key-up event may

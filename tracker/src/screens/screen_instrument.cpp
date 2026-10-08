@@ -230,6 +230,27 @@ static void cancelInstrumentTypeSelection(void) {
   screenSetup(&screenInstrument, cInstrument);
 }
 
+void instrumentOpenTypeMenu(void) {
+  selectionPopupSetup("INSTRUMENT TYPE", instrumentTypeCategories,
+    sizeof(instrumentTypeCategories) / sizeof(instrumentTypeCategories[0]),
+    (int)chipnomadState->project.instruments[cInstrument].type,
+    selectInstrumentType, cancelInstrumentTypeSelection);
+  screenSetup(&screenSelectionPopup, 0);
+}
+
+void braidsOpenModelMenu(void);
+void plaitsOpenModelMenu(void);
+
+int instrumentCapturePopup(const char* name) {
+  if (strcmp(name, "engine-menu") == 0) { instrumentOpenTypeMenu(); return 0; }
+  if (strcmp(name, "braids-menu") == 0) setInstrumentType(InstrumentType::Braids);
+  else if (strcmp(name, "plaits-menu") == 0) setInstrumentType(InstrumentType::Plaits);
+  else if (strcmp(name, "plaits-alt-menu") == 0) setInstrumentType(InstrumentType::PlaitsAlt);
+  else return 1;
+  if (strcmp(name, "braids-menu") == 0) braidsOpenModelMenu(); else plaitsOpenModelMenu();
+  return 0;
+}
+
 static int instrumentTypePopupInput(int isKeyDown, int keys, ScreenData* screen) {
   if (screen->cursorRow != 0 || screen->cursorCol != 0) {
     typeButtonDown = 0;
@@ -241,11 +262,7 @@ static int instrumentTypePopupInput(int isKeyDown, int keys, ScreenData* screen)
     return 0;
   }
   if (input == PopupEditInput::open) {
-    selectionPopupSetup("INSTRUMENT TYPE", instrumentTypeCategories,
-      sizeof(instrumentTypeCategories) / sizeof(instrumentTypeCategories[0]),
-      (int)chipnomadState->project.instruments[cInstrument].type,
-      selectInstrumentType, cancelInstrumentTypeSelection);
-    screenSetup(&screenSelectionPopup, 0);
+    instrumentOpenTypeMenu();
     return 1;
   }
   return 0;

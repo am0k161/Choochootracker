@@ -35,15 +35,15 @@
 #define BTN_DOWN        SDLK_DOWN
 #define BTN_LEFT        SDLK_LEFT
 #define BTN_RIGHT       SDLK_RIGHT
-#define BTN_A           SDLK_SPACE
+#define BTN_A           SDLK_LALT
 #define BTN_B           SDLK_LCTRL
 #define BTN_X           SDLK_LSHIFT
-#define BTN_Y           SDLK_LALT
-#define BTN_L1          SDLK_e
-#define BTN_R1          SDLK_t
-#define BTN_L2          SDLK_TAB
-#define BTN_R2          SDLK_BACKSPACE
-#define BTN_SELECT      SDLK_RCTRL
+#define BTN_Y           SDLK_SPACE
+#define BTN_L1          SDLK_TAB
+#define BTN_R1          SDLK_BACKSPACE
+#define BTN_L2          SDLK_PAGEUP
+#define BTN_R2          SDLK_PAGEDOWN
+#define BTN_SELECT      SDLK_ESCAPE
 #define BTN_START       SDLK_RETURN
 #define BTN_MENU        0
 
