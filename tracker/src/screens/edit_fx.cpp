@@ -74,7 +74,7 @@ void selectInstrumentFX(uint8_t* fx,uint8_t selected,uint8_t instrumentIdx) {
   if (!insertFXAvailable(selected)) return;
   NativeFXInfo info{};
   bool native=nativeInfo(instrumentIdx,selected,info);
-  if(selected>=fxFBR&&selected<fxTotalCount&&!native)return;
+  if(selected>=fxFBR&&selected<=fxLEN&&!native)return;
   if(fx[0]==selected) {
     if(native)fx[1]=std::clamp(int(fx[1]),info.minimum,info.maximum);
     return; // Preserve legal edits; repair values from a different engine.
@@ -108,7 +108,7 @@ static bool isFXAvailable(enum FX fx, uint8_t instrumentIdx, int isTable) {
   InstrumentType instrumentType = getInstrumentType(instrumentIdx);
   const Instrument* instrument = instrumentIdx != EMPTY_VALUE_8 && instrumentIdx < PROJECT_MAX_INSTRUMENTS
     ? &chipnomadState->project.instruments[instrumentIdx] : NULL;
-  if(fx>=fxFBR)return instrument && instrumentFXAvailableForInstrument(instrument,fx);
+  if(fx>=fxFBR&&fx<=fxLEN)return instrument && instrumentFXAvailableForInstrument(instrument,fx);
   if (instrument && instrumentFXAvailableForInstrument(instrument, (uint8_t)fx)) return true;
   for (int groupIdx = 0; groupIdx < fxGroupCount; groupIdx++) {
     FXGroup* group = &fxGroups[groupIdx];
@@ -138,7 +138,7 @@ static int visibleFXCount(const FXGroup* group) {
   for (int i = 0; i < group->count; ++i) {
     if (!insertFXAvailable(group->fxList[i].fx)) continue;
     if (currentIsTable && (group->fxList[i].fx == fxSCL || group->fxList[i].fx == fxCRD)) continue;
-    if(group->fxList[i].fx>=fxFBR && (!instrument || !instrumentFXAvailableForInstrument(instrument,group->fxList[i].fx)))continue;
+    if(group->fxList[i].fx>=fxFBR && group->fxList[i].fx<=fxLEN && (!instrument || !instrumentFXAvailableForInstrument(instrument,group->fxList[i].fx)))continue;
     if (!instrument || group->instType != InstrumentType::DrumSynth || instrumentFXAvailableForInstrument(instrument, group->fxList[i].fx)) ++count;
   }
   return count;
@@ -149,7 +149,7 @@ static const FXName* visibleFXAt(const FXGroup* group, int visibleIndex) {
   for (int i = 0; i < group->count; ++i) {
     if (!insertFXAvailable(group->fxList[i].fx)) continue;
     if (currentIsTable && (group->fxList[i].fx == fxSCL || group->fxList[i].fx == fxCRD)) continue;
-    if(group->fxList[i].fx>=fxFBR && (!instrument || !instrumentFXAvailableForInstrument(instrument,group->fxList[i].fx)))continue;
+    if(group->fxList[i].fx>=fxFBR && group->fxList[i].fx<=fxLEN && (!instrument || !instrumentFXAvailableForInstrument(instrument,group->fxList[i].fx)))continue;
     if (instrument && group->instType == InstrumentType::DrumSynth && !instrumentFXAvailableForInstrument(instrument, group->fxList[i].fx)) continue;
     if (visibleIndex-- == 0) return &group->fxList[i];
   }

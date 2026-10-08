@@ -440,6 +440,7 @@ struct Instrument {
   uint8_t tableSpeed;
   uint8_t transposeEnabled;
   uint8_t volume;
+  uint8_t pan;
   Modulation modulation[4];
   InstrumentChipData chip;
 };
@@ -564,7 +565,10 @@ enum GenericModDestination {
   genericModSIDAttack, genericModSIDDecay, genericModSIDSustain, genericModSIDRelease,
   genericModSIDPartner,
   genericModFirstDirectFM,
-  genericModTotalCount = genericModFirstDirectFM + 78,
+  // Appended to preserve the numeric destinations stored by existing songs.
+  genericModInstrumentPan = genericModFirstDirectFM + 78,
+  genericModTrackPan,
+  genericModTotalCount,
 };
 
 bool nativeFMModTarget(int generic,int* fx,int* op);

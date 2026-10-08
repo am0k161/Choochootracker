@@ -178,7 +178,7 @@ A code-drawn pixel piano below the eight right-side track rows lights sounding p
 
 ### Mixer meters
 
-The Mixer labels its tracks with a TRK heading and numeric rows. An unlabeled one-character column before LVL shows each track’s stereo peak after level and tilt, before shared effects and master gain. The meter spans -48 to 0 dBFS and decays between updates. Its lower and middle bands use theme colors, while the top band is bright red near full scale.
+The Mixer shows adjacent **L/R** peak bars for each track after its PAN and tilt, before shared effects and master gain. The meter spans -48 to 0 dBFS and decays between updates. Its lower and middle bands use theme colors, while the top band is bright red near full scale.
 
 ## 4. Song, Chain and Phrase
 
@@ -608,7 +608,7 @@ BYOWTBL is a dual wavetable oscillator compatible with Serum tables. Each oscill
 
 ## 6. Modulation and motion recording
 
-Each instrument can have up to 4 modulation slots.
+Each instrument can have up to 4 modulation slots. Audio instruments can target **Instrument Pan** or **Track Pan**; both use `00` for left, `80` for centre and `FF` for right.
 
 The available modulation types are:
 
@@ -754,6 +754,8 @@ Each FX has a 3-letter command and a hexadecimal value. The in-app help panel gi
 | `PRD` | signed `XX` | Accumulated relative oscillator-period offset. |
 | `VOL` | signed `XX` | Accumulated relative volume offset (`FF` is -1, not full volume). |
 | `VSL` | signed `XX` | Adds `XX` to volume on every phrase/table row. Use `00` to stop. |
+| `PAN` | `00-FF` | Absolute instrument panorama: left, centre (`80`), right. |
+| `TPN` | `00-FF` | Absolute mixer-track panorama: left, centre (`80`), right. |
 | `RET` | `XY` | Retriggers every `Y` ticks; `X` applies a volume change. `Y=0` stops retriggering. |
 | `DEL` | `XX` ticks | Delays note-on. A delay longer than the current groove step skips the note. |
 | `OFF` | `XX` ticks | Sends note-off after `XX` ticks and enters an ADSR release stage. |
@@ -982,7 +984,7 @@ Use it to balance the 8 tracks, shape each track with Tilt EQ, and send audio to
 | M | `*` mutes this track |
 | S | `*` solos this track |
 
-The mixer is track-based, not instrument-based. If a track changes instruments, its level, Tilt and sends remain attached to the track. Remember that each instrument also has its own `00-FF` volume on the Instrument screen, before the track level.
+The mixer is track-based, not instrument-based. If a track changes instruments, its level, PAN, Tilt and sends remain attached to the track. Instruments also have their own `00-FF` **Vol** and **Pan** in the top row of the Instrument screen. Instrument PAN is applied first, then track PAN. Both preserve an existing stereo image at centre; they progressively attenuate the opposite side when moved left or right.
 
 ### Auto Mix
 

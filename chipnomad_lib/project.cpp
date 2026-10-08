@@ -16,11 +16,11 @@ FXName fxNamesSequencer[] = {
   {fxRET, "RET"}, {fxDEL, "DEL"}, {fxOFF, "OFF"}, {fxKIL, "KIL"}, {fxTIC, "TIC"},
   {fxTBL, "TBL"}, {fxTBX, "TBX"}, {fxTHO, "THO"}, {fxTXH, "TXH"}, {fxGRV, "GRV"},
   {fxGGR, "GGR"}, {fxHOP, "HOP"}, {fxSNG, "SNG"}, {fxPRO, "PRO"},
-  {fxMOD, "MOD"}, {fxSPD, "SPD"}, {fxSLE, "SLE"}
+  {fxMOD, "MOD"}, {fxSPD, "SPD"}, {fxSLE, "SLE"}, {fxPAN, "PAN"}
 };
 int fxSequencerCount = sizeof(fxNamesSequencer) / sizeof(FXName);
 
-FXName fxNamesTrack[] = {{fxRSN, "RSN"}, {fxDSN, "DSN"}, {fxSCL, "SCL"}, {fxCRD, "CRD"}};
+FXName fxNamesTrack[] = {{fxRSN, "RSN"}, {fxDSN, "DSN"}, {fxSCL, "SCL"}, {fxCRD, "CRD"}, {fxTPN, "TPN"}};
 int fxTrackCount = sizeof(fxNamesTrack) / sizeof(FXName);
 
 FXName fxNamesEnvelope[] = {
@@ -191,6 +191,7 @@ void projectInit(Project* p) {
   p->scaleCustomMask = 0x0fff;
   for (int i = 0; i < PROJECT_MAX_TRACKS; i++) {
     p->trackVolume[i] = 100;
+    p->trackPan[i] = 128;
     p->trackTilt[i] = 0x80;
   }
   p->tiltPivotHz = 1000;

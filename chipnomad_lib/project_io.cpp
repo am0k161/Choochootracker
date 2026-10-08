@@ -810,6 +810,14 @@ static int projectLoadInternal(FILE* file, Project* project) {
   consumeLine(file);
 
   line = peekLine(file);
+  if (line && strncmp(line, "- Track pans: ", 14) == 0) {
+    if (sscanf(line + 14, "%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu",
+        &p.trackPan[0], &p.trackPan[1], &p.trackPan[2], &p.trackPan[3],
+        &p.trackPan[4], &p.trackPan[5], &p.trackPan[6], &p.trackPan[7]) != PROJECT_MAX_TRACKS) return 1;
+    consumeLine(file);
+  }
+
+  line = peekLine(file);
   if (line && strncmp(line, "- Reverb sends: ", 16) == 0) {
     if (sscanf(line + 16, "%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu",
         &p.trackReverbSend[0], &p.trackReverbSend[1], &p.trackReverbSend[2], &p.trackReverbSend[3],
@@ -1509,8 +1517,8 @@ static int projectSaveAYWavetables(FILE* file, Project* project) {
 static int projectSaveInternal(FILE* file, Project* project) {
   bool nativeChips = false;
   for (const auto& instrument : project->instruments) nativeChips |= (instrument.type==InstrumentType::SID || instrument.type==InstrumentType::DX7 || isOPLL(instrument.type) || (isOPL(instrument.type) || isFourOp(instrument.type)) || isSimpleChip(instrument.type));
-  for (const auto& phrase : project->phrases) for (const auto& row : phrase.rows) for (const auto& fx : row.fx) nativeChips |= fx[0] >= fxFBR && fx[0] < fxTotalCount;
-  for (const auto& table : project->tables) for (const auto& row : table.rows) for (const auto& fx : row.fx) nativeChips |= fx[0] >= fxFBR && fx[0] < fxTotalCount;
+  for (const auto& phrase : project->phrases) for (const auto& row : phrase.rows) for (const auto& fx : row.fx) nativeChips |= fx[0] >= fxFBR && fx[0] <= fxLEN;
+  for (const auto& table : project->tables) for (const auto& row : table.rows) for (const auto& fx : row.fx) nativeChips |= fx[0] >= fxFBR && fx[0] <= fxLEN;
   // Native formats 6-8 predate upstream's expanded phrase volume. Format 9
   // distinguishes new 00-7F songs while retaining their native patches and FX.
   fprintf(file, "# ChooChooTracker Module %d.0\n\n", nativeChips ? 9 : 6);
@@ -1530,6 +1538,9 @@ static int projectSaveInternal(FILE* file, Project* project) {
   fprintf(file, "- Track volumes: %hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu\n",
     project->trackVolume[0], project->trackVolume[1], project->trackVolume[2], project->trackVolume[3],
     project->trackVolume[4], project->trackVolume[5], project->trackVolume[6], project->trackVolume[7]);
+  fprintf(file, "- Track pans: %hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu\n",
+    project->trackPan[0], project->trackPan[1], project->trackPan[2], project->trackPan[3],
+    project->trackPan[4], project->trackPan[5], project->trackPan[6], project->trackPan[7]);
   fprintf(file, "- Reverb sends: %hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu\n",
     project->trackReverbSend[0], project->trackReverbSend[1], project->trackReverbSend[2], project->trackReverbSend[3],
     project->trackReverbSend[4], project->trackReverbSend[5], project->trackReverbSend[6], project->trackReverbSend[7]);
@@ -1734,7 +1745,7 @@ int instrumentSave(Project* project, const char* path, int instrumentIdx) {
   }
 
   bool nativeFormat = (project->instruments[instrumentIdx].type==InstrumentType::SID || project->instruments[instrumentIdx].type==InstrumentType::DX7 || isOPLL(project->instruments[instrumentIdx].type) || (isOPL(project->instruments[instrumentIdx].type) || isFourOp(project->instruments[instrumentIdx].type)) || isSimpleChip(project->instruments[instrumentIdx].type));
-  for (const auto& row : project->tables[instrumentIdx].rows) for (const auto& fx : row.fx) nativeFormat |= fx[0] >= fxFBR && fx[0] < fxTotalCount;
+  for (const auto& row : project->tables[instrumentIdx].rows) for (const auto& fx : row.fx) nativeFormat |= fx[0] >= fxFBR && fx[0] <= fxLEN;
   bool absoluteLevels=false;
   for(const auto& row:project->tables[instrumentIdx].rows)for(const auto& fx:row.fx)absoluteLevels |= fx[0]>=fxOL1&&fx[0]<=fxFBK;
   fprintf(file, "# ChipNomad Instrument %d.0\n\n", absoluteLevels ? 8 : nativeFormat ? 7 : 5);
