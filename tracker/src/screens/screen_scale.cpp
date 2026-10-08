@@ -128,16 +128,53 @@ static ScreenData data = {
   .onEdit = edit, .onInput = NULL, .onRawInput = NULL, .isCellValid = NULL, .getLoopRange = NULL,
 };
 
+// Mode-cell helper (session-only): while the cursor rests on the Mode
+// cell and no other message is showing, the status bar shows a fixed
+// description of the active mode; toggling the mode swaps the text
+// immediately. Same ownership pattern as the sample screen's slice hints:
+// the bar is ours when it is empty or shows the text we set last.
+static char scaleHintOwnedText[48];
+
+static void scaleUpdateHint(int ownsBar) {
+  const char* issued = NULL;
+  if (data.cursorRow == 0 && data.cursorCol == 0) {
+    issued = chipnomadState->project.scaleMode ?
+      "Snaps sequencer to scale" : "Quantizes notes on playback";
+  }
+  if (issued) {
+    if (!ownsBar || strcmp(issued, scaleHintOwnedText) != 0) {
+      screenMessage(2, "%s", issued);
+      snprintf(scaleHintOwnedText, sizeof(scaleHintOwnedText), "%s",
+               screenGetActiveMessage());
+    }
+  } else if (scaleHintOwnedText[0]) {
+    // Cursor left the Mode cell: drop our hint.
+    screenClearMessage();
+    scaleHintOwnedText[0] = '\0';
+  }
+}
+
 static void setup(int input) {
   data.topRow = 0;
   if (data.cursorRow >= data.rows) {
     data.cursorRow = 0;
     data.cursorCol = 0;
   }
+  scaleHintOwnedText[0] = '\0';
 }
 static void redraw(void) { screenFullRedraw(&data); }
 static void fullRedraw(void) { screenFullRedraw(&data); }
-static void draw(void) {}
+static void draw(void) {
+  const char* activeMessage = screenGetActiveMessage();
+  if (activeMessage[0] == '\0') {
+    scaleUpdateHint(0);
+  } else if (strcmp(activeMessage, scaleHintOwnedText) == 0) {
+    scaleUpdateHint(1);
+  } else {
+    // A foreign message (action feedback) pauses the hint until it expires.
+    scaleHintOwnedText[0] = '\0';
+  }
+}
 static int onInput(int isKeyDown, int keys, int tapCount) {
   if (keys == keyOpt) { screenSetup(&screenProject, 0); return 1; }
   return screenInput(&data, isKeyDown, keys, tapCount);

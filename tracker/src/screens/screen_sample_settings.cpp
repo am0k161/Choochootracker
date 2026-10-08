@@ -158,15 +158,15 @@ static void settingsUpdateHint(int row, int col, int ownsBar) {
   }
   const char* issued = NULL;
   if (row == 2 && col == 0) {
-    // Slice mode cell: describe the mode the pointer rests on. The hint
-    // is bound to the mode itself: re-issued every frame so a mode switch
-    // swaps the text immediately, and OFF clears the bar (the cell itself
-    // already says OFF).
+    // Slice mode cell: describe what the active mode does. The mode name
+    // is already in the cell, so the hint carries only the description;
+    // it is bound to the mode (re-issued every frame so a mode switch
+    // swaps the text immediately), and OFF clears the bar.
     const SliceMode mode = sampleDecodeSliceMode(currentSample()->slice);
     static const char* modeHints[] = {
-      "EQUAL: Divides sample in equal parts",
-      "AUTO: Divides sample based on transients",
-      "LAZY: Press Play and add slices with EDIT",
+      "Divides sample in equal parts",
+      "Divides sample based on transients",
+      "Press Play and add slices with EDIT",
     };
     if (mode >= sliceModeEqual && mode <= sliceModeLazy) {
       issued = modeHints[mode - 1];
@@ -708,11 +708,11 @@ static void settingsDrawField(int col, int row, CellState state) {
       if (dimmed) gfxSetFgColor(appSettings.colorScheme.textEmpty);
       gfxPrint(sliceModeX, fieldRow0 + row, sliceModeLabels[mode <= sliceModeLazy ? mode : 0]);
     } else if (col == 1) {
-      // Count box: the total number of slices, always live. Inert and
-      // dimmed in LAZY (hand-placed slices have no division to
-      // recalculate); shows "-" in OFF.
+      // Count box: the total number of slices, always live. Shows "-"
+      // in OFF. In LAZY it stays bright (it counts the hand-placed
+      // slices) but is display-only: the cursor skips the cell.
       gfxClearRect(sliceNumX, fieldRow0 + row, sliceNumW, 1);
-      if (dimmed || mode == sliceModeOff || mode == sliceModeLazy) {
+      if (dimmed || mode == sliceModeOff) {
         gfxSetFgColor(appSettings.colorScheme.textEmpty);
       }
       char text[8];
@@ -1024,7 +1024,7 @@ static void settingsRunSaveAs(void) {
 
 // --- Slice row (Phase 1): Mode / Number / Frame --------------------------
 
-// Repaints everything a slice edit can invalidate: the three Slice cells,
+// Repaints everything a slice edit can invalidate: the four Slice cells,
 // the preview and (after mode switches) the Stretch row on the instrument
 // screen is handled there - here only the editor's own fields matter.
 static void settingsRepaintSlice(InstrumentSample* sample, int focusCol) {
@@ -1232,8 +1232,9 @@ static int settingsSliceModeEdit(InstrumentSample* sample, CellEditAction action
 // (clamped 1..64), EDIT+Up/Down cycles through the power-of-two counts
 // 2,4,8,16,32,64 with wrap-around. Every change recalculates the
 // division: EQUAL re-divides the Start/End window evenly, AUTO re-runs
-// detection with the new count (sensitivity derived from it). Inert in
-// LAZY (hand-placed slices have no division to recalculate) and in OFF.
+// detection with the new count (sensitivity derived from it). In LAZY the
+// cell is display-only (the cursor skips it); the handler stays inert in
+// LAZY and OFF as a fallback.
 static int settingsSliceCountEdit(InstrumentSample* sample, CellEditAction action) {
   const SliceMode mode = sampleDecodeSliceMode(sample->slice);
   if (mode == sliceModeOff || mode == sliceModeLazy) return 0;
@@ -1533,11 +1534,15 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
   return handled;
 }
 
-// Slice is inert while Stretch drives the duration: skip all 3 of its cells
-// in navigation. Save needs a file path, Save As needs sample data.
+// Slice is inert while Stretch drives the duration: skip all four of its
+// cells in navigation. In LAZY the Count box is display-only: touch taps
+// on it are rejected (keyboard navigation skips the cell before the
+// framework sees it). Save needs a file path, Save As needs sample data.
 static int settingsIsCellValid(int col, int row) {
   InstrumentSample* sample = currentSample();
   if (row == 2 && sample->stretchMode != 0) return 0;
+  if (row == 2 && col == 1 &&
+      sampleDecodeSliceMode(sample->slice) == sliceModeLazy) return 0;
   if (row == 5 && col == 0) {
     return fileAction == 0 ? sample->path[0] != 0 : (sample->data != NULL && sample->frameCount > 0);
   }
@@ -1628,6 +1633,13 @@ static void fullRedraw(void) {
   if (screenSampleSettingsData.cursorRow == 2 &&
       screenSampleSettingsData.cursorCol > 3) {
     screenSampleSettingsData.cursorCol = 3;
+  }
+  // In LAZY the Count box is display-only: a session parked on it lands
+  // on the Slice browser instead.
+  if (screenSampleSettingsData.cursorRow == 2 &&
+      screenSampleSettingsData.cursorCol == 1 &&
+      sampleDecodeSliceMode(currentSample()->slice) == sliceModeLazy) {
+    screenSampleSettingsData.cursorCol = 2;
   }
   settingsClampCurrentSlice(currentSample());
   screenFullRedraw(&screenSampleSettingsData);
@@ -1814,6 +1826,34 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
         (tapCount == 1 || tapCount == 2)) {
       settingsDropSliceAtPlayback(sample);
       lazyEditArmed = 0;
+      return 1;
+    }
+  }
+  // LAZY: the Count box is display-only (hand-placed slices have no
+  // division to recalculate), so the cursor skips it: horizontal moves
+  // step over col 1 and a vertical entry from the Select row lands on
+  // the Slice browser. The intercept runs before the framework
+  // navigation - its dead-cell recovery moves up a row instead of aside -
+  // and repaints the affected cells itself (row/col headers are no-ops).
+  if (isKeyDown && sampleDecodeSliceMode(sample->slice) == sliceModeLazy) {
+    const int fromRow = screenSampleSettingsData.cursorRow;
+    const int fromCol = screenSampleSettingsData.cursorCol;
+    int toRow = fromRow;
+    int toCol = -1;
+    if (fromRow == 2 && fromCol == 0 && keys == keyRight) {
+      toCol = 2;
+    } else if (fromRow == 2 && fromCol == 2 && keys == keyLeft) {
+      toCol = 0;
+    } else if (fromRow == 1 && fromCol == 1 && keys == keyDown) {
+      toRow = 2;
+      toCol = 2;
+    }
+    if (toCol >= 0) {
+      screenSampleSettingsData.cursorRow = toRow;
+      screenSampleSettingsData.cursorCol = toCol;
+      settingsDrawField(fromCol, fromRow, CellState::normal);
+      settingsDrawField(toCol, toRow, CellState::focus);
+      settingsDrawCursor(toCol, toRow);
       return 1;
     }
   }

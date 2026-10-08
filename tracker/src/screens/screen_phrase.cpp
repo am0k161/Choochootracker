@@ -28,7 +28,7 @@ static int arpSlicePhase = 0;
 
 // Selection-mode combo hints (session-only): while a selection is active,
 // draw() rotates a hint for the selection combos in the message bar every
-// 1.5 s (90 frames at 60 FPS). The rotation pauses while any other
+// 2 s (120 frames at 60 FPS). The rotation pauses while any other
 // message is active and restarts from the first hint when selection mode
 // is entered or left.
 static int selectionHintPhase = 0;
@@ -213,7 +213,7 @@ static void drawSelection(int col1, int row1, int col2, int row2) {
 
 // Advance the rotating selection-mode hint. Called from draw() while a
 // selection is active and no other message is showing; each call displays
-// the next hint for 1.5 s.
+// the next hint for 2 s.
 static void selectionUpdateHint(void) {
   if (!selectionHintActive) {
     // Selection mode was just entered: restart the rotation.
@@ -228,7 +228,7 @@ static void selectionUpdateHint(void) {
     "OPT + UP = mutate/randomize velocity",
     "OPT + DOWN = random arp/slice spread",
   };
-  screenMessage(90, "%s", hints[selectionHintPhase++ % 6]);
+  screenMessage(120, "%s", hints[selectionHintPhase++ % 6]);
 }
 
 static void draw(void) {

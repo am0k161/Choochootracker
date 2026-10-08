@@ -150,7 +150,7 @@ with rhythm patterns:
   notes carry the last used instrument; releasing **OPT** resets the cycles
   to their first step.
 - While a selection is active and no other message is showing, the status
-  bar rotates a reminder of these combos every 1.5 seconds: `EDIT + DIR =
+  bar rotates a reminder of these combos every 2 seconds: `EDIT + DIR =
   batch note edit`, `Double-tap EDIT: resample selection`, `OPT + LEFT =
   pattern fill`, `OPT + RIGHT = random fill`, `OPT + UP =
   mutate/randomize velocity` and `OPT + DOWN = random arp/slice spread`.
@@ -653,11 +653,14 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
     64` with wrap-around. Every change recalculates the division: **EQUAL**
     re-divides the window evenly, **AUTO** re-runs detection with the new
     target (the detection sensitivity is derived from the count - more slices
-    mean a more sensitive threshold). The box is dimmed and inert in **LAZY**
-    (hand-placed slices have no division to recalculate) and shows `-` when
-    the mode is OFF. **EDIT + OPT** and a plain **EDIT** tap do nothing here:
-    turning slicing off lives on **Mode**, deleting a slice lives on
-    **Slice**.
+    mean a more sensitive threshold). The box shows `-` when the mode is
+    OFF. In **LAZY** it stays bright (it counts the hand-placed slices) but
+    is display-only: the cursor skips it — moving right from **Mode** or
+    left from **Slice** lands on **Slice**, coming down from the **Select**
+    row's **END** marker lands there too, and touching the box does nothing
+    (hand-placed slices have no division to recalculate). **EDIT + OPT** and
+    a plain **EDIT** tap do nothing here: turning slicing off lives on
+    **Mode**, deleting a slice lives on **Slice**.
   - **Slice** is the browser: it shows the 1-indexed current slice
     (`01`..count). **EDIT + [LEFT/RIGHT]** moves between slices one at a
     time, **EDIT + [UP/DOWN]** jumps four slices (both clamped, no
@@ -700,10 +703,11 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
   - **Combo hints**: while the cursor rests on a Slice row cell and no other
     message is showing, the status bar shows that cell's hint and keeps it
     up while the cursor rests there. On **Mode** the hint is bound to the
-    active mode (`EQUAL: Divides sample in equal parts`, `AUTO: Divides
-    sample based on transients`, `LAZY: Press Play and add slices with
-    EDIT`) - switching modes swaps the text immediately, and OFF clears the
-    bar. On **Count** it shows `Adjust the number of slices`, on **Slice**
+    active mode and shows only the description (the mode name is already in
+    the cell): `Divides sample in equal parts`, `Divides sample based on
+    transients`, `Press Play and add slices with EDIT` - switching modes
+    swaps the text immediately, and OFF clears the bar. On **Count** it
+    shows `Adjust the number of slices`, on **Slice**
     `Browse slices`, on **Frame** `Adjust slice start`. Any action message
     replaces the hint until it expires.
 - **Process** selects a destructive editing operation: **Crop**, **Normalize**, **Delete**, **Silence**, **Fade In**, **Fade Out** or **Reverse** (EDIT + left/right cycles, tap cycles forward, EDIT + OPT sets none). **GO** (same row) runs the selected operation on the current selection, or on the whole sample when the selection is empty. **Crop** keeps only the selection; **Normalize** scales the selection so its peak reaches full scale (both channels share one gain so the stereo image is preserved); **Delete** removes the selection and joins the tails (deleting the whole sample is rejected); **Silence** zeroes it; **Fade In**/**Fade Out** ramp the selection linearly from/to silence; **Reverse** plays the selection backwards (frames are swapped in place, both channels of a frame move together, length and markers are unchanged). Crop and Delete require a selection — with an empty selection they show `Select region first`. Every operation pauses audio briefly, keeps a one-level undo, and marks the sample as changed in RAM: the file on disk is not touched until the Save flows (see below), and leaving the screen discards the undo slot.
@@ -1190,6 +1194,8 @@ The Scale screen controls the global 12-TET scale engine. The **Mode** row selec
 
 - **Quantizer** (default): phrase entry remains chromatic; when enabled, notes are rounded downward immediately before reaching the sound engine, so changing root or scale reharmonizes a song without editing its phrases.
 - **Note Lock**: notes typed into phrases are snapped to the nearest note of the scale as they are entered, so only scale notes can be written. Fresh entries and decreases snap down; `EDIT + RIGHT` / `EDIT + UP` raise the note to the next scale note above. Entry always follows the project scale on this screen: changing the root or scale immediately affects newly entered notes on the enabled tracks, while notes already stored stay untouched. `SCL` FX is unavailable in this mode and any `SCL` already written is ignored. Playback quantization of plain notes is bypassed (entry is already locked); chord quantization via `CRD` still applies.
+
+With the cursor resting on **Mode**, the status bar shows a fixed description of the active mode: `Quantizes notes on playback` for **Quantizer**, `Snaps sequencer to scale` for **Note Lock**. Toggling the mode swaps the text immediately; any action message replaces it until it expires.
 
 Both modes share the same root, scale, **Custom** note editing and track checkboxes. Each of the eight track checkboxes decides which tracks the mode applies to. The scale engine is bypassed for non-12-note pitch tables and for Sampler instruments whose **Slice** mode is EQUAL, AUTO or LAZY (their notes select slices chromatically from C-0); MIDI input is not part of this version.
 
