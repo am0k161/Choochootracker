@@ -40,26 +40,21 @@ static constexpr int previewHeight = 8;
 static constexpr int fieldRow0 = 12;
 static const char* speedAlgorithmLabels[] = {"Dirty", "Clean"};
 
-// Slice row (Phase 1): one row hosting three value cells - Mode / Number /
+// Slice row: one row hosting four value cells - Mode / Count / Slice /
 // Frame. The label sits at x=0; values start at x=6. No per-cell labels,
 // per the "only value boxes" rule.
 static constexpr int sliceModeX = 6;
 static constexpr int sliceModeW = 5;   // OFF / EQUAL / AUTO / LAZY
 static constexpr int sliceNumX = 12;
-static constexpr int sliceNumW = 2;    // current slice index, 1-indexed
-static constexpr int sliceFrameX = 15;
+static constexpr int sliceNumW = 2;    // total slice count
+static constexpr int sliceBrowseX = 15;
+static constexpr int sliceBrowseW = 2; // current slice index, 1-indexed
+static constexpr int sliceFrameX = 18;
 static constexpr int sliceFrameW = 6;  // start frame of the current slice
 static const char* sliceModeLabels[] = {"OFF", "EQUAL", "AUTO", "LAZY"};
 // Session-only "current slice" being edited (0-based index into
 // sliceBounds). Never saved with the project.
 static int currentSlice;
-
-// Number box display state (session-only): 1 shows the slice count (the
-// default), 0 shows the 1-indexed current slice ("edit view"). EDIT
-// interactions with the current slice (browse, A-tap preview, frame
-// nudge, delete) switch to the slice number; B+direction count editing
-// or a slice mode change returns to the count.
-static int sliceNumShowsCount = 1;
 
 // Process toolbox: one selected operation plus GO/UNDO buttons. The op is
 // cycled with Edit+Left/Right; Edit+Opt clears it to "none".
@@ -138,14 +133,12 @@ static InstrumentSample* currentSample(void) {
 }
 
 // Contextual combo hints (session-only): while the cursor rests on a Slice
-// row cell, draw() shows a hint for that cell in the message bar. The mode
-// cell's hint is bound to the active slice mode: it is re-issued every
-// frame, so it appears as soon as the mode is active, switches instantly
-// when the mode changes and disappears when the mode turns OFF. The Number
-// and Frame cells rotate their hints every 2.5 s (150 frames at 60 FPS).
-// All hints pause while any other message is active and restart from the
-// first hint when the cursor moves to a different cell.
-static int hintPhase = 0;
+// row cell, draw() shows a hint for that cell in the message bar. Every
+// Slice cell has one persistent hint, re-issued every frame: the mode
+// cell's hint is bound to the active slice mode (switches instantly when
+// the mode changes, disappears when the mode turns OFF), the other cells
+// show their fixed combo description. All hints pause while any other
+// message is active.
 static int hintCursorRow = -1;
 static int hintCursorCol = -1;
 // Text the hint system last put in the message bar ("" = none). The bar is
@@ -155,23 +148,20 @@ static char hintOwnedText[48];
 
 // Advance the hint for the given cell. Called from draw() when the message
 // bar is empty or holds the hint we set. ownsBar tells whether the bar
-// currently shows our hint (timed hints only re-arm after expiring or a
-// cell change; the persistent mode hint re-arms every frame).
+// currently shows our hint (a persistent hint re-arms every frame; a
+// foreign message pauses everything until it expires).
 static void settingsUpdateHint(int row, int col, int ownsBar) {
   const int changed = row != hintCursorRow || col != hintCursorCol;
   if (changed) {
-    // Cursor moved to a different cell: restart the rotation.
     hintCursorRow = row;
     hintCursorCol = col;
-    hintPhase = 0;
   }
   const char* issued = NULL;
-  int persistent = 0;
   if (row == 2 && col == 0) {
     // Slice mode cell: describe the mode the pointer rests on. The hint
-    // is bound to the mode itself (no timed rotation): re-issued every
-    // frame so a mode switch swaps the text immediately, and OFF clears
-    // the bar (the cell itself already says OFF).
+    // is bound to the mode itself: re-issued every frame so a mode switch
+    // swaps the text immediately, and OFF clears the bar (the cell itself
+    // already says OFF).
     const SliceMode mode = sampleDecodeSliceMode(currentSample()->slice);
     static const char* modeHints[] = {
       "EQUAL: Divides sample in equal parts",
@@ -180,23 +170,20 @@ static void settingsUpdateHint(int row, int col, int ownsBar) {
     };
     if (mode >= sliceModeEqual && mode <= sliceModeLazy) {
       issued = modeHints[mode - 1];
-      persistent = 1;
     }
   } else if (row == 2 && col == 1) {
-    // Slice number cell: alternate the two combos.
-    static const char* numHints[] = {
-      "OPT + DIR = change slice count",
-      "EDIT + DIR = browse slices",
-    };
-    issued = numHints[hintPhase];
-    if (!ownsBar || changed) hintPhase = (hintPhase + 1) % 2;
+    // Slice count box: single static hint.
+    issued = "Adjust the number of slices";
   } else if (row == 2 && col == 2) {
+    // Slice browser box: single static hint.
+    issued = "Browse slices";
+  } else if (row == 2 && col == 3) {
     // Slice frame cell: single static hint.
     issued = "Adjust slice start";
   }
   if (issued) {
-    if (persistent || !ownsBar || changed) {
-      screenMessage(persistent ? 2 : 150, "%s", issued);
+    if (!ownsBar || changed) {
+      screenMessage(2, "%s", issued);
       // Copy the bar text (post-truncation) so the ownership comparison
       // next frame matches exactly what is displayed.
       snprintf(hintOwnedText, sizeof(hintOwnedText), "%s",
@@ -567,10 +554,10 @@ static void drawSamplePreview(void) {
 }
 
 static int settingsColumnCount(int row) {
-  // Region/Select rows: START + END; Slice row: Mode + Number + Frame;
-  // Process row: op + GO + UNDO; File row: action + GO
+  // Region/Select rows: START + END; Slice row: Mode + Count + Slice +
+  // Frame; Process row: op + GO + UNDO; File row: action + GO
   if (row == 0 || row == 1) return 2;
-  if (row == 2) return 3;
+  if (row == 2) return 4;
   if (row == 4) return 3;
   if (row == 5) return 2;
   return 1;
@@ -622,9 +609,11 @@ static void settingsDrawCursor(int col, int row) {
   if (row == 0 || row == 1) {
     gfxCursor(col == 0 ? selValX : selEndValX, fieldRow0 + row, selValWidth);
   } else if (row == 2) {
-    // Slice row: Mode / Number / Frame cells
-    const int x = col == 0 ? sliceModeX : col == 1 ? sliceNumX : sliceFrameX;
-    const int w = col == 0 ? sliceModeW : col == 1 ? sliceNumW : sliceFrameW;
+    // Slice row: Mode / Count / Slice / Frame cells
+    const int x = col == 0 ? sliceModeX : col == 1 ? sliceNumX :
+                  col == 2 ? sliceBrowseX : sliceFrameX;
+    const int w = col == 0 ? sliceModeW : col == 1 ? sliceNumW :
+                  col == 2 ? sliceBrowseW : sliceFrameW;
     gfxCursor(x, fieldRow0 + row, w);
   } else if (row == 4) {
     gfxCursor(col == 0 ? valueX : col == 1 ? goX : undoX, fieldRow0 + row,
@@ -705,37 +694,46 @@ static void settingsDrawField(int col, int row, CellState state) {
     }
     return;
   }
-  // Row 2: Slice - Mode / Number / Frame cells. All three are inert while
-  // Stretch drives the duration: dim them. While the LAZY playback-drop is
-  // armed, the Frame cell dims too - slices are being placed by the
-  // playback marker, not edited by hand.
+  // Row 2: Slice - Mode / Count / Slice / Frame cells. All four are inert
+  // while Stretch drives the duration: dim them. While the LAZY
+  // playback-drop is armed, the Frame cell dims too - slices are being
+  // placed by the playback marker, not edited by hand.
   {
     const SliceMode mode = sampleDecodeSliceMode(sample->slice);
     const uint8_t count = sampleDecodeSliceCount(sample->slice);
     const int dimmed = sample->stretchMode != 0 ||
-      (sampleLazyPlaybackActive && mode == sliceModeLazy && col == 2);
+      (sampleLazyPlaybackActive && mode == sliceModeLazy && col == 3);
     if (col == 0) {
       gfxClearRect(sliceModeX, fieldRow0 + row, sliceModeW, 1);
       if (dimmed) gfxSetFgColor(appSettings.colorScheme.textEmpty);
       gfxPrint(sliceModeX, fieldRow0 + row, sliceModeLabels[mode <= sliceModeLazy ? mode : 0]);
     } else if (col == 1) {
+      // Count box: the total number of slices, always live. Inert and
+      // dimmed in LAZY (hand-placed slices have no division to
+      // recalculate); shows "-" in OFF.
       gfxClearRect(sliceNumX, fieldRow0 + row, sliceNumW, 1);
-      if (dimmed || mode == sliceModeOff) gfxSetFgColor(appSettings.colorScheme.textEmpty);
+      if (dimmed || mode == sliceModeOff || mode == sliceModeLazy) {
+        gfxSetFgColor(appSettings.colorScheme.textEmpty);
+      }
       char text[8];
-      // Dual display: the box shows the slice count by default (also live
-      // while the count is changed with B+direction) and the 1-indexed
-      // current slice in edit view (entered by EDIT interactions with the
-      // current slice, left by B+direction or a mode change). The browsed
-      // slice is also indicated on the waveform by its brighter marker
-      // and the black band.
       if (mode == sliceModeOff) {
         gfxPrint(sliceNumX, fieldRow0 + row, "-");
-      } else if (sliceNumShowsCount) {
+      } else {
         snprintf(text, sizeof(text), "%02d", count);
         gfxPrint(sliceNumX, fieldRow0 + row, text);
+      }
+    } else if (col == 2) {
+      // Slice browser box: the 1-indexed current slice. The browsed slice
+      // is also indicated on the waveform by its brighter marker and the
+      // black band.
+      gfxClearRect(sliceBrowseX, fieldRow0 + row, sliceBrowseW, 1);
+      if (dimmed || mode == sliceModeOff) gfxSetFgColor(appSettings.colorScheme.textEmpty);
+      char text[8];
+      if (mode == sliceModeOff) {
+        gfxPrint(sliceBrowseX, fieldRow0 + row, "-");
       } else {
         snprintf(text, sizeof(text), "%02d", currentSlice + 1);
-        gfxPrint(sliceNumX, fieldRow0 + row, text);
+        gfxPrint(sliceBrowseX, fieldRow0 + row, text);
       }
     } else {
       gfxClearRect(sliceFrameX, fieldRow0 + row, sliceFrameW, 1);
@@ -1032,7 +1030,7 @@ static void settingsRunSaveAs(void) {
 static void settingsRepaintSlice(InstrumentSample* sample, int focusCol) {
   updateSamplePreview(sample, &editorView, &editorSelection);
   drawSamplePreview();
-  for (int col = 0; col < 3; ++col) {
+  for (int col = 0; col < 4; ++col) {
     settingsDrawField(col, 2, col == focusCol ? CellState::focus : CellState::normal);
   }
 }
@@ -1101,15 +1099,16 @@ static void settingsDropSliceAtPlayback(InstrumentSample* sample) {
   }
   currentSlice = index;
   projectModified = 1;
-  // Dropping a slice is a current-slice edit: show the slice number.
-  sliceNumShowsCount = 0;
+  // The repaint covers all four Slice cells: the Count box shows the
+  // incremented count immediately and the browser follows the dropped
+  // slice.
   settingsRepaintSlice(sample, -1);
 }
 
 // EDIT+OPT (CellEditAction::clear) deletes the current slice - universal
-// across the Number and Frame cells. The first slice cannot be deleted
-// (there is no previous slice to join into); deleting the last remaining
-// slice turns the mode off.
+// across the Slice browser and Frame cells. The first slice cannot be
+// deleted (there is no previous slice to join into); deleting the last
+// remaining slice turns the mode off.
 static int settingsSliceDeleteCurrent(InstrumentSample* sample) {
   const uint8_t count = sampleDecodeSliceCount(sample->slice);
   if (count == 0) return 0;
@@ -1127,8 +1126,6 @@ static int settingsSliceDeleteCurrent(InstrumentSample* sample) {
   }
   settingsClampCurrentSlice(sample);
   projectModified = 1;
-  // Deleting is a current-slice edit: show the slice number.
-  sliceNumShowsCount = 0;
   settingsRepaintSlice(sample, -1);
   return 1;
 }
@@ -1187,9 +1184,6 @@ static int settingsSliceModeEdit(InstrumentSample* sample, CellEditAction action
   }
   if (nextMode == (uint8_t)mode) return 0;
 
-  // A mode change returns the Number box to the count display.
-  sliceNumShowsCount = 1;
-
   if (nextMode == sliceModeLazy) {
     // Leaving EQUAL/AUTO for LAZY: stash the chops so switching back
     // restores them verbatim - the setting is never lost, so no
@@ -1234,10 +1228,64 @@ static int settingsSliceModeEdit(InstrumentSample* sample, CellEditAction action
   return 1;
 }
 
-// Number cell (col 1): EDIT+Left/Right (and Up/Down) navigate the current
-// slice in every mode - the count itself is set with B+direction (see
-// onInput). The view recenters on the browsed slice's start when zoomed.
-static int settingsSliceNumberEdit(InstrumentSample* sample, CellEditAction action) {
+// Count box (col 1): EDIT+Left/Right steps the slice count by one
+// (clamped 1..64), EDIT+Up/Down cycles through the power-of-two counts
+// 2,4,8,16,32,64 with wrap-around. Every change recalculates the
+// division: EQUAL re-divides the Start/End window evenly, AUTO re-runs
+// detection with the new count (sensitivity derived from it). Inert in
+// LAZY (hand-placed slices have no division to recalculate) and in OFF.
+static int settingsSliceCountEdit(InstrumentSample* sample, CellEditAction action) {
+  const SliceMode mode = sampleDecodeSliceMode(sample->slice);
+  if (mode == sliceModeOff || mode == sliceModeLazy) return 0;
+  if (action == CellEditAction::increase || action == CellEditAction::decrease ||
+      action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig) {
+    const uint8_t count = sampleDecodeSliceCount(sample->slice);
+    static const uint8_t kSliceSteps[] = {2, 4, 8, 16, 32, 64};
+    int next = -1;
+    if (action == CellEditAction::increase) {
+      next = count < PROJECT_SAMPLE_MAX_SLICES ? count + 1 : PROJECT_SAMPLE_MAX_SLICES;
+    } else if (action == CellEditAction::decrease) {
+      next = count > 1 ? count - 1 : 1;
+    } else if (action == CellEditAction::increaseBig) {
+      // Cycle up through 2,4,8,16,32,64 with wrap-around; count 0/1
+      // enters at 2.
+      next = 2;
+      for (size_t i = 0; i < sizeof(kSliceSteps) / sizeof(kSliceSteps[0]); ++i) {
+        if ((int)kSliceSteps[i] > count) {
+          next = kSliceSteps[i];
+          break;
+        }
+      }
+    } else {
+      // Cycle down through 64,32,16,8,4,2 with wrap-around; count 0/1
+      // wraps to 64.
+      next = 64;
+      for (int i = (int)(sizeof(kSliceSteps) / sizeof(kSliceSteps[0])) - 1; i >= 0; --i) {
+        if ((int)kSliceSteps[i] < count) {
+          next = kSliceSteps[i];
+          break;
+        }
+      }
+    }
+    if (next == count) return 0;
+    if (mode == sliceModeAuto) {
+      settingsRunAutoDetect(sample, (uint8_t)next);
+    } else {
+      sampleSliceInitEven(sample, mode, (uint8_t)next);
+      settingsClampCurrentSlice(sample);
+      projectModified = 1;
+      settingsRepaintSlice(sample, 1);
+    }
+    return 1;
+  }
+  return 0;
+}
+
+// Slice browser box (col 2): EDIT+Left/Right navigates the current slice
+// by one, EDIT+Up/Down jumps by four (clamped, no wrap) - the row's
+// small-step/big-step convention. The view recenters on the browsed
+// slice's start when zoomed.
+static int settingsSliceBrowseEdit(InstrumentSample* sample, CellEditAction action) {
   const SliceMode mode = sampleDecodeSliceMode(sample->slice);
   const uint8_t count = sampleDecodeSliceCount(sample->slice);
   if (mode == sliceModeOff) return 0;
@@ -1245,13 +1293,12 @@ static int settingsSliceNumberEdit(InstrumentSample* sample, CellEditAction acti
       action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig) {
     if (count == 0) return 0;
     const int up = action == CellEditAction::increase || action == CellEditAction::increaseBig;
-    int next = currentSlice + (up ? 1 : -1);
+    const int step = action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig ? 4 : 1;
+    int next = currentSlice + (up ? step : -step);
     if (next < 0) next = 0;
     if (next >= count) next = count - 1;
     if (next == currentSlice) return 0;
     currentSlice = next;
-    // Browsing enters the edit view: the Number box shows the slice.
-    sliceNumShowsCount = 0;
     // Recenter the zoomed view on the new slice's start (the full view
     // shows every marker anyway).
     if (editorView.viewEnd - editorView.viewStart < sample->frameCount) {
@@ -1259,7 +1306,7 @@ static int settingsSliceNumberEdit(InstrumentSample* sample, CellEditAction acti
                                                   sample->start, sample->end);
       if (frame >= 0) zoomToMarker(sample, &editorView, (uint32_t)frame);
     }
-    settingsRepaintSlice(sample, 1);
+    settingsRepaintSlice(sample, 2);
     return 1;
   }
   return 0;
@@ -1290,34 +1337,32 @@ static int settingsSliceFrameEdit(InstrumentSample* sample, CellEditAction actio
       zoomHoldActive = 0;
     }
     projectModified = 1;
-    // Nudging the frame is a current-slice edit: show the slice number.
-    sliceNumShowsCount = 0;
-    settingsRepaintSlice(sample, 2);
+    settingsRepaintSlice(sample, 3);
     return 1;
   }
   return 0;
 }
 
-// Dispatch for the three Slice row cells. EDIT+OPT (clear) deletes the
-// current slice from the Number and Frame cells (the first slice cannot be
-// deleted - there is no previous slice to join into). EDIT tap/double-tap
-// on those cells previews the current slice (works in every slice mode).
+// Dispatch for the four Slice row cells. EDIT+OPT (clear) deletes the
+// current slice from the Slice browser and Frame cells (the first slice
+// cannot be deleted - there is no previous slice to join into). EDIT
+// tap/double-tap on those cells previews the current slice (works in
+// every slice mode).
 static int settingsOnEditSlice(int col, CellEditAction action, InstrumentSample* sample) {
   // Slice is inert while Stretch drives the duration.
   if (sample->stretchMode != 0) return 0;
-  if (action == CellEditAction::clear && col != 0) {
-    // EDIT+OPT deletes the current slice from any cell
+  if (action == CellEditAction::clear && col >= 2) {
+    // EDIT+OPT deletes the current slice from the browser or Frame cell
     return settingsSliceDeleteCurrent(sample);
   }
-  if ((action == CellEditAction::tap || action == CellEditAction::doubleTap) && col != 0) {
+  if ((action == CellEditAction::tap || action == CellEditAction::doubleTap) && col >= 2) {
     settingsSlicePreviewCurrent(sample);
-    // Clicking A enters the edit view: the Number box shows the slice.
-    sliceNumShowsCount = 0;
-    settingsDrawField(1, 2, col == 1 ? CellState::focus : CellState::normal);
+    settingsDrawField(2, 2, CellState::focus);
     return 1;
   }
   if (col == 0) return settingsSliceModeEdit(sample, action);
-  if (col == 1) return settingsSliceNumberEdit(sample, action);
+  if (col == 1) return settingsSliceCountEdit(sample, action);
+  if (col == 2) return settingsSliceBrowseEdit(sample, action);
   return settingsSliceFrameEdit(sample, action);
 }
 
@@ -1553,10 +1598,7 @@ static void setup(int input) {
   // Hint state never survives leaving the screen either.
   hintCursorRow = -1;
   hintCursorCol = -1;
-  hintPhase = 0;
   hintOwnedText[0] = '\0';
-  // The Number box starts in the count display on every screen entry.
-  sliceNumShowsCount = 1;
   sampleDirtyToDisk = pendingDirtyRestore;
   pendingDirtyRestore = 0;
   // Legacy AUTO sentinel with empty bounds (old project saved before
@@ -1581,11 +1623,11 @@ static void fullRedraw(void) {
       !settingsIsCellValid(screenSampleSettingsData.cursorCol, 4)) {
     screenSampleSettingsData.cursorRow = 1;
   }
-  // Clamp the Slice row cursor into the 3 cells (older sessions may have
+  // Clamp the Slice row cursor into the 4 cells (older sessions may have
   // parked it beyond).
   if (screenSampleSettingsData.cursorRow == 2 &&
-      screenSampleSettingsData.cursorCol > 2) {
-    screenSampleSettingsData.cursorCol = 2;
+      screenSampleSettingsData.cursorCol > 3) {
+    screenSampleSettingsData.cursorCol = 3;
   }
   settingsClampCurrentSlice(currentSample());
   screenFullRedraw(&screenSampleSettingsData);
@@ -1655,7 +1697,7 @@ static void draw(void) {
     // The Frame cell dims while the playback-drop is armed; repaint the
     // Slice row so the dim appears/disappears (drawField only fires on
     // edits and full redraws otherwise).
-    for (int col = 0; col < 3; ++col) {
+    for (int col = 0; col < 4; ++col) {
       const int focused = screenSampleSettingsData.cursorRow == 2 &&
         screenSampleSettingsData.cursorCol == col;
       settingsDrawField(col, 2, focused ? CellState::focus : CellState::normal);
@@ -1664,14 +1706,6 @@ static void draw(void) {
 }
 
 static int inputScreenNavigation(int isKeyDown, int keys) {
-  // Bare B on the slice number box is reserved for the B+direction slice
-  // count editing: it must not navigate back (and must not stop the LAZY
-  // preview as a side effect). The press is consumed here; SHIFT+LEFT
-  // still exits the screen from anywhere.
-  if (keys == keyOpt && screenSampleSettingsData.cursorRow == 2 &&
-      screenSampleSettingsData.cursorCol == 1) {
-    return 1;
-  }
   // Leaving the screen stops the LAZY preview and clears the flag: the
   // next screen's setup() never touches it, so without this the app-level
   // auto-stop guard would stay armed forever (and the preview would keep
@@ -1731,66 +1765,6 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
   // on the keys==0 release (hold-preview semantics); the flag follows.
   if (!isKeyDown && keys == 0) slicePreviewActive = 0;
   if (inputScreenNavigation(isKeyDown, keys)) return 1;
-  // Slice count (B+direction on the Slice row): B+Left/Right = count +-1,
-  // B+Up/Down = cycle 2,4,8,16,32,64 with wrap-around. EQUAL re-inits the
-  // even division, AUTO re-runs detection with the new count. LAZY is
-  // manual: B+direction is inert there. Consumed here (before the standard
-  // dispatch) because OPT+direction has no cell-edit meaning; the pending
-  // copy-on-Opt-release is cancelled so releasing B does not copy.
-  if (isKeyDown && (keys & keyOpt) && !(keys & ~(keyOpt | keyLeft | keyRight | keyUp | keyDown)) &&
-      screenSampleSettingsData.cursorRow == 2) {
-    InstrumentSample* sample = currentSample();
-    const SliceMode mode = sampleDecodeSliceMode(sample->slice);
-    if (mode != sliceModeOff && mode != sliceModeLazy && sample->stretchMode == 0) {
-      const uint8_t count = sampleDecodeSliceCount(sample->slice);
-      static const uint8_t kSliceSteps[] = {2, 4, 8, 16, 32, 64};
-      int next = -1;
-      int reinit = 0;
-      if (keys & keyLeft) {
-        next = count > 1 ? count - 1 : 1;
-        reinit = 1;
-      } else if (keys & keyRight) {
-        next = count < PROJECT_SAMPLE_MAX_SLICES ? count + 1 : PROJECT_SAMPLE_MAX_SLICES;
-        reinit = 1;
-      } else if (keys & keyUp) {
-        // Cycle up through 2,4,8,16,32,64 with wrap-around; count 0/1
-        // enters at 2.
-        next = 2;
-        for (size_t i = 0; i < sizeof(kSliceSteps) / sizeof(kSliceSteps[0]); ++i) {
-          if ((int)kSliceSteps[i] > count) {
-            next = kSliceSteps[i];
-            break;
-          }
-        }
-        reinit = 1;
-      } else if (keys & keyDown) {
-        // Cycle down through 64,32,16,8,4,2 with wrap-around; count 0/1
-        // wraps to 64.
-        next = 64;
-        for (int i = (int)(sizeof(kSliceSteps) / sizeof(kSliceSteps[0])) - 1; i >= 0; --i) {
-          if ((int)kSliceSteps[i] < count) {
-            next = kSliceSteps[i];
-            break;
-          }
-        }
-        reinit = 1;
-      }
-      if (reinit && next != count) {
-        screenClearOptPressed();
-        // Count editing returns the Number box to the count display.
-        sliceNumShowsCount = 1;
-        if (mode == sliceModeAuto) {
-          settingsRunAutoDetect(sample, (uint8_t)next);
-        } else {
-          sampleSliceInitEven(sample, mode, (uint8_t)next);
-          settingsClampCurrentSlice(sample);
-          projectModified = 1;
-          settingsRepaintSlice(sample, 1);
-        }
-        return 1;
-      }
-    }
-  }
   // LAZY playback (Phase 3): tap PLAY toggles a full-sample playback that
   // keeps running after the key is released, and while it runs every EDIT
   // click drops a slice at the playback marker. SHIFT+PLAY is left alone:
