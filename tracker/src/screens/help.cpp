@@ -128,6 +128,12 @@ const char* helpFXHint(uint8_t* fx, int isTable, uint8_t instrumentIdx) {
     case fxVSL: // Volume slide
       snprintf(buffer, bufferSize, "Volume slide %+hhd per step", (int8_t)fx[1]);
       break;
+    case fxPAN:
+      snprintf(buffer, bufferSize, "Instrument pan: %02X", fx[1]);
+      break;
+    case fxTPN:
+      snprintf(buffer, bufferSize, "Track pan: %02X", fx[1]);
+      break;
     case fxRET: // Retrigger
       snprintf(buffer, bufferSize, "Retrigger note every %hhd tics", fx[1] & 0xf);
       break;
@@ -439,6 +445,8 @@ static void initFxHelpText() {
   fxHelpText[fxPRD] = "Period (relative)\nAdds offset to note period\n(chip specific)";
   fxHelpText[fxVOL] = "Volume (relative)\nAdds volume offset";
   fxHelpText[fxVSL] = "Volume Slide\nChanges volume by specified\namount per step continuously";
+  fxHelpText[fxPAN] = "Instrument Pan\n00 left; 80 centre; FF right\nOverrides the instrument PAN";
+  fxHelpText[fxTPN] = "Track Pan\n00 left; 80 centre; FF right\nOverrides the mixer PAN";
   fxHelpText[fxRET] = "Retrigger\nRetriggers note every N tics";
   fxHelpText[fxDEL] = "Delay\nDelays note start by N tics";
   fxHelpText[fxOFF] = "Note Off\nSends note off after N tics";

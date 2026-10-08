@@ -812,6 +812,14 @@ static int projectLoadInternal(FILE* file, Project* project) {
   consumeLine(file);
 
   line = peekLine(file);
+  if (line && strncmp(line, "- Track pans: ", 14) == 0) {
+    if (sscanf(line + 14, "%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu",
+        &p.trackPan[0], &p.trackPan[1], &p.trackPan[2], &p.trackPan[3],
+        &p.trackPan[4], &p.trackPan[5], &p.trackPan[6], &p.trackPan[7]) != PROJECT_MAX_TRACKS) return 1;
+    consumeLine(file);
+  }
+
+  line = peekLine(file);
   if (line && strncmp(line, "- Reverb sends: ", 16) == 0) {
     if (sscanf(line + 16, "%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu",
         &p.trackReverbSend[0], &p.trackReverbSend[1], &p.trackReverbSend[2], &p.trackReverbSend[3],
@@ -1534,6 +1542,9 @@ static int projectSaveInternal(FILE* file, Project* project) {
   fprintf(file, "- Track volumes: %hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu\n",
     project->trackVolume[0], project->trackVolume[1], project->trackVolume[2], project->trackVolume[3],
     project->trackVolume[4], project->trackVolume[5], project->trackVolume[6], project->trackVolume[7]);
+  fprintf(file, "- Track pans: %hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu\n",
+    project->trackPan[0], project->trackPan[1], project->trackPan[2], project->trackPan[3],
+    project->trackPan[4], project->trackPan[5], project->trackPan[6], project->trackPan[7]);
   fprintf(file, "- Reverb sends: %hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu,%hhu\n",
     project->trackReverbSend[0], project->trackReverbSend[1], project->trackReverbSend[2], project->trackReverbSend[3],
     project->trackReverbSend[4], project->trackReverbSend[5], project->trackReverbSend[6], project->trackReverbSend[7]);

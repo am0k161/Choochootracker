@@ -549,6 +549,8 @@ int instrumentLoadData(FILE* file, Instrument* instrument, Project* p) {
       sscanf(line, "- Table speed: %hhu", &instrument->tableSpeed);
     } else if (strncmp(line, "- Volume: ", 10) == 0) {
       sscanf(line, "- Volume: %hhu", &instrument->volume);
+    } else if (strncmp(line, "- Pan: ", 7) == 0) {
+      sscanf(line, "- Pan: %hhu", &instrument->pan);
     } else if (strncmp(line, "- Transpose: ", 13) == 0) {
       sscanf(line, "- Transpose: %hhu", &instrument->transposeEnabled);
       consumeLine(file);
@@ -905,6 +907,7 @@ int instrumentSaveData(FILE* file, int idx, Instrument* instrument) {
   fprintf(file, "- Type: %hhd\n", static_cast<uint8_t>(instrument->type));
   fprintf(file, "- Table speed: %hhu\n", instrument->tableSpeed);
   fprintf(file, "- Volume: %hhu\n", instrument->volume);
+  fprintf(file, "- Pan: %hhu\n", instrument->pan);
   fprintf(file, "- Transpose: %hhu\n", instrument->transposeEnabled);
 
   // Save modulation data
