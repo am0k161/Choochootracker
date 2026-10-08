@@ -150,7 +150,7 @@ with rhythm patterns:
   notes carry the last used instrument; releasing **OPT** resets the cycles
   to their first step.
 - While a selection is active and no other message is showing, the status
-  bar rotates a reminder of these combos every 2.5 seconds: `EDIT + DIR =
+  bar rotates a reminder of these combos every 1.5 seconds: `EDIT + DIR =
   batch note edit`, `Double-tap EDIT: resample selection`, `OPT + LEFT =
   pattern fill`, `OPT + RIGHT = random fill`, `OPT + UP =
   mutate/randomize velocity` and `OPT + DOWN = random arp/slice spread`.
