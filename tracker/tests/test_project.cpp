@@ -4,6 +4,7 @@
 #include "project_io_common.h"
 #include "project_utils.h"
 #include "import/import_vt2.h"
+#include "synth/multimode_filter.h"
 
 #include <cstring>
 #include <cstdlib>
@@ -12,6 +13,28 @@
 #include <cstdio>
 
 TEST_SUITE("project") {
+
+TEST_CASE("MIDI CC maps continuous engine destinations to native values") {
+  Project p;
+  projectInit(&p);
+  Instrument* plaits = &p.instruments[0];
+  plaits->type = InstrumentType::Plaits;
+  CHECK(instrumentCCDestinationAvailable(plaits, 1));
+  CHECK(instrumentSetCCDestination(plaits, 1, 0));
+  CHECK(plaits->volume == 0);
+  CHECK(instrumentSetCCDestination(plaits, 1, 127));
+  CHECK(plaits->volume == 255);
+  CHECK(instrumentCCDestinationAvailable(plaits, 4));
+  CHECK(instrumentSetCCDestination(plaits, 4, 0));
+  CHECK(plaits->chip.plaits.timbre == 0);
+  CHECK(instrumentSetCCDestination(plaits, 4, 127));
+  CHECK(plaits->chip.plaits.timbre == 32767);
+  CHECK(instrumentSetCCDestination(plaits, 7, 0));
+  CHECK(plaits->chip.plaits.filterCutoffHz == FILTER_CUTOFF_MIN_HZ);
+  CHECK(instrumentSetCCDestination(plaits, 7, 127));
+  CHECK(plaits->chip.plaits.filterCutoffHz == FILTER_CUTOFF_MAX_HZ);
+  projectFree(&p);
+}
 
 // Test fixture
 struct ProjectFixture {
@@ -42,6 +65,11 @@ TEST_CASE_FIXTURE(ProjectFixture, "projectInit default track tilt") {
   for (int i = 0; i < PROJECT_MAX_TRACKS; ++i) CHECK(p.trackTilt[i] == 0x80);
 }
 
+TEST_CASE_FIXTURE(ProjectFixture, "projectInit enables MIDI CC mapping rows") {
+  for (int i = 0; i < PROJECT_MAX_MIDI_CC_MAPPINGS; ++i)
+    CHECK(p.midiCCMappings[i].enabled == 1);
+}
+
 TEST_CASE("track tilt project settings survive save and load") {
   Project saved, loaded;
   projectInit(&saved);
@@ -63,6 +91,25 @@ TEST_CASE("track tilt project settings survive save and load") {
   CHECK(loaded.trackTilt[0] == 0x00);
   CHECK(loaded.trackTilt[7] == 0xff);
   CHECK(loaded.tiltPivotHz == 2500);
+}
+
+TEST_CASE("MIDI CC mappings survive save and load") {
+  Project saved, loaded;
+  projectInit(&saved); projectInit(&loaded);
+  saved.chipsCount = loaded.chipsCount = 1;
+  saved.tracksCount = loaded.tracksCount = 1;
+  saved.chipType = loaded.chipType = ChipType::AY;
+  std::strcpy(saved.title, "MIDI CC");
+  std::strcpy(saved.pitchTable.name, "MIDI CC");
+  saved.midiCCMappings[0] = {1, 2, 74, 3, 4};
+  const char* path = "build/tests/midi_cc_io.cct";
+  REQUIRE(projectSave(&saved, path) == 0);
+  REQUIRE(projectLoad(&loaded, path) == 0);
+  CHECK(loaded.midiCCMappings[0].enabled == 1);
+  CHECK(loaded.midiCCMappings[0].channel == 2);
+  CHECK(loaded.midiCCMappings[0].cc == 74);
+  CHECK(loaded.midiCCMappings[0].instrument == 3);
+  CHECK(loaded.midiCCMappings[0].destination == 4);
 }
 
 TEST_CASE("scale project settings survive save and load") {
@@ -336,7 +383,8 @@ TEST_CASE("instrument catalogue covers every family and its routable motion FX")
     for (int destination = 0; destination < definition->destinationCount; ++destination) {
       const InstrumentModDestination* metadata = instrumentModDestination(type, destination);
       REQUIRE(metadata != nullptr);
-      CHECK(std::strcmp(metadata->name, instrumentModDestinationName(type, destination)) == 0);
+      const char* expectedName = destination == midiCCDestinationNone ? "-" : instrumentModDestinationName(type, destination);
+      CHECK(std::strcmp(metadata->name, expectedName) == 0);
       if (metadata->fx != instrumentNoFX) CHECK(instrumentFXAvailable(type, metadata->fx));
     }
     for (int fx = 0; fx < definition->fxCount; ++fx)
@@ -360,7 +408,7 @@ TEST_CASE("instrument catalogue covers every family and its routable motion FX")
   CHECK(fx == fxBIA);
 
   static const char* aChChidDestinations[] = {
-    "Off", "Volume", "Pitch", "Cutoff", "Reso", "EnvMod", "Decay", "Accent", "Timbre", "Color"
+    "-", "Volume", "Pitch", "Cutoff", "Reso", "EnvMod", "Decay", "Accent", "Timbre", "Color"
   };
   const InstrumentDefinition* aChChid = getInstrumentDefinition(InstrumentType::AChChid);
   REQUIRE(aChChid->destinationCount == 10);
@@ -374,7 +422,7 @@ TEST_CASE("instrument catalogue covers every family and its routable motion FX")
   CHECK(fx == fxACL); CHECK(range == 16384);
 
   static const char* drumSynthDestinations[] = {
-    "Off", "Volume", "Pitch", "Decay", "Tone", "Sweep", "Noise", "FM", "Drive", "Cutoff", "Reso"
+    "-", "Volume", "Pitch", "Decay", "Tone", "Sweep", "Noise", "FM", "Drive", "Cutoff", "Reso"
   };
   const InstrumentDefinition* drumSynth = getInstrumentDefinition(InstrumentType::DrumSynth);
   CHECK(std::strcmp(drumSynth->uiName, "Bogie") == 0);
@@ -446,12 +494,18 @@ TEST_CASE("phrase FX groups put the active engine after Track FX") {
   CHECK(std::strcmp(fxGroups[1].name, "Track FX") == 0);
   CHECK(fxGroups[1].columns == 4);
   CHECK(fxGroups[1].fxList[3].fx == fxCRD);
+  // Merged sample FX order keeps SPL/SLI first (our fork's saved-project
+  // numeric values); SST is the sample-start control, STA a legacy alias.
+  CHECK(getInstrumentDefinition(InstrumentType::Sample)->fxList[3].fx == fxSST);
   CHECK(getInstrumentDefinition(InstrumentType::Sample)->fxList[4].fx == fxSTA);
   CHECK(fxGroups[2].instType == InstrumentType::AY1);
   CHECK(fxGroups[11].instType == InstrumentType::AChChid);
   CHECK(fxGroups[12].instType == InstrumentType::DrumSynth);
-  CHECK(std::strcmp(fxGroups[13].name, "ADSR / Trigger FX") == 0);
-  CHECK(std::strcmp(fxGroups[14].name, "Modulation FX") == 0);
+  CHECK(fxGroups[13].instType == InstrumentType::MME);
+  CHECK(fxGroups[14].instType == InstrumentType::OPLL);
+  CHECK(fxGroups[24].instType == InstrumentType::SID);
+  CHECK(std::strcmp(fxGroups[26].name, "ADSR / Trigger FX") == 0);
+  CHECK(std::strcmp(fxGroups[27].name, "Modulation FX") == 0);
 }
 
 TEST_CASE_FIXTURE(ProjectFixture, "failed VT2 import leaves its destination unchanged") {
@@ -702,7 +756,7 @@ TEST_CASE("fillFXNames ay") {
 
 TEST_CASE("fillFXNames unknown") {
   fillFXNames();
-  CHECK(std::strcmp(fxNames[200].name, "---") == 0);
+  CHECK(std::strcmp(fxNames[255].name, "---") == 0);
 }
 
 } // TEST_SUITE("project")

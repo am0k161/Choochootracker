@@ -66,8 +66,8 @@ android {
         applicationId "com.paiheulevrai.choochootracker"
         minSdk 26
         targetSdk 36
-        versionCode 14
-        versionName "1.0.14-alpha"
+        versionCode 15
+        versionName "1.0.15-alpha"
     }
 
     // Copy bundled tracker content to assets.

@@ -8,7 +8,7 @@ LIBS = $(COMMON_LIBS) platforms/sdl2 ../chipnomad_lib/external/rtmidi
 OUTPUT_EXT =
 
 XTRA_CFLAGS = -DDESKTOP_BUILD -DGAMEPAD_SUPPORT -D__LINUX_ALSA__ -D__LINUX_ALSASEQ__
-XTRA_LIBS = -lSDL2 -lm -lasound
+XTRA_LIBS = -lSDL2 -lm -lasound -lpthread -lstdc++fs
 CFLAGS = $(COMMON_CFLAGS) $(INCLUDES) $(SOURCES) $(XTRA_CFLAGS)
 OUTPUT = -o $(BUILD)/choochootracker$(OUTPUT_EXT)
 
@@ -92,7 +92,7 @@ appimage: linux
 	@cp -r packaging/common/* $(BUILD)/$(APPNAME).AppDir/usr/share/choochootracker/common/
 	@cp packaging/linux-appimage/AppRun $(BUILD)/$(APPNAME).AppDir/
 	@sed -i 's/\r$$//' $(BUILD)/$(APPNAME).AppDir/AppRun
-	@if grep -q "$$(printf '\r')" $(BUILD)/$(APPNAME).AppDir/AppRun || ! grep -q 'readlink' $(BUILD)/$(APPNAME).AppDir/AppRun || ! grep -q '^for item in ' $(BUILD)/$(APPNAME).AppDir/AppRun; then \
+	@if grep -q "$$(printf '\r')" $(BUILD)/$(APPNAME).AppDir/AppRun || ! grep -q 'readlink' $(BUILD)/$(APPNAME).AppDir/AppRun || ! grep -q '^for item in ' $(BUILD)/$(APPNAME).AppDir/AppRun || ! grep -Fq 'cd "$${DATA_DIR}"' $(BUILD)/$(APPNAME).AppDir/AppRun; then \
 		echo "Error: generated AppRun is not a valid LF-normalized launcher."; \
 		exit 1; \
 	fi

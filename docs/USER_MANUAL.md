@@ -18,6 +18,10 @@ It follows the classic LSDj workflow and navigation system, with several sound d
 
 Install `choochootracker.zip` through PortMaster, or copy the extracted package to the console's `ports` directory. Start **ChooChooTracker** from the Ports menu.
 
+### Miyoo Mini / Mini Plus (Onion OS)
+
+Extract the MiyooPorts archive at the root of the SD card so that its `Roms/PORTS/` folders merge with Onion's existing folders. Start **ChooChooTracker** from the Ports menu after refreshing the collection. Back up the app's `projects/` folder before replacing an existing installation.
+
 ### Windows
 
 Run `choochootracker.exe` with `SDL2.dll` and `libwinpthread-1.dll` in the same directory.
@@ -80,6 +84,11 @@ and to choose where WAV exports are saved.
 
 - Use **[UP/DOWN/LEFT/RIGHT]** to move the cursor.
 - Hold **SELECT + [DIRECTION]** to move between screens.
+- SELECT + [LEFT/RIGHT] also exits branch pages to the neighbouring MSCPIT
+  screen, like Instrument Pool: Project/Settings (including Settings submenus)
+  lead to Mixer/Chain; Groove to Chain/Instrument; Modulation/Insert FX to
+  Phrase/Table; AY Wavetable to Instrument/Table. At the left edge, Reverb/Delay
+  return to Mixer with SELECT + LEFT. Existing vertical navigation remains.
 - Hold **OPT + [DIRECTION]** for screen-specific navigation.
 - On a value, use **EDIT + [LEFT/RIGHT]** for fine changes or **EDIT + [UP/DOWN]** for coarse changes.
 - On a Modulation **Destination**, **LEFT/RIGHT** cycles the available destinations directly; tap **EDIT** to open its grouped menu.
@@ -230,7 +239,7 @@ A code-drawn pixel piano below the eight right-side track rows lights sounding p
 
 ### Mixer meters
 
-The Mixer labels its tracks with a TRK heading and numeric rows. An unlabeled one-character column before LVL shows each track’s stereo peak after level and tilt, before shared effects and master gain. The meter spans -48 to 0 dBFS and decays between updates. Its lower and middle bands use theme colors, while the top band is bright red near full scale.
+The Mixer shows adjacent **L/R** peak bars for each track after its PAN and tilt, before shared effects and master gain. The meter spans -48 to 0 dBFS and decays between updates. Its lower and middle bands use theme colors, while the top band is bright red near full scale.
 
 ## 4. Song, Chain and Phrase
 
@@ -366,10 +375,13 @@ Key jazz also works, independently toggled with Esc, on:
   selected) - the same structure-editing shortcuts as the Phrase screen.
   This takes over Shift, so Shift+Right/Up no longer jump to Chain/Project
   while key jazz is active here - Esc to get those shortcuts back.
-- **Project**: type the file name, title and author directly on the
-  keyboard instead of using the on-screen virtual keyboard. Backspace works
-  like a normal text field; Shift types uppercase letters. The virtual
-  keyboard still opens normally when key jazz is off here.
+- **Every screen with a text field**: type directly on the keyboard
+  instead of using the on-screen virtual keyboard. This covers the Project
+  file name, title and author, the instrument name, the color theme name,
+  the pitch table name, the bounce file name, and the name dialogs (enter
+  name, create folder). Backspace works like a normal text field; Shift
+  types uppercase letters. Esc toggles it on all of these screens at once,
+  and the virtual keyboard still opens normally when key jazz is off.
 
 ## 5. Instruments
 
@@ -754,7 +766,7 @@ BYOWTBL is a dual wavetable oscillator compatible with Serum tables. Each oscill
 
 ## 6. Modulation and motion recording
 
-Each instrument can have up to 4 modulation slots.
+Each instrument can have up to 4 modulation slots. Audio instruments can target **Instrument Pan** or **Track Pan**; both use `00` for left, `80` for centre and `FF` for right.
 
 The available modulation types are:
 
@@ -886,7 +898,7 @@ Each FX has a 3-letter command and a hexadecimal value. The in-app help panel gi
 
 ### Chords
 
-`CRD XY` turns the note on its own Phrase row into a chord. `Y` selects: `0` Major, `1` Minor, `2` Dim, `3` Aug, `4` Sus2, `5` Sus4, `6` Power, `7` Maj7, `8` Min7, `9` Dom7, `A` Min7b5, `B` Dim7, `C` Add9, `D` MinAdd9, `E` Maj9, or `F` Min9. `X` selects the musical inversion: `0` is root position; three-note chords offer `1-2`, and four-note chords offer `1-3`. The command is not persistent: write it on every chorded row. Each generated note is quantized independently when Scale is active, in both Quantizer and Note Lock modes. It is available to software engines only; AY instruments ignore it and remain monophonic.
+`CRD XY` turns the note on its own Phrase row into a chord. `Y` selects: `0` Major, `1` Minor, `2` Dim, `3` Aug, `4` Sus2, `5` Sus4, `6` Power, `7` Maj7, `8` Min7, `9` Dom7, `A` Min7b5, `B` Dim7, `C` Add9, `D` MinAdd9, `E` Maj9, or `F` Min9. `X` selects one of 16 voicings: `0-3` are a rising closed inversion cycle; `4-7` add drop-2; `8-B` add drop-3; and `C-F` combine both drops. The cycle continues through an extra octave for triads and power chords, so every value is distinct; larger values become progressively wider and less conventional. For example, `CRD 4Y` is drop-2 root position and `CRD DY` is first inversion with both drops. At the bottom or top of the pitch table, voices are clamped to its range. The command is not persistent: write it on every chorded row. Each generated note is quantized independently when Scale is active, in both Quantizer and Note Lock modes. It is available to software engines only; AY instruments ignore it and remain monophonic.
 
 ### Sequencer FX
 
@@ -902,6 +914,8 @@ Each FX has a 3-letter command and a hexadecimal value. The in-app help panel gi
 | `PRD` | signed `XX` | Accumulated relative oscillator-period offset. |
 | `VOL` | signed `XX` | Accumulated relative volume offset (`FF` is -1, not full volume). |
 | `VSL` | signed `XX` | Adds `XX` to volume on every phrase/table row. Use `00` to stop. |
+| `PAN` | `00-FF` | Absolute instrument panorama: left, centre (`80`), right. |
+| `TPN` | `00-FF` | Absolute mixer-track panorama: left, centre (`80`), right. |
 | `RET` | `XY` | Retriggers every `Y` ticks; `X` applies a volume change. `Y=0` stops retriggering. |
 | `DEL` | `XX` ticks | Delays note-on. A delay longer than the current groove step skips the note. |
 | `OFF` | `XX` ticks | Sends note-off after `XX` ticks and enters an ADSR release stage. |
@@ -1131,7 +1145,7 @@ Use it to balance the 8 tracks, shape each track with Tilt EQ, and send audio to
 | M | `*` mutes this track |
 | S | `*` solos this track |
 
-The mixer is track-based, not instrument-based. If a track changes instruments, its level, Tilt and sends remain attached to the track. Remember that each instrument also has its own `00-FF` volume on the Instrument screen, before the track level.
+The mixer is track-based, not instrument-based. If a track changes instruments, its level, PAN, Tilt and sends remain attached to the track. Instruments also have their own `00-FF` **Vol** and **Pan** in the top row of the Instrument screen. Instrument PAN is applied first, then track PAN. Both preserve an existing stereo image at centre; they progressively attenuate the opposite side when moved left or right.
 
 ### Auto Mix
 
@@ -1186,6 +1200,11 @@ The **Folder** row on the EXPORT screen shows the active destination:
 When a named project is saved under a new name, the default export folder is renamed to match, keeping previously exported files with the project. Renaming does not apply to a custom folder, and the folder is not renamed by autosave. If a folder with the target name already exists, both folders are kept. If the tracker lost track of the folder (for example after a restart), saving a named project renames the existing `current-project` folder instead. Instruments keep working after a rename: loaded sample paths that point into the renamed folder are updated automatically.
 
 **Load** also accepts `.mid`/`.midi` files, imported as a new project: notes are grouped by MIDI channel (one channel per track, up to the track count), quantized to 4 rows per beat, and placed on a single default AY instrument - MIDI program numbers have no chiptune equivalent, so pick real instruments afterward. Only the file's first tempo is used (one global tick rate, no per-section tempo changes). The Export screen's **MIDI** row does the reverse: writes the current arrangement's notes, volume and tempo/groove as a Standard MIDI File (one MIDI track per tracker track); [MIDI Out](#midi-out) instruments and other per-row FX beyond volume and the global groove have no MIDI equivalent and are not translated.
+
+**Load** also accepts Dirtywave M8 songs (`.m8s`, firmware 2.x-4.x), imported as a new project. Only the structure and the notes come across (song rows, chains with their transpose, phrases with note, velocity and instrument number, note-offs, tempo and song name); notes keep their real pitch. M8 instruments have no equivalent here, so each instrument used by a phrase becomes a default AY instrument carrying the M8 instrument's name - pick real sounds afterward. FX, tables and all instrument parameters are ignored.
+
+On desktop, the Export screen's **M8S** row does the reverse, in a limited way: tap it and pick an existing `.m8s` as a **template** (remembered until you quit, **EDIT + OPT** forgets it). Its song, chains, phrases, tempo and title are replaced and everything else, including the M8 instruments, is kept as is. FX are not exported, and a song using phrase `FF` or above cannot be exported (the M8 has 255 phrases). The exported file has not been tested on a real M8 yet. See [M8 songs](m8s-format.md) for the details.
+
 On desktop, key jazz lets you type the filename, title and author directly on the keyboard instead of using the on-screen virtual keyboard — see [Key jazz](#key-jazz-desktop-only).
 
 ### Scale / Quantize
@@ -1212,8 +1231,9 @@ Use **Save** before changing instrument types or loading another project.
 - **MIDI** opens the [MIDI](#14-midi) submenu: device selection and the MIDI In channel-to-instrument mapping.
 - **Synths** contains **AY Quality**, **Sample dithering**, and global **Braids BITS / DRFT / SIGN** settings.
 - **Mixer** contains **Mix volume** and the per-project `250-4000 Hz` **Tilt pivot** (default `1 kHz`) used by all Mixer Tilt controls.
-- **Graphics** contains **Edit color theme**, **Load font**, **Persistent waveform**, **Track visuals**, and the active renderer (`GPU` or `Software`). Track visuals selects **Detailed** (the synth waveform and its overlays) or **Audio waveform** (the actual summed output of that track) independently for every track; audio waveform clears any prior ADSR overlay immediately when playback starts. ChipNomad fonts and themes should work.
+- **Graphics** contains **Edit color theme**, **Load font**, **Persistent waveform**, **Track visuals**, **Waveform FPS**, and the active renderer (`GPU` or `Software`). **Waveform FPS** sets the refresh rate of the instrument scope and mixer visualizers from `01` to `60`. Track visuals selects **Detailed** (the synth waveform and its overlays) or **Audio waveform** (the actual summed output of that track) independently for every track; audio waveform clears any prior ADSR overlay immediately when playback starts. ChipNomad fonts and themes should work.
 - **Key mapping** customises the controls.
+- **Support report** writes a small diagnostic text file with the app version, platform, audio settings and CPU load, playback/overflow state, and a compact project summary. It does not include sample data or project title/author text. On Android and Web it opens the normal export/download flow; desktop and handheld builds save `support-report.txt` in the app's writable folder.
 - **Quit ChooChooTracker** exits cleanly.
 
 ## 13. Performance and troubleshooting
@@ -1226,7 +1246,7 @@ The CPU display is a smoothed measure of audio rendering time. It does not measu
 
 On Android, audio output now prefers AAudio to avoid intermittent crackling observed with OpenSL ES on the Pixel 7a. This buffered output prioritises stable playback and can add some response latency. The tracker canvas keeps its full 4:3 layout on square and other unusual screen ratios; unused space is shown as borders rather than cropping columns. If crackling persists, report the song, phone model, Android version and whether you are using the speaker, headphones or Bluetooth.
 
-If you run into pops, crashes or slowdowns, send us the `.cct` file that triggers them.
+If you run into pops, crashes or slowdowns, use **Settings > Support report** and attach the generated `support-report.txt` to the bug report. If a specific song triggers the problem, attach that `.cct` too.
 
 ### No sound
 
@@ -1242,6 +1262,7 @@ Desktop and PortMaster. Settings > **MIDI** opens this submenu: **MIDI In** / **
 
 - **Sound preview from a MIDI keyboard**: with a MIDI In device selected, playing notes on the connected keyboard auditions an instrument on any screen, the same as the on-screen **EDIT + PLAY** shortcut on the [Instrument](#5-instruments) screen. This is preview only - it does not enter notes into the song.
 - **Channel mapping**: opens a list of the 16 MIDI channels; assign each one an instrument (`OFF` by default) so notes received on that channel preview that instrument regardless of which one is selected on the Instrument screen - e.g. channel `01` -> instrument `05`. A channel left `OFF` falls back to the currently selected instrument, the original behavior. This mapping is saved to settings.txt.
+- **MIDI CC mapping**: maps an incoming controller to an instrument parameter, including its **Volume**, or to global controls. Global rows show `TRK 1`-`TRK 8` instead of an instrument and provide track **Mute**, **Solo**, **Volume**, **Reverb send**, and **Delay send**; **Song play/stop** has no target. A new mapping ignores the CC that learned/configured it and takes effect on the next physical movement, so setting up mappings during playback cannot reset a patch to zero. Mute and solo use `0-63` = off, `64-127` = on.
 - **Driving an external MIDI device**: give a track the [MIDI Out](#midi-out) instrument type and set its Channel; triggering notes on that track sends real MIDI to the selected MIDI Out device instead of making sound in ChooChooTracker.
 
 ## 15. Credits and licensing
@@ -1283,8 +1304,14 @@ controls have an exact neutral at 80. Distortion modes are 00 Density, 01 Drive,
 20:1; detector sources 00–02 are stereo input, left, right. Detector filter 80 is
 neutral, below is low-pass, above is high-pass. No external/cross-track sidechain
 is provided. Either slot can contain any module; repeated modules are independent.
-Chorus, Flanger, Phaser and Rotary use gentle modulation defaults; Rotary speed
-switches between Slow and Fast. Bitcrusher bit depth ranges from 4 to 16 bits and
+Chorus, Flanger, Phaser and Rotary use gentle modulation defaults. Rotary Speed
+uses the full **00-FF** range: **00 = 0.01 Hz** (one rotation per 100 seconds),
+**FF = 25 Hz** (the former Chaos maximum). Exponential spacing gives finer
+control over slow LFO movement. New Rotary inserts default to **8F**, about
+0.8 Hz. This replaces the four discrete speed values; existing Rotary settings
+and F11/F21 speed automation need retuning to the new scale (old Slow/Fast/Hyper/
+Chaos correspond approximately to **8F/CB/E7/FF**). Other parameters are unchanged.
+Bitcrusher bit depth ranges from 4 to 16 bits and
 rate reduction from 1x to 32x. Destruction modes are Fold, Clip and Crush.
 Saturation and distortion include output level or mix controls for balancing them
 against the unprocessed signal.
@@ -1295,7 +1322,15 @@ chain. Both reverb and delay sends receive its output. Shared effects, returns,
 master controls and mute/solo retain their existing behavior. Inserts do not
 process audio from external MIDI devices.
 
-The Insert FX chooser category adds **F11–F18** for TF1 and **F21–F28** for TF2.
+Insert commands use **F11–F18** for TF1 and **F21–F28** for TF2. The roll's
+FX selection and Phrase/Table popup offer only parameters used by the selected
+track's configured inserts. The popup groups them as **TF1: effect name** and
+**TF2: effect name**; OFF slots are hidden. Bypassed inserts remain editable.
+In the Phrase and Table FX popup, the description follows the selected track's
+insert slot: it shows the module, parameter name, decoded range endpoints and
+saved base value. Existing song commands are preserved if a module change makes
+them unused; opening their picker starts at an available control.
+While editing a value, the bottom hint shows its decoded value and units.
 Any Phrase or Table FX column can address either slot; the Phrase grid keeps its
 three columns. These absolute runtime values persist across notes, instruments,
 phrases, chains and ordinary loops. Fresh playback/hard stop resets them. Editing
@@ -1339,3 +1374,452 @@ unused slots; the sixteen available positions are not a guaranteed CPU budget.
 The Insert page keeps the selected field's tip visible after button release;
 temporary notices can still take its place. The module chooser shows each
 module's effect type and source project alongside its name.
+
+### Native OPLL and VRC7 instruments (development)
+
+The Instrument Type selector has an FM group with **OPLL / MSX** (YM2413)
+and **VRC7** (DS1001). Each now offers **73 programs** in scrolling Bank / Preset
+lists: the original 15 tones, 40 additional distinct tones from emu2413's
+YM2413/VRC7/YMF281B tables, and 18 ChooChoo-authored two-operator programs.
+Exact duplicate tone bytes are omitted within each engine. The additional
+palettes use the chip's programmable tone slot; they do not expand the physical
+ROM. Program zero identifies a custom tone. EDIT + left/right selects the
+previous or next preset within the bank filter. Fine ct adjusts tuning from
+-100 to +100 cents.
+
+In the program list, EDIT + PLAY auditions the highlighted sound; release the
+buttons to stop. EDIT commits and OPT cancels. Browsing/audition does not change
+the instrument, table or song. The normal Instrument-page audition gesture
+continues to work after selection. Native chip envelopes supply attack/release;
+the optional Amp env adds a software ADSR (see Native chip controls below).
+There is no full operator editor.
+
+New instruments store all eight native tone bytes, bank/name, program and fine tuning in
+the song/instrument file. Files containing these types use format 7.0 and need
+this build or later. Earlier formats remain readable; songs without these types
+continue to save as 5.0. Rhythm programs are deferred. The expanded library is
+validated on the host; human listening and a new handheld check remain pending.
+
+### AdLib / OPL2 and OPL3 (development)
+
+FM also includes AdLib / OPL2 (YM3812) and OPL3 (YMF262). Bank filters the
+factory list; Preset opens category groups and an All view. EDIT + PLAY auditions
+before selection, EDIT selects, OPT cancels, and EDIT + left/right on Preset
+loads the previous/next matching entry. Fine ct adjusts local tuning. Mode shows
+2 operator, 4 operator, or Dual voice. OPL2 hides incompatible OPL3 patches;
+OPL3 can play the shared two-operator collection.
+
+Bank and preset popup titles identify the current engine. Switching engine or
+instrument slot resets the bank filter to **All banks**, including switching
+between the compatible AdLib and OPL3 engines. Returning from a popup within the
+same slot keeps the chosen filter. Cancelling a DX7 bank import restores the
+previous filter.
+
+Preset confirmation also publishes edits made on button release to the next
+UI/audio tick. Playing songs no longer need another button press or a transport
+restart to receive that patch. Output still follows the configured audio buffer
+and the engine's envelope/retrigger behavior.
+
+The factory collection contains 697 source entries from The Fat Man 2-op,
+The Fat Man 4-op and DMXOPL3, with 589 normalized unique patch identities.
+Aliases retain source names and attribution. Source-native operator levels,
+LFO-depth flags, note offsets, fixed percussion pitches and dual-voice tuning
+are retained. Tracker volume uses software amplitude; it does not reproduce
+the original MIDI players' volume curves or velocity-offset policies. Source
+release-duration estimates do not cut off sustained notes. Some effects have
+slow attacks: hold Seashore rather than expecting a short click to reveal it.
+
+Factory assets live in `instruments/chips` alongside the existing instrument
+library, with notices under `licenses/chip-banks`. Preset selection leaves the
+slot's table and track-owned inserts unchanged. Newly saved files use 7.0 and
+embed the complete tone. Factory audio is machine-tested on host and ARM64; human audition
+remains pending.
+
+### Sega PSG and Game Boy native instruments (development)
+
+CHIP now includes Sega PSG, GB Pulse and GB Noise. Sega uses the NTSC master
+clock and its 16-bit noise feedback, including tone-channel-derived noise.
+Its default **Bass range: Extended** lowers the virtual clock when needed to
+play below the chip's approximately 109 Hz divider limit. This keeps A-2, G-2
+and F-2 distinct. Choose **Chip** for the original range, where lower notes
+converge on the divider limit. Fixed-rate noise keeps the original clock;
+tone-derived noise follows the extended pitch. Old Sega instruments load with
+Extended enabled; the setting is saved with the instrument.
+The GB instruments use DMG pulse/noise registers; no Game Boy wave channel is
+exposed. Their authored preset lists now contain **24, 24 and 28** presets
+respectively. The additions cover linked/periodic Sega noise, GB pitch sweeps,
+short percussion, metallic noise, drones and rises. These are original programs,
+not extracted game sounds.
+The page offers native mode/duty/width, envelope/sweep/noise controls as
+applicable, plus a software amplitude ADSR. These save in version-6 native files.
+Automated ARM64 performance/audio checks pass within the reported workload
+limits; human listening remains pending.
+
+### DX7 FM (development)
+
+Select **Type → FM → DX7 FM**; DX7 is the seventh entry, after Arcade / YM2151.
+DX7 FM uses a six-operator MSFA core. The existing FM page offers
+Bank, Preset and Fine ct alongside common instrument settings. Preset browsing
+uses bank/category lists. Hold EDIT+PLAY to hear the highlighted sound; releasing
+stops audition. EDIT alone commits on release; OPT cancels. Loading a sound
+copies its complete patch without changing tracker tables or track insert FX.
+
+The factory catalogue currently contains **67 distinct DX7 parameter patches**:
+31 OpenDX7 original musical sounds, four unique YSE CC0 sounds (its 32 bank slots
+repeat those four with different names), and 32 ChooChoo-authored patches.
+Here, "original" means parameter programs created for this project; it does not
+mean original Yamaha factory content. YSE is shipped as four sounds, not 32
+artificially different names.
+Categories describe the reviewed sound-design intent. Ambiguous names remain
+Unsorted. Numerical playability checks have passed; listening acceptance is
+pending. The separate goal of 1,000 redistribution-cleared sounds is not met.
+
+For a persistent personal library, put `.syx` files in
+**`instruments/banks/dx7/`** beside the existing instrument library. Subfolders
+are supported. Open **DX7 → Bank**: each file appears as a named bank, ready for
+Preset browsing. Reopen Bank after adding or removing files; no conversion or
+Load Instrument step is needed. A standard original DX7/TX7 bank contains
+**32 voices**. A file with four bank messages appears as four numbered banks
+(128 voices total). Single-voice files are accepted too. The native application
+reads this folder; the browser build reads its virtual filesystem, not arbitrary
+folders on the computer.
+
+Bad or unsupported files are skipped with an on-screen count; valid banks remain
+available. Scanning is bounded to 2,048 files, 1 MiB per file, 64 MiB total,
+60,000 voices and eight levels of nested folders. Symlinks are ignored. The
+selected patch is owned by the instrument: removing its source bank cannot
+change the saved song. The complete browsing library stays in this folder and
+is not copied wholesale into each project.
+
+LOAD INSTRUMENT also accepts `.syx` original DX7/TX7 single-voice and 32-voice bank
+dumps, including bounded sequences of those supported messages. It checks
+framing, byte counts, seven-bit data, checksums, parameter ranges and file size
+before opening the imported bank in the same FM browser. Selecting a patch
+commits; cancel keeps the current song instrument. This direct-import shortcut
+keeps its browsing list for the session; use the bank folder above for persistent
+browsing. Save the song or a `.cni` to retain selected/edited patches. Headerless dumps,
+bad checksums, DX7II performance/extensions and other Yamaha families are
+rejected. Import never sends MIDI messages to external equipment.
+
+CNI and project version 6 store all 155 original voice bytes, the full display
+name, native strike velocity, fine tuning and source identity. Songs need no
+external bank to reopen. Older ChooChoo releases cannot read these version-7
+files; existing-only projects still save as version 5. Native velocity defaults
+to 100; tracker volume is post-synthesis gain and does not restrike the envelope.
+Operator envelopes, fixed-frequency mode, keyboard scaling, pitch envelope and
+LFO remain native patch behavior. The optional common FM amplitude ADSR shapes
+their combined output without replacing the operator envelopes.
+
+Each track part has one LFO and four separately owned chord voice slots, matching
+the existing tracker chord/replacement policy. Tracks do not share note state.
+Note-off releases the native envelopes; cut/panic clears them. The scalar MSFA
+core uses 64-sample quanta at a fixed internal 44.1 kHz, with a streaming FIR to
+the output rate. Lookup tables are initialized once outside audio rendering so
+concurrent offline/live renderers cannot change one another's rate. Events take
+effect at the next internal quantum (up to 1.45 ms), followed by the FIR's
+approximately 0.25 ms group delay. Buffered samples are retained across callbacks.
+This is the MSFA Modern lineage, not a claim of bit-identical DX7 hardware or a
+Dexed Mark I emulation. DX7 is limited to **16 active notes across the song**,
+including release tails, while retaining four owned chord slots per track.
+When over budget, it takes release tails first, then the quietest held notes,
+then fresh attacks. Equal attacks retain root notes across tracks before chord
+extensions, with stable slot/track tie breaking. This policy applies on every
+platform so the same song has the same bounded note allocation. It does not
+change other instruments' polyphony. Preset audition is disabled during playback.
+The limit was selected from R36H measurements and validated in mixed playback.
+
+Genesis FM (YM2612) and Arcade FM (YM2151) now use the same FM Bank/Preset
+browser, EDIT+PLAY audition, confirm/cancel and fine-tune controls. Genesis now
+has **73 presets**: the original 24 and 49 supported melodic programs from
+NeoSoundFonts' CC0 16-Bit FM Music Station bank. Arcade has **81 presets**: the
+original 24 and 57 supported, sounding programs from YMulator-Synth's GPLv3
+collection. The original ChooChoo pair shares its underlying recipes; the new
+source collections provide separate palettes. These are named sound-design
+collections, not claimed recreations of particular game soundtracks. Unsupported
+note offsets, fixed percussion keys, arcade noise settings and silent source
+programs are recorded as exclusions in `expansion-manifest.json`. Their complete
+four-operator patch, envelope,
+LFO, stereo and tuning settings travel inside version-6 instruments and songs.
+The native chip envelope controls release; ordinary tracker gain and pitch do
+not restart it. Genesis DAC output uses a 20 Hz DC blocker. Noise mode and
+channel-3 special-frequency mode are outside this instrument implementation.
+
+For a local external bank, use `tools/chip_banks/import_bank.py SOURCE --output
+NEW_DIRECTORY --writer tracker/build/tests/chip_factory`. It accepts strict
+42-byte TFI, VOPM OPM text, the verified WOPLX format and original-DX7 SysEx.
+Load the resulting `.cni` files through Load Instrument. User imports are kept
+separate from the distributable factory library. OPM files with noise enabled,
+nonzero noise-frequency data or partial panning are rejected with an explanation;
+VOPM pan values 0/64/127 become left/both/right. Binary WOPL is not supported.
+The shared FM catalogue contains **1,064 entries**: 697 OPL, 67 DX7, 146
+OPLL/VRC7, 73 Genesis and 81 Arcade. Another 76 files expose the Sega/Game Boy
+presets through the normal file browser, for **1,140 packaged native presets**.
+Source revisions, hashes, full notices and original source data accompany the
+new collections under `licenses/chip-banks/expansion`.
+
+### Portable factory collections and USER presets
+
+Native chip instruments use **Bank:** to choose ALL, an included collection or
+USER. **Preset:** chooses a sound within that selection. Hold EDIT and press
+Left or Right on either row to cycle; a short EDIT tap opens its chooser.
+
+Included collections are ZIP packs under `instruments/FACTORY/`. USER files go
+under `instruments/USER/<engine>/`: `dx7`, `opll`, `vrc7`, `opl2`, `opl3`,
+`genesis`, `arcade`, `sid`, `sega`, `gb-pulse`, or `gb-noise`.
+Browse folders directly or put a ZIP of compatible presets there. ZIPs remain
+intact on disk. All these folders accept compatible `.cni` files; CNI is
+ChooChoo/ChipNomad's portable instrument format, not a chip manufacturer's standard.
+The USER browser also reads the following source formats, including inside ZIPs:
+
+| USER folder | Additional formats |
+| --- | --- |
+| `dx7` | Yamaha DX7/TX7 `.syx` single voices and 32-voice banks |
+| `genesis` | `.tfi`, DefleMask `.dmp`, Furnace `.fui` |
+| `arcade` | VOPM `.opm` banks, DefleMask `.dmp`, Furnace `.fui` |
+| `opl2`, `opl3` | `.wopl`, `.opli`, `.woplx`, `.sbi`, Furnace `.fui` |
+| `opll`, `vrc7` | Furnace `.fui` custom patches and fixed ROM selections |
+| `sega`, `gb-pulse`, `gb-noise` | Furnace `.fui`, DefleMask `.dmp` |
+| `sid` | GoatTracker 2 `.ins` (GTI5), Furnace `.fui` |
+
+A bank opens into compatible voices. Unsupported files or features report a
+reason; incompatible voices in a mixed bank are excluded while their source
+numbers remain stable. Loading is transactional: a rejected preset leaves the
+current instrument unchanged. Source presets replace the instrument's tracker
+table with an empty one, except DX7 SysEx, which preserves its existing table.
+CNI restores its saved table. Loaded patches are owned by the song and continue
+to work after moving or deleting the source pack.
+
+WOPL banks can contain unused slots without an explicit blank flag. The browser
+omits unnamed slots whose active operators are fully attenuated and have no
+attack. Unnamed playable voices remain available as `Program N [Bbank]` or
+`Drum N [Bbank]`, using the source's zero-based program and bank numbers.
+An unnamed single OPLI instrument uses its filename. Named silent patches are
+retained.
+
+Furnace support covers legacy single-instrument versions 29–112 and feature-based
+`FINS` versions 127–251. DefleMask support covers version 11 OPN, OPM, Sega PSG
+and Game Boy instruments. These are instrument imports, not complete tracker
+players: animated FM/operator macros, source-song FM LFO settings, samples,
+Game Boy hardware command sequences, relative SID pulse/filter macros and SID
+ring/sync dependencies are currently rejected. Constant OPLL ROM selection is
+supported; VRC7 uses its own ROM for that selection. SID-Wizard `.swi` and SID
+music files (`.sid`) are not instrument imports in this build.
+
+Supported PSG/GB/SID sequences are stored in the patch and played at 60 Hz for
+Furnace/DefleMask and 50 Hz for GoatTracker. Those files do not carry a complete
+song's playback configuration: use the original tracker when its song-specific
+tick rate, channel routing, hard-restart behavior or compatibility settings are
+required. For Sega PSG, a duty macro selects the noise voice; without one the
+import uses a tone voice. Game Boy files must be placed in the intended pulse or
+noise folder. Imported sequences currently remain embedded playback data; the
+instrument page edits base parameters, not the source tracker tables.
+
+USER preset cycling continues across files, folders, banks and ZIP packs in
+both directions, wrapping at the ends. Reopening the USER browser follows the
+current selection. ALL includes USER sounds under Unsorted for categorized
+engines; USER remains a separate top-level choice. Sega PSG and Game Boy use
+flat ALL/Factory lists and a hierarchical USER browser, without an Unsorted
+panel. Older DX7 files in `instruments/banks/dx7/` remain accessible in USER.
+
+An engine shows only its compatible included collections. Factory Presets
+combines the included OPLL/VRC7 tone sets for the selected engine; DX7 combines
+ChooChoo and YSE originals. Downloaded named collections remain separate.
+Fat Man 2-op is listed under OPL2 and Fat Man 4-op under OPL3. Compatible OPL2
+CNI files may still be used in OPL3 USER folders.
+
+Native-engine output uses fixed measured gain compensation rather than
+per-preset normalization. Existing native-instrument songs can therefore play
+at a different level; review the balance of saved mixes. The calibration method
+and bounds are documented in `scripts/README_MEASURE.md`.
+
+`native-chip-audition.cct` provides a short sequential audition across the original
+thirteen factory banks. Each section uses a different owned instrument, so it works with
+the preset folder removed. Longer ignored bank WAVs and measured levels are
+listed in `docs/chip-preset-auditions.tsv`; subjective listening remains pending.
+
+### Native chip controls
+
+Native instrument waveform previews refresh when their controls are redrawn.
+FM instruments can overlay their optional Amp env curve; SID keeps its waveform
+preview without that FM-only overlay, including when browsing banks and presets.
+
+All seven FM engines offer **Bright**, **Feedback**, and **Amp env**. Bright
+ranges from -63 to +63, with zero preserving the patch; it changes modulation
+operator levels while retaining carrier levels. Its audible effect depends on
+the algorithm. Feedback defaults to **Preset**, or overrides the native feedback
+with 0–7. These controls do not rewrite the saved native operator bytes.
+
+Amp env defaults to **Bypass**. Select **ADSR** to add attack, decay, sustain,
+release and shape around the native sound. A/D/R use the shared 0–5 second
+quadratic range; sustain runs from silence to full level. Native envelopes still
+run, so this envelope cannot extend a sound beyond its native release. Preset
+browsing preserves the slot's FM amp and tone controls. All FM voices also use
+a 3 ms onset/retrigger transition and 1 ms tracker-gain smoothing, including
+when Amp env is bypassed. Hard cut/panic remains immediate.
+
+The following phrase FX also appear as supported Modulation and motion-recording
+destinations. Values in the FX column are hexadecimal. Settings apply to playback
+without changing the saved instrument. Native GB sweep and envelope controls
+latch at the next note trigger; duty/width and noise frequency can change live.
+
+| Engines | FX | Control |
+|---|---|---|
+| Native FM | `OL1`–`OL6` | Absolute operator output levels: OPLL/VRC7 modulator and OPL `00–3F`; OPLL/VRC7 carrier `00–0F`; Genesis/Arcade `00–7F`; DX7 `00–63` (0–99). Higher means greater output. Only supported operators appear. |
+| OPLL/VRC7/OPL2/OPL3 | `OAR`, `ODR`, `ORR`, `OSL` | Operator 1 attack, decay, release and sustain attenuation, `00–0F`. |
+| OPLL/VRC7/OPL2/OPL3/Genesis/Arcade | `OMU 00–0F` | Operator 1 frequency multiplier. |
+| Genesis/Arcade | `LFR` | Native LFO rate: Genesis `00–07`, Arcade `00–FF`. |
+| Arcade | `LAD`, `LPD 00–7F` | Separate LFO amplitude and pitch depths. |
+| Genesis/Arcade | `LAS`, `LEN` | Native amplitude sensitivity `00–03` and LFO enable `00–01`. |
+| Genesis/Arcade | `LPS 00–07` | Native pitch sensitivity. |
+| SID | `SAT`, `SDE`, `SSU`, `SRL 00–0F` | Native attack, decay, sustain and release. Time values increase toward `0F`; sustain increases toward full level. |
+| SID | `SPR 01–10` | Silent partner frequency from 1× to 16×; affects ring modulation and hard sync. |
+| All native FM | `FBK 00–07` | Absolute native feedback, initialized from the instrument. |
+| All native FM with Amp env enabled; Sega/GB | `EAT`, `EDC`, `ESU`, `ERL`, `ESH 00–FF` | Attack, decay, sustain, release, shape. These do not enable a bypassed FM amp. |
+| Sega PSG | `CMD 00–02`, `CNR 00–03` | Tone / white noise / periodic noise; three fixed noise rates or tone-derived rate. |
+| GB Pulse | `CMD 00–03` | Native pulse duty. |
+| GB Noise | `CMD 00–01`, `CND 00–07`, `CNS 00–0D` | Noise width, clock divisor and shift. |
+| GB Pulse | `CSP 00–07`, `CSS 00–07`, `CSD 00–01` | Sweep period, shift, downward direction. |
+| GB Pulse / Noise | `CEI 00–0F`, `CEP 00–07`, `CED 00–01` | Native envelope initial level, period, rising direction. |
+
+Native FX selection uses the instrument in the phrase row's `I` column, or the
+active instrument found by looking backward when `I` is blank. The FX popup
+shows a short control description, its current preset value and valid command
+range in a compact block. Selecting a different
+native effect starts at that value; reopening the same effect preserves its
+edited value. A multi-row selection resolves each row's instrument separately.
+Tables use their instrument context. Native value edits stop at their legal
+endpoints, including duty, noise, sweep, ADSR, feedback and operator levels.
+The values are hexadecimal: for example, DX7's maximum `63` means decimal 99.
+
+These FM commands use absolute native values. Operator commands always target
+operator 1; `OMU 03` selects its multiplier 3. DX7's tracker-specific controls
+are operator levels and feedback. Preset/Range keeps its information color;
+titles and descriptions follow the same colors as FM Feedback.
+
+Live Modulation retains its full set of fixed-operator native destinations.
+Motion recording writes only controls represented by the compact tracker list;
+operator parameters record for operator 1 only. Other modulation destinations
+continue to work live but do not generate phrase commands.
+
+`SCP` and `SCT` retain byte-scaled mappings to SID registers wider than 8 bits.
+`SMR 01–C8`, `SWV 01–08` and `SPR 01–10` now match the native preset numbering.
+Displayed preset values are base settings, independent of the playing envelope
+or LFO. `SLE` works on operator levels and the direct FM parameters without
+retriggering the note or changing the stored patch.
+
+All native FX have descriptive titles, ranges and behavior in the phrase
+FX chooser, plus value hints. `CMD` describes tone/noise, duty or noise width
+according to the selected instrument. These controls supplement the shared
+Track, Envelope and Modulation groups; the engine group alone is not the full
+set of available phrase effects.
+
+The existing shared LP/BP/HP filters on Braids, Plaits, PCM and other supported
+engines are software processing after synthesis. aChChid instead uses its native
+303 filter path. This round adds no filter to AY or native FM; brightness changes
+FM synthesis itself. Track inserts remain available for additional processing.
+
+Native instruments save in CNI version 7 (8 when absolute commands are present),
+and native songs in CCT version 9. Instruments containing imported sequences
+use CNI version 9 and songs containing them use CCT version 10. Older builds
+cannot open those newer sequence-bearing files. Stored FM preset bytes and
+instrument-page tone settings remain unchanged.
+
+### Handheld workload guidance for native chips
+
+There are eight song tracks and **two insert-effect slots per track**. The
+sixteen available slots do not guarantee enough CPU to run sixteen effects.
+DX7's sixteen-active-note limit is a separate song-wide synthesis budget;
+chords and release tails count toward it.
+
+In R36H measurements, four looping WAV tracks, Sega PSG, GB Pulse, DX7 and
+OPL3 with shared sends and four inserts (two Compressors, Doubler, TAPESCAM)
+performed better than dense eight-track FM arrangements. The single-note
+version had no render deadline misses in its thirty-second 48 kHz/512-frame
+measurement; adding a four-note DX7 chord had one timing spike. Dense FM songs
+with many expensive inserts exceeded the CPU budget. Preserve some headroom,
+watch the existing overload indicator, and add effects where they help the song.
+The app retains every track and slot; there is no new hard limit on insert count.
+See `chip-instruments-report.md` for full measurements and sustained-test status.
+
+The matching 70-second physical audio test of that balanced chord arrangement
+passed with no render deadline misses or logged ALSA underruns at the existing
+48 kHz / 4906-frame setting. Its worst callback was 81.819 ms against a
+102.208 ms deadline. Tests used a separate master gain of 0.4 for headroom.
+Keep the regular launcher's direct-card `AUDIODEV=plughw:0,0` route: the system's
+default shared mixer produced underruns in the diagnostic probes. No user audio
+setting was changed. The ten-minute smaller-buffer stress test still recorded
+28 timing spikes; the complete results are in the report.
+
+
+### SID instruments and Phrase FX
+
+Choose **CHIP → SID**. Bank offers **ChooChoo SID Originals** (32 authored
+programs) and **SIDkit Effects** (24 MIT-licensed effects). Both use the same
+preset browser and save their complete selected program inside the instrument
+and song. No external bank is required when sharing the song. These are native
+SID parameter programs with envelopes and motion recipes, not sampled audio or
+complete C64 songs. The separate twelve GoatTracker research candidates are
+not shipped; their wave/pulse/filter tables need a dedicated importer/player.
+
+The instrument page exposes waveform/pulse width, filter mode/cutoff/resonance
+and native ADSR controls. SID uses the pinned floooh/chips digital oscillator,
+envelope and per-cycle 6581-style filter. There are no alternate chip models,
+revision selectors or added character profiles. This is a generic approximation,
+not a calibrated R2/R3/R4/8580 analogue model.
+
+Each note has its own filter. Ring/sync use a silent partner oscillator, so
+filter sharing and three-voice interactions differ from a physical SID.
+The handheld has a song-wide budget of four ordinary SID notes. Ring or sync
+costs two budget units per note, allowing two such notes, or one plus two
+ordinary notes. Chords and release tails count. Released notes are retired
+first; new notes take priority over older held notes. Expensive inserts and
+other synths still share the audio CPU budget.
+
+| FX | Range | Action |
+| --- | --- | --- |
+| `SCP` | `00–FF` | Pulse-width base, scaled to native 12-bit width; recipe pulse motion remains active. |
+| `SCT` | `00–FF` | Cutoff base, scaled to native 11-bit cutoff; recipe filter motion remains active. |
+| `SRN` | `00–0F` | Native resonance. |
+| `SWV` | `00–07` | Triangle, saw, tri+saw, pulse, tri+pulse, saw+pulse, tri+saw+pulse, noise. |
+| `SFI` | `00–07` | Filter mode bits: 1 low-pass, 2 band-pass, 4 high-pass; 0 bypass. |
+| `SMR` | `00–FF` | Recipe macro clock, scaled from 1 to 200 Hz. |
+| `SRG` | `00–01` | Triangle ring modulation with silent partner. |
+| `SSY` | `00–01` | Oscillator sync with silent partner. |
+
+Pulse width and cutoff support `SLE`. Discrete waveforms, switches, resonance
+and FM feedback retain their useful native steps; wider byte values would not
+create more hardware states. `FBK` directly selects feedback `00–07`.
+Operator levels use the engine-specific ranges listed above. Brightness and
+master adjustments retain the full byte range.
+
+### Portable factory collections and USER presets
+
+Native chip instruments use **Bank:** to choose ALL, an included collection or
+USER. **Preset:** chooses a sound within that selection. Hold EDIT and press
+Left or Right on either row to cycle; a short EDIT tap opens its chooser.
+
+Included collections are ZIP packs under `instruments/FACTORY/`. USER files go
+under `instruments/USER/<engine>/`: `dx7`, `opll`, `vrc7`, `opl2`, `opl3`,
+`genesis`, `arcade`, `sid`, `sega`, `gb-pulse`, or `gb-noise`.
+Browse your folders directly, or put a ZIP of folders and compatible `.cni`
+presets there. DX7 also accepts supported `.syx` single voices and 32-voice
+banks, including inside ZIPs. ZIPs remain intact on disk. Direct WOPL/WOPLX loading is not supported;
+use compatible CNI presets or convert supported source formats offline first.
+
+USER preset cycling continues across files, folders, banks and ZIP packs in
+both directions, wrapping at the ends. Reopening the USER browser follows the
+current selection. ALL includes USER sounds under Unsorted for categorized
+engines; USER remains a separate top-level choice. Sega PSG and Game Boy use
+flat ALL/Factory lists and a hierarchical USER browser, without an Unsorted
+panel. Older DX7 files in `instruments/banks/dx7/` remain accessible in USER.
+
+An engine shows only its compatible included collections. Factory Presets
+combines the included OPLL/VRC7 tone sets for the selected engine; DX7 combines
+ChooChoo and YSE originals. Downloaded named collections remain separate.
+Fat Man 2-op is listed under OPL2 and Fat Man 4-op under OPL3. Compatible OPL2
+CNI files may still be used in OPL3 USER folders.
+
+Native-engine output uses fixed measured gain compensation rather than
+per-preset normalization. Existing native-instrument songs can therefore play
+at a different level; review the balance of saved mixes. The calibration method
+and bounds are documented in `scripts/README_MEASURE.md`.

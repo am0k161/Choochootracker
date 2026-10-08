@@ -14,6 +14,26 @@ TEST_CASE("fixed chord palette and inversions") {
   CHECK(pitches[0] == 40);
   CHECK(pitches[1] == 43);
   CHECK(pitches[2] == 48);
+  CHECK(chordBuild(36, 0, 0x04, 96, pitches) == 3); // Drop-2.
+  CHECK(pitches[0] == 28);
+  CHECK(pitches[1] == 36);
+  CHECK(pitches[2] == 43);
+  CHECK(chordBuild(36, 0, 0x08, 96, pitches) == 3); // Drop-3.
+  CHECK(pitches[0] == 24);
+  CHECK(pitches[1] == 40);
+  CHECK(pitches[2] == 43);
+  CHECK(chordBuild(36, 7, 0x0d, 96, pitches) == 4); // First inversion, drop-2 and drop-3.
+  CHECK(pitches[0] == 31);
+  CHECK(pitches[1] == 35);
+  CHECK(pitches[2] == 40);
+  CHECK(pitches[3] == 48);
+  uint32_t voicings[16] = {};
+  for (uint8_t inversion = 0; inversion < 16; ++inversion) {
+    CHECK(chordBuild(36, 0, inversion, 96, pitches) == 3);
+    voicings[inversion] = pitches[0] | (pitches[1] << 8) | (pitches[2] << 16);
+    for (uint8_t earlier = 0; earlier < inversion; ++earlier)
+      CHECK(voicings[inversion] != voicings[earlier]);
+  }
   CHECK(chordBuild(36, 7, 0, 96, pitches) == 4);
   CHECK(pitches[3] == 47);
   CHECK(chordMaxInversion(0) == 2);
@@ -24,9 +44,9 @@ TEST_CASE("fixed chord palette and inversions") {
     CHECK(count <= CHORD_MAX_VOICES);
   }
   CHECK(chordBuild(36, 0, 0x0f, 96, pitches) == 3);
-  CHECK(pitches[0] == 43);
+  CHECK(pitches[0] == 36);
   CHECK(chordBuild(0, 0, 0x0f, 96, pitches) == 3);
-  CHECK(pitches[0] == 7);
+  CHECK(pitches[0] == 0);
 }
 
 TEST_CASE("CRD is same-row only and quantizes every chord note") {

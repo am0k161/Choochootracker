@@ -12,6 +12,9 @@ make -j4 windows
 ```
 
 The executable and bundled files are written to `tracker/build/windows/`.
+The Windows makefile enables `_USE_MATH_DEFINES` before compiling, so the
+vendored SID core can use the CRT math constants under C++17. The Docker
+cross-build enables the same flag.
 
 The ChooChooPlayer visualizer uses the same Windows toolchain:
 
@@ -89,6 +92,13 @@ curl -L -o /usr/local/bin/appimagetool https://github.com/AppImage/AppImageKit/r
 chmod +x /usr/local/bin/appimagetool
 ```
 
+The GitHub Actions workflow `.github/workflows/appimage.yml` builds the
+AppImage inside a `debian:10` container (glibc 2.28, packages from
+`archive.debian.org`) so it runs on Debian 10+ and Ubuntu 20.04+ including
+22.04. Trigger it by hand (`workflow_dispatch`), by pushing `linux-appimage`
+or a `v*` tag; the AppImage is uploaded as the `choochootracker-appimage`
+artifact.
+
 `fileGetDefaultDirectory()` (`src/corelib/corelib_file.cpp`) detects the
 `APPIMAGE` environment variable the AppImage runtime sets and resolves
 settings/autosave to `$XDG_DATA_HOME/ChooChooTracker`, falling back to
@@ -106,6 +116,9 @@ top-level bonus directory independently and only if it's missing on the
 destination - so an interrupted first run, or a user who already created
 their own e.g. `projects` folder before the rest was seeded, still gets the
 remaining bonus content on a later launch instead of never seeing it.
+`AppRun` then starts the executable from that workspace, so relative assets
+including the animated title artwork resolve from the writable copy rather
+than the read-only mount (or the caller's current directory).
 `initDefaultAppSettings()` (`src/common.cpp`) points
 `projectPath`/`samplePath`/`themePath`/etc at that same directory when
 `fileIsRunningFromAppImage()` is true - normal desktop builds keep their
@@ -243,6 +256,25 @@ cd tracker
 make -f Makefile.test -j4
 ```
 
+On Windows (`OS=Windows_NT`), the test makefile enables `_USE_MATH_DEFINES`,
+matching the application build's CRT math constants for the vendored SID core.
+
 If MSYS2 reports exit code 127 after `Built: build/tests/run_tests.exe`, run
 `build/tests/run_tests.exe` directly; the executable is the authoritative test
 result in that environment.
+
+## Native chip instruments
+
+The normal builds include the native instruments and shipped preset catalog.
+Synth core sources live under `chipnomad_lib/external/`; each new dependency
+includes its license and provenance. Preset source licenses are packaged under
+`tracker/packaging/common/licenses/`. See `docs/native-chip-instruments.md`.
+
+PortMaster appends `-O3` only for native synth cores and adapters through
+`Makefile.native-chip-flags`; other platform and audio settings are unchanged.
+The native UI/audio harnesses are developer-only targets in
+`Makefile.native-chip-device` and are not included in release packages.
+
+To regenerate factory data, build `chip-factory` with `Makefile.test`, then use
+`tools/chip_banks/convert.py` and the documented expansion/SID conversion tools.
+The ordinary build uses the checked-in presets and needs no network access.

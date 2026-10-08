@@ -29,6 +29,10 @@ struct MidiRouterState {
   uint8_t heldChannels[MIDI_ROUTER_HELD_NOTES_MAX];
   int heldInstrument[MIDI_ROUTER_HELD_NOTES_MAX];
   int heldCount;
+  uint8_t ccValues[16][128];
+  uint32_t ccSerials[16][128];
+  MidiCCIntent lastCC{};
+  uint32_t ccSerial;
 
   // Reserved for future PRs - not branched on anywhere yet.
   MidiInputMode inputMode;
@@ -177,6 +181,13 @@ int midiRouterTick(MidiRouterState* router, int fallbackInstrument, MidiPreviewI
   while (g_backend->pollInput(g_backend->userdata, &event)) {
     uint8_t messageType = event.type & 0xf0;
     uint8_t channel = event.channel & 0x0f;
+    if (messageType == 0xb0) {
+      router->ccValues[channel][event.data1 & 0x7f] = event.data2 & 0x7f;
+      router->ccSerials[channel][event.data1 & 0x7f] = router->ccSerial + 1;
+      router->lastCC = {channel, (uint8_t)(event.data1 & 0x7f), (uint8_t)(event.data2 & 0x7f)};
+      router->ccSerial++;
+      continue;
+    }
     int8_t mapped = router->channelInstrument[channel];
     int instrument = mapped >= 0 ? mapped : fallbackInstrument;
 
@@ -226,4 +237,20 @@ int midiRouterTick(MidiRouterState* router, int fallbackInstrument, MidiPreviewI
     }
   }
   return count;
+}
+
+int midiRouterGetCCValue(const MidiRouterState* router, uint8_t channel, uint8_t cc,
+                         uint8_t* value, uint32_t* serial) {
+  if (!router) return 0;
+  channel &= 0x0f; cc &= 0x7f;
+  if (value) *value = router->ccValues[channel][cc];
+  if (serial) *serial = router->ccSerials[channel][cc];
+  return router->ccSerials[channel][cc] != 0;
+}
+
+int midiRouterGetLastCC(const MidiRouterState* router, MidiCCIntent* out, uint32_t* serial) {
+  if (!router || !out || !serial) return 0;
+  *out = router->lastCC;
+  *serial = router->ccSerial;
+  return router->ccSerial != 0;
 }

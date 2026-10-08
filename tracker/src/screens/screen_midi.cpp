@@ -63,8 +63,8 @@ static void drawCursor(int col, int row) {
     midiDeviceLabel(row == 0, row == 0 ? appSettings.midiInputDevice : appSettings.midiOutputDevice,
       row == 0 ? appSettings.midiInputDeviceName : appSettings.midiOutputDeviceName, name, sizeof(name));
     gfxCursor(DEVICE_FIELD_X, 2 + row, (int)strlen(name));
-  } else if (row == 2 && col == 0) {
-    gfxCursor(0, 5, (int)strlen("Channel mapping"));
+  } else if ((row == 2 || row == 3) && col == 0) {
+    gfxCursor(0, 5 + row - 2, (int)strlen(row == 2 ? "Channel mapping" : "MIDI CC mapping"));
   }
 }
 
@@ -94,6 +94,9 @@ static void drawField(int col, int row, CellState state) {
   } else if (row == 2 && col == 0) {
     gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
     gfxPrint(0, 5, "Channel mapping");
+  } else if (row == 3 && col == 0) {
+    gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
+    gfxPrint(0, 6, "MIDI CC mapping");
   }
 }
 
@@ -138,12 +141,16 @@ static int onEdit(int col, int row, CellEditAction action) {
   } else if (row == 2 && col == 0 && action == CellEditAction::tap) {
     screenSetup(&screenMidiChannelMap, 0);
     return 0;
+  } else if (row == 3 && col == 0 && action == CellEditAction::tap) {
+    extern const AppScreen screenMidiCC;
+    screenSetup(&screenMidiCC, 0);
+    return 0;
   }
   return 0;
 }
 
 static ScreenData screenMidiData = {
-  .rows = 3,
+  .rows = 4,
   .cursorRow = 0,
   .cursorCol = 0,
   .topRow = 0,

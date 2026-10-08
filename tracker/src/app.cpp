@@ -10,8 +10,8 @@
 #include "chipnomad_lib.h"
 #include "project_utils.h"
 #include "waveform_display.h"
-#include "monitor_display.h"
 #include "piano_display.h"
+#include "monitor_display.h"
 #include "corelib_input.h"
 #include "corelib_keymap.h"
 #include "screens/screen_quick_help.h"
@@ -50,6 +50,10 @@ static int motionLiveLatched;
 static int quickHelpSelectHeld;
 static int quickHelpSelectAlone;
 static int audioProjectDirty;
+static MidiCCMapping midiCCApplied[PROJECT_MAX_MIDI_CC_MAPPINGS];
+static uint8_t midiCCAppliedValue[PROJECT_MAX_MIDI_CC_MAPPINGS];
+static uint8_t midiCCAppliedValid[PROJECT_MAX_MIDI_CC_MAPPINGS];
+static uint32_t midiCCAppliedSerial[PROJECT_MAX_MIDI_CC_MAPPINGS];
 
 // Port indices aren't saved (see common.h's AppSettings comment): this
 // resolves the saved device name back to whatever live port currently has
@@ -280,6 +284,28 @@ static int inputPlayback(int keys, int tapCount) {
 * @param keys Pressed buttons
 * @param tapCount number of taps
 */
+static bool inputBranchNavigation(int keys) {
+  if (keys != (keyShift | keyLeft) && keys != (keyShift | keyRight)) return false;
+  int column = -1;
+  if (currentScreen == &screenProject || currentScreen == &screenSettings ||
+      currentScreen == &screenSynthSettings || currentScreen == &screenMixerSettings ||
+      currentScreen == &screenGraphicsSettings || currentScreen == &screenTrackVisuals ||
+      currentScreen == &screenMidi || currentScreen == &screenMidiChannelMap ||
+      currentScreen == &screenMidiCC) column = 1;
+  else if (currentScreen == &screenGroove) column = 3;
+  else if (currentScreen == &screenModulation || currentScreen == &screenInsertFX) column = 4;
+  else if (currentScreen == &screenAYWavetable) column = 5;
+  if (column < 0) return false;
+  const AppScreen* spine[] = {&screenMixer, &screenSong, &screenChain,
+                             &screenPhrase, &screenInstrument, &screenTable};
+  column += keys & keyRight ? 1 : -1;
+  if (column > 5) column = 5;
+  chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
+  screenMessage(0, "");
+  screenSetup(spine[column], column >= 4 ? cInstrument : -1);
+  return true;
+}
+
 static void appInput(int isKeyDown, int keys, int tapCount) {
   // Stop phrase row and preview. While the sample settings screen is doing
   // a LAZY full-sample playback (tap PLAY toggles it), the PLAY release
@@ -289,13 +315,16 @@ static void appInput(int isKeyDown, int keys, int tapCount) {
     chipnomadQueuePlaybackStop(chipnomadState);
   }
   // Let screen handle input first, then try global playback if not handled
-  if (!currentScreen->onInput(isKeyDown, keys, tapCount)) {
+  if (!(isKeyDown && inputBranchNavigation(keys)) &&
+      !currentScreen->onInput(isKeyDown, keys, tapCount)) {
     if (isKeyDown) {
       inputPlayback(keys, tapCount);
     }
   }
   // The UI owns Project. Coalesce edits into one snapshot for the next audio tick.
-  if (isKeyDown) audioProjectDirty = 1;
+  // Popup choices (including native presets) commit on release. Publish those
+  // edits too, even if no further button is pressed while the song plays.
+  audioProjectDirty = 1;
 }
 
 
@@ -451,7 +480,7 @@ void appDraw(void) {
   screenDraw();
 
   if (currentScreen == &screenTitle ||
-      (currentScreen == &screenSelectionPopup && selectionPopupIsFullWidth())) return;
+      currentScreen == &screenSelectionPopup) return;
 
   if (!chipnomadState) return;
 
@@ -544,7 +573,7 @@ void appOnEvent(MainLoopEventData eventData) {
     if (currentScreen == &screenPhrase && phraseKeyJazzHandleRawKey(eventData.data.input, 1)) break;
     if (currentScreen == &screenSong && songKeyJazzHandleRawKey(eventData.data.input, 1)) break;
     if (currentScreen == &screenChain && chainKeyJazzHandleRawKey(eventData.data.input, 1)) break;
-    if (currentScreen == &screenProject && projectKeyJazzHandleRawKey(eventData.data.input, 1)) break;
+    if (keyJazzTextHandleRawKey(eventData.data.input, 1, currentScreen)) break;
 #endif
 
     if (!rawInputActive && (isMotionRecordTrigger(eventData.data.input) ||
@@ -624,7 +653,7 @@ void appOnEvent(MainLoopEventData eventData) {
     if (currentScreen == &screenPhrase && phraseKeyJazzHandleRawKey(eventData.data.input, 0)) break;
     if (currentScreen == &screenSong && songKeyJazzHandleRawKey(eventData.data.input, 0)) break;
     if (currentScreen == &screenChain && chainKeyJazzHandleRawKey(eventData.data.input, 0)) break;
-    if (currentScreen == &screenProject && projectKeyJazzHandleRawKey(eventData.data.input, 0)) break;
+    if (keyJazzTextHandleRawKey(eventData.data.input, 0, currentScreen)) break;
 #endif
     int value = inputCodeToKey(eventData.data.input);
     int rawInputActive = inputRawCallback != NULL;
@@ -728,6 +757,56 @@ void appOnEvent(MainLoopEventData eventData) {
           } else if (!instrumentIsEmpty(&chipnomadState->project, intents[i].instrument)) {
             chipnomadQueuePlaybackPreviewNote(chipnomadState, *pSongTrack, intents[i].note, intents[i].instrument);
           }
+        }
+      }
+      for (int i = 0; i < PROJECT_MAX_MIDI_CC_MAPPINGS; ++i) {
+        MidiCCMapping& mapping = chipnomadState->project.midiCCMappings[i];
+        int globalTrack = mapping.destination >= midiCCDestinationTrackMute &&
+          mapping.destination <= midiCCDestinationTrackDelaySend;
+        int valid = mapping.enabled && mapping.channel < 16 && mapping.cc < 128 &&
+          (mapping.destination == midiCCDestinationSongPlayStop ||
+           (globalTrack && mapping.instrument < PROJECT_MAX_TRACKS) ||
+           (mapping.instrument < PROJECT_MAX_INSTRUMENTS &&
+            instrumentCCDestinationAvailable(&chipnomadState->project.instruments[mapping.instrument], mapping.destination)));
+        int changed = !midiCCAppliedValid[i] || memcmp(&mapping, &midiCCApplied[i], sizeof(mapping)) != 0;
+        uint8_t value = 0; uint32_t serial = 0;
+        int received = valid && midiRouterGetCCValue(chipnomadState->midiRouter, mapping.channel, mapping.cc, &value, &serial);
+        if (valid && changed) {
+          midiCCApplied[i] = mapping;
+          midiCCAppliedValue[i] = 0;
+          midiCCAppliedValid[i] = 1;
+          // Soft takeover: a mapping must see a new physical CC movement
+          // after it is assigned, so MIDI Learn cannot overwrite a patch
+          // with the controller's stale (often zero) position.
+          midiCCAppliedSerial[i] = serial;
+        } else if (valid && received && serial != midiCCAppliedSerial[i]) {
+          if (mapping.destination == midiCCDestinationSongPlayStop) {
+            if (value >= 64 && midiCCAppliedValue[i] < 64 && !chipnomadGetPlaybackStatus(chipnomadState)->isPlaying)
+              chipnomadQueuePlaybackStartSong(chipnomadState, *pSongRow, 0, 1);
+            else if (value < 64 && midiCCAppliedValue[i] >= 64 && chipnomadGetPlaybackStatus(chipnomadState)->isPlaying)
+              chipnomadQueuePlaybackStop(chipnomadState);
+          } else if (globalTrack) {
+            int track = mapping.instrument;
+            if (mapping.destination == midiCCDestinationTrackMute &&
+                ((value >= 64) != (audioManager.trackStates[track] == TRACK_MUTED))) audioManager.toggleTrackMute(track);
+            else if (mapping.destination == midiCCDestinationTrackSolo &&
+                     ((value >= 64) != (audioManager.trackStates[track] == TRACK_SOLO))) audioManager.toggleTrackSolo(track);
+            else if (mapping.destination == midiCCDestinationTrackVolume)
+              chipnomadState->project.trackVolume[track] = (uint8_t)((value * 100 + 63) / 127);
+            else if (mapping.destination == midiCCDestinationTrackReverbSend)
+              chipnomadState->project.trackReverbSend[track] = (uint8_t)((value * 100 + 63) / 127);
+            else if (mapping.destination == midiCCDestinationTrackDelaySend)
+              chipnomadState->project.trackDelaySend[track] = (uint8_t)((value * 100 + 63) / 127);
+          } else {
+            instrumentSetCCDestination(&chipnomadState->project.instruments[mapping.instrument], mapping.destination, value);
+          }
+          midiCCAppliedValue[i] = value;
+          midiCCAppliedSerial[i] = serial;
+          projectModified = 1;
+          audioProjectDirty = 1;
+          if (currentScreen) currentScreen->fullRedraw();
+        } else if (!valid && midiCCAppliedValid[i]) {
+          midiCCAppliedValid[i] = 0;
         }
       }
     }

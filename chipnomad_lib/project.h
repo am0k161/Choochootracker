@@ -211,12 +211,41 @@ enum FX {
   // Appended to preserve project FX IDs.
   fxSLI,
 
+  // Native tone controls append IDs to preserve existing projects.
+  fxFBR, fxFFB,
+  fxCMD, fxCNR, fxCND, fxCNS, fxCSP, fxCSS, fxCSD, fxCEI, fxCEP, fxCED,
+  fxFO1, fxFO2, fxFO3, fxFO4, fxFO5, fxFO6,
+  fxSCP, fxSCT, fxSRN, fxSWV, fxSFTY, fxSMR, fxSRG, fxSSY,
+  fxFET, fxFTD, fxFDT, fxFHR, fxFLR, fxFLD,
+  fxSAT, fxSDE, fxSSU, fxSRL, fxSPR,
+  // Absolute native output levels. Earlier personal command IDs are retired.
+  fxOL1, fxOL2, fxOL3, fxOL4, fxOL5, fxOL6,
+  fxFBK,
+  // Direct FM parameter IDs are also used by fixed-operator modulation.
+  // Leave the removed selector ID unassigned; keep saved command IDs stable.
+  fxOAR = fxFBK + 2, fxODR, fxOSR, fxORR, fxOSL, fxODT, fxOMU, fxOFI, fxOFM, fxOE1, fxOE2, fxOE4,
+  fxLFR, fxLAD, fxLPD, fxLAS, fxLPS, fxLEN,
+  // Absolute panorama controls. Appended to preserve project FX IDs.
+  fxPAN, // Instrument pan
+  fxTPN, // Track pan
   // Total count - must be last
   fxTotalCount
 };
 
 static_assert(fxTotalCount < 255, "FX identifiers must not collide with FF");
 static_assert(fxF28 - fxF11 == 15, "Contiguous insert commands");
+
+struct NativeFXInfo {
+  int maximum;
+  int preset;
+  bool relative;
+  int minimum = 0;
+  const char* label = nullptr;
+};
+bool instrumentNativeFXInfo(const Instrument* instrument, int fx, NativeFXInfo* info, int op = 0);
+bool instrumentDirectFMInfo(const Instrument* instrument, int fx, NativeFXInfo* info, int op = 0);
+const char* directFMName(int fx);
+int instrumentFMOperatorCount(const Instrument* instrument);
 
 enum ScalePreset : uint8_t {
   scaleChromatic,
@@ -339,6 +368,14 @@ struct PitchTable {
   char noteNames[PROJECT_MAX_PITCHES][4];
 };
 
+struct MidiCCMapping {
+  uint8_t enabled;
+  uint8_t channel;
+  uint8_t cc;
+  uint8_t instrument;
+  uint8_t destination;
+};
+
 struct Project {
   char title[PROJECT_TITLE_LENGTH + 1];
   char author[PROJECT_TITLE_LENGTH + 1];
@@ -364,6 +401,7 @@ struct Project {
 
   int tracksCount;
   uint8_t trackVolume[PROJECT_MAX_TRACKS];
+  uint8_t trackPan[PROJECT_MAX_TRACKS];
   uint8_t trackReverbSend[PROJECT_MAX_TRACKS];
   uint8_t trackDelaySend[PROJECT_MAX_TRACKS];
   uint8_t trackTilt[PROJECT_MAX_TRACKS];
@@ -382,6 +420,7 @@ struct Project {
   // 1 = write slice points into the WAV (cue chunks), 2 = keep them in the
   // project only. Set by the save dialog's "don't ask again" checkbox.
   uint8_t sampleSaveChoice;
+  MidiCCMapping midiCCMappings[PROJECT_MAX_MIDI_CC_MAPPINGS];
 
   PitchTable pitchTable;
 
@@ -415,6 +454,7 @@ int projectSave(Project* p, const char* path);
 int instrumentSave(Project* p, const char* path, int instrumentIdx);
 // Load instrument from a file
 int instrumentLoad(Project* p, const char* path, int instrumentIdx);
+int instrumentLoadMemory(Project* p, const uint8_t* bytes, size_t size, int instrumentIdx);
 
 // Is chain empty?
 int8_t chainIsEmpty(Project* p, int chain);

@@ -58,6 +58,9 @@ struct PlaybackNoteState {
 
   PlaybackTableState instrumentTable;
   PlaybackTableState auxTable;
+  NativeFMValues nativeFM;
+  NativeFMValues nativeFMCurrent;
+  NativeFMValues nativeFMRemaining;
   PlaybackFXState fx[256]; // Active FX on this note, indexed by FX enum
 
   PlaybackModState modulation[4]; // Modulation states
@@ -133,6 +136,11 @@ struct PlaybackTrackState {
   uint8_t sliceBypass;
 };
 
+struct MidiCCRuntime {
+  uint8_t active;
+  uint8_t value;
+};
+
 struct PlaybackAYChipState {
   uint8_t envShape;
 };
@@ -181,6 +189,7 @@ struct PlaybackState {
   uint8_t scaleRoot;
   ScalePreset scalePreset;
   uint8_t scaleFXCommandSeen;
+  MidiCCRuntime midiCC[PROJECT_MAX_INSTRUMENTS][16];
 };
 
 // FX typedefs

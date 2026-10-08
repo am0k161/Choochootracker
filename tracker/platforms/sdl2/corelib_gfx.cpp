@@ -113,6 +113,15 @@ static int titleLogicalSizeActive = 0;
 static SDL_Texture* titleTexture = NULL;
 static void drawTrackerLabel(const char* text, int centerX, int y, int color);
 
+static Uint32 nativeTexturePixelFormat(void) {
+#ifdef MIYOOPORTS_BUILD
+  // MMIYOO documents ARGB8888 as its only confirmed correct 32-bit format.
+  return SDL_PIXELFORMAT_ARGB8888;
+#else
+  return SDL_PIXELFORMAT_RGBA8888;
+#endif
+}
+
 static void setTextureNearest(SDL_Texture* texture) {
 #if SDL_VERSION_ATLEAST(2, 0, 12)
   if (texture) SDL_SetTextureScaleMode(texture, SDL_ScaleModeNearest);
@@ -125,6 +134,16 @@ static void setTextureNearest(SDL_Texture* texture) {
 
 #ifndef WEB_BUILD
 static void useCompositionTarget(void) {
+#ifdef MIYOOPORTS_BUILD
+  // The MMIYOO backend does not reliably support render-target textures.
+  // Its physical display is already the tracker's native 640x480 canvas, so
+  // render straight to the window instead of composing through an offscreen
+  // texture. This also avoids a full-screen copy for every UI frame.
+  SDL_SetRenderTarget(renderer, NULL);
+  SDL_RenderSetLogicalSize(renderer, logicalW, logicalH);
+  SDL_RenderSetViewport(renderer, NULL);
+  SDL_RenderSetScale(renderer, 1.0f, 1.0f);
+#else
   SDL_SetRenderTarget(renderer, compositionTexture);
   // A render target already has the tracker canvas's native dimensions.
   // Do not inherit the physical window's logical viewport or scale after a
@@ -133,9 +152,14 @@ static void useCompositionTarget(void) {
   SDL_RenderSetLogicalSize(renderer, 0, 0);
   SDL_RenderSetViewport(renderer, NULL);
   SDL_RenderSetScale(renderer, 1.0f, 1.0f);
+#endif
 }
 
 static int createCompositionTexture(void) {
+#ifdef MIYOOPORTS_BUILD
+  useCompositionTarget();
+  return 1;
+#else
   compositionTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
     SDL_TEXTUREACCESS_TARGET, logicalW, logicalH);
   if (!compositionTexture) return 0;
@@ -145,6 +169,7 @@ static int createCompositionTexture(void) {
   setTextureNearest(compositionTexture);
   useCompositionTarget();
   return 1;
+#endif
 }
 
 static void destroyCompositionTexture(void) {
@@ -251,7 +276,13 @@ GfxImage* gfxImageLoadBMP(const char* path) {
   if (!surface) return NULL;
   const int width = surface->w;
   const int height = surface->h;
-  SDL_Surface* rgba = SDL_ConvertSurfaceFormat(surface, SDL_PIXELFORMAT_RGBA32, 0);
+  SDL_Surface* rgba = SDL_ConvertSurfaceFormat(surface,
+#ifdef MIYOOPORTS_BUILD
+    SDL_PIXELFORMAT_ARGB8888,
+#else
+    SDL_PIXELFORMAT_RGBA32,
+#endif
+    0);
   SDL_FreeSurface(surface);
   if (!rgba) return NULL;
   uint8_t* pixels = (uint8_t*)rgba->pixels;
@@ -299,7 +330,7 @@ void gfxImageDrawCrop(const GfxImage* image, int sourceX, int sourceY,
 void gfxTitleBegin(void) {
   if (!titleLogicalSizeActive) {
     SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
-    titleTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888,
+    titleTexture = SDL_CreateTexture(renderer, nativeTexturePixelFormat(),
       SDL_TEXTUREACCESS_TARGET, 256, 224);
     if (!titleTexture) return;
     SDL_SetTextureBlendMode(titleTexture, SDL_BLENDMODE_NONE);
@@ -436,8 +467,24 @@ static void createFontTexture(void) {
 
   int fontW = (currentResolution->charWidth + 7) / 8;  // Bytes per row
   const uint8_t* fontData = currentResolution->data;
+  int charsPerRow = 95;
+  int rows = 1;
 
-  fontTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_TARGET, charW * 95, charH);
+#ifdef MIYOOPORTS_BUILD
+  // The MMIYOO renderer rejects textures wider or taller than 640x480. A
+  // single-row atlas is wider than that even for the smallest tracker font.
+  charsPerRow = 640 / charW;
+  if (charsPerRow < 1) return;
+  rows = (95 + charsPerRow - 1) / charsPerRow;
+  if (rows * charH > 480) return;
+#endif
+
+  fontTexture = SDL_CreateTexture(renderer, nativeTexturePixelFormat(),
+    SDL_TEXTUREACCESS_TARGET, charW * charsPerRow, charH * rows);
+  if (!fontTexture) {
+    fprintf(stderr, "Could not create font texture: %s\n", SDL_GetError());
+    return;
+  }
   SDL_SetTextureBlendMode(fontTexture, SDL_BLENDMODE_BLEND);
   setTextureNearest(fontTexture);
 
@@ -446,8 +493,9 @@ static void createFontTexture(void) {
   SDL_RenderClear(renderer);
 
   for (int ch = 0; ch < 95; ch++) {
-    int charX = ch * charW;
-    charRects[ch] = (SDL_Rect){charX, 0, charW, charH};
+    int charX = (ch % charsPerRow) * charW;
+    int charY = (ch / charsPerRow) * charH;
+    charRects[ch] = (SDL_Rect){charX, charY, charW, charH};
 
     for (int l = 0; l < charH; l++) {
       for (int c = 0; c < fontW; c++) {
@@ -458,7 +506,7 @@ static void createFontTexture(void) {
         for (int b = 0; b < bitsToDraw; b++) {
           if (fontByte & mask) {
             SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-            SDL_RenderDrawPoint(renderer, charX + c * 8 + b, l);
+            SDL_RenderDrawPoint(renderer, charX + c * 8 + b, charY + l);
           }
           mask >>= 1;
         }
@@ -806,6 +854,12 @@ void gfxUpdateScreen(void) {
 #endif
   if (isDirty) {
 #ifndef WEB_BUILD
+#ifdef MIYOOPORTS_BUILD
+    // Rendering already happened on the MMIYOO window framebuffer; copying
+    // through a texture here corrupts alpha bitmap previews on this backend.
+    SDL_RenderPresent(renderer);
+    useCompositionTarget();
+#else
     SDL_SetRenderTarget(renderer, NULL);
     setColor(bgColor);
     SDL_RenderClear(renderer);
@@ -821,6 +875,7 @@ void gfxUpdateScreen(void) {
     gfxDrawHUD();
     SDL_RenderPresent(renderer);
     useCompositionTarget();
+#endif
 #else
     gfxDrawHUD();
     SDL_RenderPresent(renderer);
@@ -874,7 +929,7 @@ Bitmap* gfxBitmapCreate(int widthChars, int heightChars) {
   // Create SDL texture for hardware-accelerated rendering
   SDL_Texture* texture = SDL_CreateTexture(
     renderer,
-    SDL_PIXELFORMAT_RGBA8888,
+    nativeTexturePixelFormat(),
     SDL_TEXTUREACCESS_STREAMING,
     bitmap->widthPixels,
     bitmap->heightPixels
@@ -924,7 +979,12 @@ void gfxDrawBitmap(Bitmap* bitmap, int col, int row) {
     for (int y = 0; y < bitmap->heightPixels; y++) {
       for (int x = 0; x < bitmap->widthPixels; x++) {
         uint8_t alpha = bitmap->data[y * bitmap->widthPixels + x];
+#ifdef MIYOOPORTS_BUILD
+        pixelData[y * (pitch / 4) + x] = ((uint32_t)alpha << 24) |
+          ((uint32_t)fgR << 16) | ((uint32_t)fgG << 8) | fgB;
+#else
         pixelData[y * (pitch / 4) + x] = (fgR << 24) | (fgG << 16) | (fgB << 8) | alpha;
+#endif
       }
     }
 

@@ -6,6 +6,7 @@
 #include "corelib_gfx.h"
 #include "corelib_mainloop.h"
 #include "screens.h"
+#include "support_report.h"
 
 static int columnCount(int) { return 1; }
 static void setup(int) {}
@@ -15,6 +16,7 @@ static void drawCursor(int, int row) {
   if (row < 2) gfxCursor(23, 2 + row, 3);
   else if (row == 2) gfxCursor(23, 4, 6);
   else if (row < 8) { static const int widths[] = {4, 11, 6, 5, 8}; gfxCursor(0, 2 + row, widths[row - 3]); }
+  else if (row == 8) gfxCursor(0, 10, 14);
   else if (row == 9) gfxCursor(0, 18, 19);
 }
 static void noHeader(int, CellState) {}
@@ -25,6 +27,7 @@ static void drawField(int, int row, CellState state) {
   else if (row == 1) { gfxPrint(0, 3, "Repeat speed"); gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrintf(23, 3, "%03d", appSettings.keyRepeatSpeed); }
   else if (row == 2) { gfxPrint(0, 4, "Stick live mode"); gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(23, 4, appSettings.stickLiveMode == StickLiveMode::free ? "FREE  " : appSettings.stickLiveMode == StickLiveMode::toggle ? "TOGGLE" : "HOLD  "); }
   else if (row >= 3 && row <= 7) { static const char* labels[] = {"MIDI", "Key mapping", "Synths", "Mixer", "Graphics"}; gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, 2 + row, labels[row - 3]); }
+  else if (row == 8) { gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, 10, "Support report"); }
   else if (row == 9) { gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, 18, "Quit ChooChooTracker"); }
 }
 static int onEdit(int, int row, CellEditAction action) {
@@ -37,6 +40,14 @@ static int onEdit(int, int row, CellEditAction action) {
   else if (row == 5) screenSetup(&screenSynthSettings, 0);
   else if (row == 6) screenSetup(&screenMixerSettings, 0);
   else if (row == 7) screenSetup(&screenGraphicsSettings, 0);
+  else if (row == 8) {
+    char path[PATH_LENGTH + 32];
+    if (supportReportSaveDefault("Settings", path, sizeof(path)) == 0)
+      screenMessage(MESSAGE_TIME, "Support report saved");
+    else
+      screenMessage(MESSAGE_TIME_ERROR, "Support report failed");
+    return 1;
+  }
   else if (row == 9) { mainLoopTriggerQuit(); return 1; }
   return 0;
 }
@@ -49,6 +60,6 @@ static ScreenData data = {
   .onEdit = onEdit, .onInput = NULL, .onRawInput = NULL, .isCellValid = NULL, .getLoopRange = NULL,
 };
 static void fullRedraw(void) { screenFullRedraw(&data); }
-static int onInput(int isKeyDown, int keys, int taps) { if (keys == (keyUp | keyShift)) { screenSetup(&screenSong, 0); return 1; } return screenInput(&data, isKeyDown, keys, taps); }
+static int onInput(int isKeyDown, int keys, int taps) { if (keys == keyOpt || keys == (keyUp | keyShift)) { screenSetup(&screenSong, 0); return 1; } return screenInput(&data, isKeyDown, keys, taps); }
 static ScreenPlaybackLevel playbackLevel(void) { return ScreenPlaybackLevel::song; }
 const AppScreen screenSettings = {NULL, setup, fullRedraw, draw, onInput, playbackLevel};
