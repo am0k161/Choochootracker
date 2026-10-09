@@ -17,15 +17,21 @@ struct SentMidiEvent { uint8_t type, channel, data1, data2; };
 std::vector<SentMidiEvent> g_sent;
 std::vector<MidiEvent> g_incoming;
 size_t g_incomingIndex;
+uint64_t g_fakeNowMicros = 12345;
 
 void resetFake() {
   g_sent.clear();
   g_incoming.clear();
   g_incomingIndex = 0;
+  g_fakeNowMicros = 12345;
 }
 
 void pushIncoming(uint8_t type, uint8_t channel, uint8_t data1, uint8_t data2) {
   g_incoming.push_back({0, type, channel, data1, data2});
+}
+
+void pushIncomingAt(uint64_t timestampMicros, uint8_t type, uint8_t channel, uint8_t data1, uint8_t data2) {
+  g_incoming.push_back({timestampMicros, type, channel, data1, data2});
 }
 
 int fakePollInput(void*, MidiEvent* outEvent) {
@@ -40,7 +46,7 @@ void fakeScheduleOutput(void*, const MidiEvent* event, uint64_t) {
 
 void fakeFlushOutputQueue(void*) {}
 unsigned int fakeDroppedCount(void*) { return 42; } // fixed sentinel to verify the passthrough
-uint64_t fakeNowMicros(void*) { return 12345; }
+uint64_t fakeNowMicros(void*) { return g_fakeNowMicros; }
 
 const MidiBackend kFakeBackend = {
   nullptr, // userdata
@@ -275,6 +281,181 @@ TEST_CASE("Two independent router instances don't share active-note state") {
 TEST_CASE("Dropped-message count passes through to the registered backend") {
   midiRouterSetBackend(&kFakeBackend);
   CHECK(midiRouterGetDroppedCount() == 42);
+}
+
+TEST_CASE("Clock mode off ignores realtime bytes entirely") {
+  resetFake();
+  midiRouterSetBackend(&kFakeBackend);
+  MidiRouterState* router = midiRouterCreate();
+  MidiPreviewIntent intents[16];
+
+  pushIncoming(0xF8, 0, 0, 0);
+  pushIncoming(0xFA, 0, 0, 0);
+  pushIncoming(0xFC, 0, 0, 0);
+  CHECK(midiRouterTick(router, 5, intents, 16) == 0);
+  int running = -1; uint32_t serial = 0;
+  CHECK_FALSE(midiRouterGetClockTransport(router, &running, &serial));
+  CHECK(serial == 0);
+  float bpm = 0; uint32_t bpmSerial = 0;
+  CHECK_FALSE(midiRouterGetClockBpm(router, &bpm, &bpmSerial));
+
+  midiRouterDestroy(router);
+}
+
+TEST_CASE("Slave mode: transport messages drive running state and serial") {
+  resetFake();
+  midiRouterSetBackend(&kFakeBackend);
+  MidiRouterState* router = midiRouterCreate();
+  midiRouterSetClockMode(router, MidiClockMode::slave);
+  MidiPreviewIntent intents[16];
+
+  pushIncoming(0xFA, 0, 0, 0); // Start
+  CHECK(midiRouterTick(router, 5, intents, 16) == 0);
+  int running = -1; uint32_t serial = 0;
+  REQUIRE(midiRouterGetClockTransport(router, &running, &serial));
+  CHECK(running == 1);
+  CHECK(serial == 1);
+
+  g_incoming.clear(); g_incomingIndex = 0;
+  pushIncoming(0xFC, 0, 0, 0); // Stop
+  CHECK(midiRouterTick(router, 5, intents, 16) == 0);
+  REQUIRE(midiRouterGetClockTransport(router, &running, &serial));
+  CHECK(running == 0);
+  CHECK(serial == 2);
+
+  g_incoming.clear(); g_incomingIndex = 0;
+  pushIncoming(0xFB, 0, 0, 0); // Continue
+  CHECK(midiRouterTick(router, 5, intents, 16) == 0);
+  REQUIRE(midiRouterGetClockTransport(router, &running, &serial));
+  CHECK(running == 1);
+  CHECK(serial == 3);
+
+  midiRouterDestroy(router);
+}
+
+TEST_CASE("Slave mode: tempo measured from clock intervals (125 BPM)") {
+  resetFake();
+  midiRouterSetBackend(&kFakeBackend);
+  MidiRouterState* router = midiRouterCreate();
+  midiRouterSetClockMode(router, MidiClockMode::slave);
+  MidiPreviewIntent intents[16];
+
+  // 125 BPM = 20000 us per clock (60e6 / (125*24)).
+  for (int i = 0; i < 8; i++) {
+    pushIncomingAt(1000000 + (uint64_t)i * 20000, 0xF8, 0, 0, 0);
+    midiRouterTick(router, 5, intents, 16);
+  }
+  float bpm = 0; uint32_t serial = 0;
+  REQUIRE(midiRouterGetClockBpm(router, &bpm, &serial));
+  CHECK(bpm == doctest::Approx(125.0).epsilon(0.01));
+  CHECK(serial == 1); // stable tempo: one quantized change only
+
+  midiRouterDestroy(router);
+}
+
+TEST_CASE("Slave mode: zero timestamp falls back to the backend clock") {
+  resetFake();
+  midiRouterSetBackend(&kFakeBackend);
+  MidiRouterState* router = midiRouterCreate();
+  midiRouterSetClockMode(router, MidiClockMode::slave);
+  MidiPreviewIntent intents[16];
+
+  // No timestamps: each tick advances the fake wall clock by one clock
+  // interval (20000 us = 125 BPM).
+  for (int i = 0; i < 8; i++) {
+    g_fakeNowMicros = 1000000 + (uint64_t)i * 20000;
+    pushIncoming(0xF8, 0, 0, 0);
+    midiRouterTick(router, 5, intents, 16);
+  }
+  float bpm = 0; uint32_t serial = 0;
+  REQUIRE(midiRouterGetClockBpm(router, &bpm, &serial));
+  CHECK(bpm == doctest::Approx(125.0).epsilon(0.01));
+
+  midiRouterDestroy(router);
+}
+
+TEST_CASE("Slave mode: out-of-range clock intervals are ignored") {
+  resetFake();
+  midiRouterSetBackend(&kFakeBackend);
+  MidiRouterState* router = midiRouterCreate();
+  midiRouterSetClockMode(router, MidiClockMode::slave);
+  MidiPreviewIntent intents[16];
+
+  // First clock anchors; second arrives 1 ms later (below the 4 ms floor -
+  // a burst/catch-up artifact) and must not produce a tempo.
+  pushIncomingAt(1000000, 0xF8, 0, 0, 0);
+  midiRouterTick(router, 5, intents, 16);
+  pushIncomingAt(1001000, 0xF8, 0, 0, 0);
+  midiRouterTick(router, 5, intents, 16);
+  float bpm = 0; uint32_t serial = 0;
+  CHECK_FALSE(midiRouterGetClockBpm(router, &bpm, &serial));
+
+  // A 400 ms gap (above the 300 ms ceiling - transport pause) is skipped
+  // too, but the anchor moves forward so the next clock measures normally.
+  pushIncomingAt(1400000, 0xF8, 0, 0, 0);
+  midiRouterTick(router, 5, intents, 16);
+  CHECK_FALSE(midiRouterGetClockBpm(router, &bpm, &serial));
+  pushIncomingAt(1420000, 0xF8, 0, 0, 0); // 20 ms = 125 BPM
+  midiRouterTick(router, 5, intents, 16);
+  REQUIRE(midiRouterGetClockBpm(router, &bpm, &serial));
+  CHECK(bpm == doctest::Approx(125.0).epsilon(0.01));
+
+  midiRouterDestroy(router);
+}
+
+TEST_CASE("Slave mode: realtime bytes don't disturb note/CC routing") {
+  resetFake();
+  midiRouterSetBackend(&kFakeBackend);
+  MidiRouterState* router = midiRouterCreate();
+  midiRouterSetClockMode(router, MidiClockMode::slave);
+  MidiPreviewIntent intents[16];
+
+  pushIncoming(0xF8, 0, 0, 0);
+  pushIncoming(0xB0, 3, 74, 96);
+  pushIncoming(0xFA, 0, 0, 0);
+  pushIncoming(0x90, 0, 60, 100);
+  pushIncoming(0xFC, 0, 0, 0);
+  REQUIRE(midiRouterTick(router, 5, intents, 16) == 1);
+  CHECK(intents[0].note == 48);
+  uint8_t value = 0; uint32_t valueSerial = 0;
+  REQUIRE(midiRouterGetCCValue(router, 3, 74, &value, &valueSerial));
+  CHECK(value == 96);
+  int running = -1; uint32_t serial = 0;
+  REQUIRE(midiRouterGetClockTransport(router, &running, &serial));
+  CHECK(running == 0); // Start then Stop
+  CHECK(serial == 2);
+
+  midiRouterDestroy(router);
+}
+
+TEST_CASE("Switching clock mode resets measurement but not serials") {
+  resetFake();
+  midiRouterSetBackend(&kFakeBackend);
+  MidiRouterState* router = midiRouterCreate();
+  midiRouterSetClockMode(router, MidiClockMode::slave);
+  MidiPreviewIntent intents[16];
+
+  pushIncoming(0xFA, 0, 0, 0);
+  pushIncomingAt(1000000, 0xF8, 0, 0, 0);
+  pushIncomingAt(1020000, 0xF8, 0, 0, 0);
+  midiRouterTick(router, 5, intents, 16);
+  int running = -1; uint32_t serial = 0;
+  REQUIRE(midiRouterGetClockTransport(router, &running, &serial));
+  CHECK(serial == 1);
+  float bpm = 0; uint32_t bpmSerial = 0;
+  REQUIRE(midiRouterGetClockBpm(router, &bpm, &bpmSerial));
+
+  // Switch off then back on: measurement state is fresh (no tempo, not
+  // running), but the transport serial survives so the app layer doesn't
+  // re-apply the pre-switch Start.
+  midiRouterSetClockMode(router, MidiClockMode::off);
+  midiRouterSetClockMode(router, MidiClockMode::slave);
+  CHECK_FALSE(midiRouterGetClockBpm(router, &bpm, &bpmSerial));
+  REQUIRE(midiRouterGetClockTransport(router, &running, &serial));
+  CHECK(serial == 1); // unchanged
+  CHECK(running == 0); // reset
+
+  midiRouterDestroy(router);
 }
 
 }

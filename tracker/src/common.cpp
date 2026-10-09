@@ -61,6 +61,7 @@ void initDefaultAppSettings(void) {
   appSettings.midiOutputDevice = -1;
   appSettings.midiInputDeviceName[0] = '\0';
   appSettings.midiOutputDeviceName[0] = '\0';
+  appSettings.midiClockMode = 0;
   for (int i = 0; i < MIDI_CHANNEL_COUNT; i++) appSettings.midiChannelInstrument[i] = -1;
   appSettings.persistentWaveform = 0;
 
@@ -206,6 +207,7 @@ int settingsSave(void) {
   }
   fprintf(file, "midiInputDeviceName: %s\n", appSettings.midiInputDeviceName);
   fprintf(file, "midiOutputDeviceName: %s\n", appSettings.midiOutputDeviceName);
+  fprintf(file, "midiClockMode: %d\n", appSettings.midiClockMode);
 
   // Save key mapping codes
   fprintf(file, "keyUp: %d,%d,%d\n", appSettings.keyMapping.keyUp[0].code, appSettings.keyMapping.keyUp[1].code, appSettings.keyMapping.keyUp[2].code);
@@ -348,6 +350,10 @@ int settingsLoad(void) {
     } else if (strncmp(line, "midiOutputDeviceName: ", 22) == 0) {
       strncpy(appSettings.midiOutputDeviceName, line + 22, MIDI_DEVICE_NAME_LENGTH);
       appSettings.midiOutputDeviceName[MIDI_DEVICE_NAME_LENGTH] = 0;
+    } else if (strncmp(line, "midiClockMode: ", 15) == 0) {
+      int mode = 0;
+      if (sscanf(line + 15, "%d", &mode) == 1 && (mode == 0 || mode == 1))
+        appSettings.midiClockMode = mode;
     } else if (strncmp(line, "keyUp: ", 7) == 0) {
       sscanf(line + 7, "%d,%d,%d", &appSettings.keyMapping.keyUp[0].code, &appSettings.keyMapping.keyUp[1].code, &appSettings.keyMapping.keyUp[2].code);
     } else if (strncmp(line, "keyDown: ", 9) == 0) {

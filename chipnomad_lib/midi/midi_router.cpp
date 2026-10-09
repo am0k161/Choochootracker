@@ -37,6 +37,23 @@ struct MidiRouterState {
   // Reserved for future PRs - not branched on anywhere yet.
   MidiInputMode inputMode;
   MidiClockMode clockMode;
+
+  // Slave-mode clock sync (only read when clockMode == slave). Transport:
+  // running mirrors the last Start/Continue (1) / Stop (0); every transport
+  // message bumps clockTransportSerial so the app layer applies each
+  // transition exactly once. Tempo: clock intervals are clamped to
+  // [4000, 300000] us (8.3-625 BPM), converted with 24 clocks/beat, EMA
+  // smoothed, and quantized to 0.1 BPM before publishing - the serial only
+  // moves when the quantized value changes, so a jittery stream doesn't
+  // churn the app layer (and the project-refresh path) every tick.
+  int clockRunning;
+  uint32_t clockTransportSerial;
+  uint64_t lastClockArrival;
+  int haveLastClockArrival;
+  float clockBpmEma;
+  int haveClockBpm;
+  float clockBpm;
+  uint32_t clockBpmSerial;
 };
 
 static const MidiBackend* g_backend = nullptr;
@@ -172,6 +189,62 @@ void midiRouterResetHeldNotes(MidiRouterState* router) {
   router->heldCount = 0;
 }
 
+void midiRouterSetClockMode(MidiRouterState* router, MidiClockMode mode) {
+  if (!router) return;
+  router->clockMode = mode;
+  // Fresh measurement state on every switch; serials are deliberately NOT
+  // reset (see header) so callers comparing serials don't re-apply stale
+  // transport/tempo events from before the switch.
+  router->clockRunning = 0;
+  router->lastClockArrival = 0;
+  router->haveLastClockArrival = 0;
+  router->clockBpmEma = 0;
+  router->haveClockBpm = 0;
+  router->clockBpm = 0;
+}
+
+int midiRouterGetClockTransport(const MidiRouterState* router, int* running, uint32_t* serial) {
+  if (!router) return 0;
+  if (running) *running = router->clockRunning;
+  if (serial) *serial = router->clockTransportSerial;
+  return router->clockTransportSerial != 0;
+}
+
+int midiRouterGetClockBpm(const MidiRouterState* router, float* bpm, uint32_t* serial) {
+  if (!router) return 0;
+  if (bpm) *bpm = router->clockBpm;
+  if (serial) *serial = router->clockBpmSerial;
+  return router->haveClockBpm;
+}
+
+// One incoming Clock byte (0xF8) in slave mode: measure the interval since
+// the previous clock, smooth it, and publish a quantized BPM.
+static void handleClockTick(MidiRouterState* router, uint64_t arrival) {
+  if (router->haveLastClockArrival) {
+    uint64_t interval = arrival - router->lastClockArrival;
+    // Clamp to a sane musical range (~8.3-625 BPM): the first clock after a
+    // transport start, a paused stream, or a burst of catch-up clocks would
+    // otherwise produce a wild interval and a bogus tempo.
+    if (interval >= 4000 && interval <= 300000) {
+      float bpm = 60000000.0f / ((float)interval * 24.0f);
+      router->clockBpmEma = router->haveClockBpm
+        ? router->clockBpmEma + (bpm - router->clockBpmEma) * 0.2f
+        : bpm;
+      // Quantize to 0.1 BPM before publishing so the serial only moves on
+      // a musically meaningful change. The first valid interval always
+      // publishes (haveClockBpm is still 0 here).
+      float quantized = (float)((int)(router->clockBpmEma * 10.0f + 0.5f)) / 10.0f;
+      if (!router->haveClockBpm || quantized != router->clockBpm) {
+        router->clockBpm = quantized;
+        router->clockBpmSerial++;
+      }
+      router->haveClockBpm = 1;
+    }
+  }
+  router->lastClockArrival = arrival;
+  router->haveLastClockArrival = 1;
+}
+
 int midiRouterTick(MidiRouterState* router, int fallbackInstrument, MidiPreviewIntent* outIntents, int maxIntents) {
   if (!router || !g_backend || !g_backend->pollInput || !outIntents || maxIntents <= 0) return 0;
   int count = 0;
@@ -181,6 +254,35 @@ int midiRouterTick(MidiRouterState* router, int fallbackInstrument, MidiPreviewI
   while (g_backend->pollInput(g_backend->userdata, &event)) {
     uint8_t messageType = event.type & 0xf0;
     uint8_t channel = event.channel & 0x0f;
+    // Realtime bytes (full status >= 0xF8, preserved by the backends) are
+    // handled before any channel-voice branch: in slave mode they drive
+    // transport/tempo, in every mode they must not fall into the channel
+    // branches below (0xF8 & 0xf0 == 0xF0 never matches 0xb0/0x90/0x80,
+    // but being explicit keeps the routing contract clear).
+    if (event.type >= 0xf8) {
+      if (router->clockMode == MidiClockMode::slave) {
+        switch (event.type) {
+          case 0xfa: // Start
+          case 0xfb: // Continue
+            router->clockRunning = 1;
+            router->clockTransportSerial++;
+            router->haveLastClockArrival = 0;
+            break;
+          case 0xfc: // Stop
+            router->clockRunning = 0;
+            router->clockTransportSerial++;
+            router->haveLastClockArrival = 0;
+            break;
+          case 0xf8: // Clock
+            handleClockTick(router,
+              event.timestampMicros ? event.timestampMicros : g_backend->nowMicros(g_backend->userdata));
+            break;
+          default: // 0xFE active sensing, 0xFF reset: ignore
+            break;
+        }
+      }
+      continue;
+    }
     if (messageType == 0xb0) {
       router->ccValues[channel][event.data1 & 0x7f] = event.data2 & 0x7f;
       router->ccSerials[channel][event.data1 & 0x7f] = router->ccSerial + 1;

@@ -54,6 +54,11 @@ static MidiCCMapping midiCCApplied[PROJECT_MAX_MIDI_CC_MAPPINGS];
 static uint8_t midiCCAppliedValue[PROJECT_MAX_MIDI_CC_MAPPINGS];
 static uint8_t midiCCAppliedValid[PROJECT_MAX_MIDI_CC_MAPPINGS];
 static uint32_t midiCCAppliedSerial[PROJECT_MAX_MIDI_CC_MAPPINGS];
+// MIDI clock slave mode (Project screen "Clock source"): last-applied
+// serials for transport state and measured tempo, same exactly-once
+// pattern as midiCCAppliedSerial above.
+static uint32_t clockTransportAppliedSerial;
+static uint32_t clockBpmAppliedSerial;
 
 // Port indices aren't saved (see common.h's AppSettings comment): this
 // resolves the saved device name back to whatever live port currently has
@@ -442,6 +447,8 @@ void appSetup(void) {
   int savedOutputPort = findMidiPortByName(0, appSettings.midiOutputDeviceName);
   if (savedOutputPort >= 0 && midiRouterOpenOutput(savedOutputPort) == 0) appSettings.midiOutputDevice = savedOutputPort;
   midiRouterSetChannelInstrumentMap(chipnomadState->midiRouter, appSettings.midiChannelInstrument);
+  midiRouterSetClockMode(chipnomadState->midiRouter,
+    appSettings.midiClockMode == 1 ? MidiClockMode::slave : MidiClockMode::off);
 
   screenSetup(&screenTitle, 0);
 }
@@ -758,6 +765,32 @@ void appOnEvent(MainLoopEventData eventData) {
             chipnomadQueuePlaybackPreviewNote(chipnomadState, *pSongTrack, intents[i].note, intents[i].instrument);
           }
         }
+      }
+
+      // MIDI clock slave mode: transport (Start/Continue/Stop) always
+      // drives song playback - there is deliberately no separate UI toggle
+      // (the Project screen's play button keeps working alongside it).
+      // Tempo: the measured BPM is applied to the project's tick rate via
+      // the regular project-refresh path. projectModified stays 0 (following
+      // a clock isn't a user edit), matching how CC mappings mutate project
+      // state; the Project screen's Tempo row shows the live value while
+      // slaved.
+      int clockRunning = 0; uint32_t clockTransportSerial = 0;
+      if (midiRouterGetClockTransport(chipnomadState->midiRouter, &clockRunning, &clockTransportSerial) &&
+          clockTransportSerial != clockTransportAppliedSerial) {
+        clockTransportAppliedSerial = clockTransportSerial;
+        if (clockRunning && !chipnomadGetPlaybackStatus(chipnomadState)->isPlaying)
+          chipnomadQueuePlaybackStartSong(chipnomadState, *pSongRow, 0, 1);
+        else if (!clockRunning && chipnomadGetPlaybackStatus(chipnomadState)->isPlaying)
+          chipnomadQueuePlaybackStop(chipnomadState);
+      }
+      float clockBpm = 0; uint32_t clockBpmSerial = 0;
+      if (midiRouterGetClockBpm(chipnomadState->midiRouter, &clockBpm, &clockBpmSerial) &&
+          clockBpmSerial != clockBpmAppliedSerial) {
+        clockBpmAppliedSerial = clockBpmSerial;
+        // BPM -> Hz: 24 ticks/beat, so tickRate = BPM * 24 / 60 = BPM * 0.4.
+        chipnomadState->project.tickRate = clockBpm * 0.4f;
+        audioProjectDirty = 1;
       }
       for (int i = 0; i < PROJECT_MAX_MIDI_CC_MAPPINGS; ++i) {
         MidiCCMapping& mapping = chipnomadState->project.midiCCMappings[i];

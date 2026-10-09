@@ -81,6 +81,10 @@ struct AppSettings {
   int midiOutputDevice;
   char midiInputDeviceName[MIDI_DEVICE_NAME_LENGTH + 1];
   char midiOutputDeviceName[MIDI_DEVICE_NAME_LENGTH + 1];
+  // Saved to settings.txt: 0 = Internal clock (project tempo), 1 = follow
+  // incoming MIDI clock (Project screen "Clock source" row). Applied to the
+  // router in appSetup() and changed live from the Project screen.
+  int midiClockMode;
   // Saved to settings.txt: which instrument a MIDI-in note on a given
   // channel (0-15) plays during preview, e.g. channel 0 -> instrument 5.
   // -1 = channel not assigned (falls back to the currently selected

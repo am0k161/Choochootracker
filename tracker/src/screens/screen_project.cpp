@@ -14,6 +14,7 @@
 #include "import/import_midi.h"
 #include "import/import_m8s.h"
 #include "string_utils.h"
+#include "midi/midi_router.h"
 #include <string.h>
 #include <strings.h>
 
@@ -25,8 +26,19 @@ static int isCharEdit = 0;
 static const AppScreen* projectReturnScreen = &screenProject;
 static char* editingString = NULL;
 static int editingStringLength = 0;
-static int tickRateI = 0;
-static uint16_t tickRateF = 0;
+// Tempo is edited/displayed in tenths of BPM (125.0 BPM = 1250). The
+// project's canonical tickRate stays in Hz (see project_io.cpp's
+// "- Frame rate" format): BPM = tickRate * 60/24 = tickRate * 2.5, so
+// tenths = tickRate * 25 - exact for every Hz value the old UI could
+// produce, and old projects load/save byte-identically.
+static uint16_t bpmTenths = 1250;
+// Mirror of appSettings.midiClockMode for the Clock source row.
+static uint8_t clockSourceMirror = 0;
+
+// BPM display range: tickRate 1-200 Hz maps to 2.5-500 BPM.
+#define BPM_TENTHS_MIN (25)
+#define BPM_TENTHS_MAX (5000)
+#define BPM_TENTHS_DEFAULT (1250) // 125.0 BPM = the old 50 Hz default
 
 int projectLoadFromPath(const char* path) {
   if (!path) {
@@ -215,8 +227,12 @@ static void setup(int input) {
   isCharEdit = 0;
   editingString = NULL;
   editingStringLength = 0;
-  tickRateI = (int)chipnomadState->project.tickRate;
-  tickRateF = (uint16_t)((chipnomadState->project.tickRate - (float)tickRateI) * 1000.f);
+  // Round to tenths: 50 Hz -> 1250, 59 Hz -> 1475 ("147.5 BPM").
+  int tenths = (int)(chipnomadState->project.tickRate * 25.0f + 0.5f);
+  if (tenths < BPM_TENTHS_MIN) tenths = BPM_TENTHS_MIN;
+  if (tenths > BPM_TENTHS_MAX) tenths = BPM_TENTHS_MAX;
+  bpmTenths = (uint16_t)tenths;
+  clockSourceMirror = appSettings.midiClockMode ? 1 : 0;
 }
 
 static void fullRedraw(void) {
@@ -225,6 +241,18 @@ static void fullRedraw(void) {
 }
 
 static void draw(void) {
+  // While slaved to MIDI clock the tempo field shows the live followed
+  // tempo (app.cpp keeps project.tickRate updated); fullRedraw only runs on
+  // navigation/edit, so refresh the field here every frame. The cursor
+  // overlay is redrawn by the framework after draw() (see screenDraw), so
+  // clearing the field area here is safe.
+  if (clockSourceMirror) {
+    ScreenOverlayCoordinates overlay;
+    const ColorScheme cs = appSettings.colorScheme;
+    gfxSetFgColor(cs.textInfo);
+    gfxClearRect(13, 11, 27, 1);
+    gfxPrintf(13, 11, "%u.%u BPM", bpmTenths / 10, bpmTenths % 10);
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -243,7 +271,9 @@ int projectCommonColumnCount(int row) {
   } else if (row == 4) {
     return 1; // Linear pitch
   } else if (row == 5) {
-    return 2; // Tick rate
+    return 1; // Clock source
+  } else if (row == 6) {
+    return 1; // Tempo (BPM)
   }
   return 1; // Default value
 }
@@ -263,7 +293,8 @@ void projectCommonDrawStatic(void) {
   gfxPrint(0, 7, "Author");
 
   gfxPrint(0, 9, "Linear pitch");
-  gfxPrint(0, 10, "Tick rate");
+  gfxPrint(0, 10, "Clock source");
+  gfxPrint(0, 11, "Tempo");
 }
 
 void projectCommonDrawCursor(int col, int row) {
@@ -286,12 +317,11 @@ void projectCommonDrawCursor(int col, int row) {
     // Linear pitch
     gfxCursor(13, 9, 3);
   } else if (row == 5) {
-    // Tick rate
-    if (col == 0) {
-      gfxCursor(13, 10, 3);
-    } else {
-      gfxCursor(17, 10, 3);
-    }
+    // Clock source ("Internal" / "Midi Clock")
+    gfxCursor(13, 10, 10);
+  } else if (row == 6) {
+    // Tempo ("500.0 BPM")
+    gfxCursor(13, 11, 8);
   }
 }
 
@@ -326,11 +356,19 @@ void projectCommonDrawField(int col, int row, CellState state) {
     // Linear pitch
     gfxPrint(13, 9, chipnomadState->project.linearPitch ? "ON " : "OFF");
   } else if (row == 5) {
-    // Tick rate and BPM
-    gfxClearRect(13, 10, 27, 1);
-    float tickRate = (float)tickRateI + (float)tickRateF / 1000.0f;
-    float bpm = tickRate * 60.0f / 24.0f;
-    gfxPrintf(13, 10, "%03d.%03dHz (%.1f BPM)", tickRateI, tickRateF, bpm);
+    // Clock source
+    gfxClearRect(13, 10, 10, 1);
+    gfxPrint(13, 10, clockSourceMirror ? "Midi Clock" : "Internal");
+  } else if (row == 6) {
+    // Tempo in BPM (greyed while slaved to MIDI clock - it's read-only
+    // there, driven by the incoming clock).
+    gfxClearRect(13, 11, 27, 1);
+    if (clockSourceMirror) {
+      gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textInfo : appSettings.colorScheme.textEmpty);
+      gfxPrintf(13, 11, "%u.%u BPM", bpmTenths / 10, bpmTenths % 10);
+    } else {
+      gfxPrintf(13, 11, "%u.%u BPM", bpmTenths / 10, bpmTenths % 10);
+    }
   }
 }
 
@@ -415,24 +453,83 @@ int projectCommonOnEdit(int col, int row, enum CellEditAction action) {
       reinitializePitchTable(&chipnomadState->project);
     }
   } else if (row == 5) {
-    // Tick rate
-    if (col == 0) {
-      // Integer part (1-200), clear sets to 50
-      if (action == CellEditAction::clear) {
-        tickRateI = 50;
+    // Clock source: Internal / Midi Clock. Persisted in settings.txt
+    // (appSettings.midiClockMode) and applied to the router live; the
+    // audio thread picks it up through the regular project refresh.
+    action = convertMultiAction(action);
+    switch (action) {
+      case CellEditAction::tap:
+      case CellEditAction::doubleTap:
+        clockSourceMirror = clockSourceMirror ? 0 : 1;
         handled = 1;
-      } else {
-        handled = edit8noLast(action, (uint8_t*)&tickRateI, 10, 1, 200);
-      }
-    } else {
-      // Fractional part (.000-.999) with overflow
-      handled = edit16withOverflow(action, &tickRateF, 100, 0, 999);
+        break;
+      case CellEditAction::clear:
+        clockSourceMirror = 0;
+        handled = 1;
+        break;
+      case CellEditAction::increase:
+      case CellEditAction::increaseBig:
+        clockSourceMirror = 1;
+        handled = 1;
+        break;
+      case CellEditAction::decrease:
+      case CellEditAction::decreaseBig:
+        clockSourceMirror = 0;
+        handled = 1;
+        break;
+      default:
+        break;
     }
-
     if (handled) {
-      // Update project tick rate from the two components
-      chipnomadState->project.tickRate = (float)tickRateI + (float)tickRateF / 1000.0f;
-      projectModified = 1;
+      appSettings.midiClockMode = clockSourceMirror;
+      midiRouterSetClockMode(chipnomadState->midiRouter,
+        clockSourceMirror ? MidiClockMode::slave : MidiClockMode::off);
+    }
+  } else if (row == 6) {
+    // Tempo in BPM. Fine steps are 1 BPM (10 tenths), coarse 5 BPM (50
+    // tenths); clear restores the old default 50 Hz = 125.0 BPM. While
+    // slaved to MIDI clock the tempo is driven by the incoming clock, so
+    // edits are swallowed (the field shows the live followed tempo).
+    if (clockSourceMirror) {
+      handled = 1;
+    } else {
+      action = convertMultiAction(action);
+      switch (action) {
+        case CellEditAction::tap:
+        case CellEditAction::doubleTap:
+          bpmTenths += 1;
+          if (bpmTenths > BPM_TENTHS_MAX) bpmTenths = BPM_TENTHS_MIN;
+          handled = 1;
+          break;
+        case CellEditAction::clear:
+          bpmTenths = BPM_TENTHS_DEFAULT;
+          handled = 1;
+          break;
+        case CellEditAction::increase:
+          if (bpmTenths < BPM_TENTHS_MAX) bpmTenths += 10;
+          handled = 1;
+          break;
+        case CellEditAction::decrease:
+          if (bpmTenths > BPM_TENTHS_MIN) bpmTenths -= 10;
+          handled = 1;
+          break;
+        case CellEditAction::increaseBig:
+          bpmTenths = bpmTenths > BPM_TENTHS_MAX - 50 ? BPM_TENTHS_MAX : bpmTenths + 50;
+          handled = 1;
+          break;
+        case CellEditAction::decreaseBig:
+          bpmTenths = bpmTenths < BPM_TENTHS_MIN + 50 ? BPM_TENTHS_MIN : bpmTenths - 50;
+          handled = 1;
+          break;
+        default:
+          break;
+      }
+      if (handled) {
+        // Backwards compatible writeback: the project file keeps storing
+        // Hz ("- Frame rate"), tenths * 0.04 = tenths / 25 in Hz.
+        chipnomadState->project.tickRate = (float)bpmTenths * 0.04f;
+        projectModified = 1;
+      }
     }
   }
 

@@ -457,6 +457,25 @@ TEST_CASE_FIXTURE(StickLiveFixture, "MIDI device names round-trip through settin
   CHECK(std::string(appSettings.midiOutputDeviceName) == "FluidSynth virtual port");
 }
 
+TEST_CASE_FIXTURE(StickLiveFixture, "MIDI clock mode round-trips through settings save/load") {
+  appSettings.midiClockMode = 1;
+  REQUIRE(settingsSave() == 0);
+
+  initDefaultAppSettings();
+  CHECK(appSettings.midiClockMode == 0);
+
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.midiClockMode == 1);
+
+  // Invalid values fall back to the default rather than being trusted.
+  FILE* file = fopen(realSettingsPath.c_str(), "w");
+  REQUIRE(file != nullptr);
+  fprintf(file, "midiClockMode: 7\n");
+  fclose(file);
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.midiClockMode == 0);
+}
+
 TEST_CASE_FIXTURE(StickLiveFixture, "screenMidiChannelMap cycles channel-to-instrument assignment") {
   screenMidiChannelMap.fullRedraw();
   REQUIRE(mockScreenData != nullptr);
