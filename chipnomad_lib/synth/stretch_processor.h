@@ -26,12 +26,15 @@ class StretchProcessor {
   // 5 = 4 bars, 6 = 8 bars. tickRateHz is the project tick rate (BPM =
   // tickRateHz * 60 / 24). pitchSemitones is the voice's transposition in
   // semitones (applied by the stretcher so playback speed stays 1:1).
+  // loopMode is the EFFECTIVE playback mode (0 one-shot, 1 loop, 2 ping-pong)
+  // after SPL/motion overrides - passed in by the engine instead of being read
+  // from the sample so FX-driven modes apply while stretching.
   void configure(const InstrumentSample* sample, uint8_t stretchMode,
                  uint16_t speedPercent, float tickRateHz, float pitchSemitones, uint8_t startMarker,
-                 uint8_t endMarker);
+                 uint8_t endMarker, uint8_t loopMode);
   void configure(const InstrumentSample* sample, uint8_t stretchMode,
                  float tickRateHz, float pitchSemitones, uint8_t startMarker,
-                 uint8_t endMarker);
+                 uint8_t endMarker, uint8_t loopMode);
   void noteOn();
   // Renders up to `frames` stereo-interleaved output frames into `out`.
   // Returns false when the voice must be killed (non-finite audio or, for
@@ -63,6 +66,10 @@ class StretchProcessor {
   double sourceStep_ = 1.0;
   double sourceDirection_ = 1.0;
   bool sourceReverse_ = false;
+  // Configured window direction (marker order). sourceReverse_ above is
+  // runtime playback state that ping-pong flips while playing; this one only
+  // changes when the window itself is reconfigured.
+  bool windowReverse_ = false;
   double stretchRatio_ = 1.0;
   double inputAccumulator_ = 0.0;
   double outputSampleRate_ = 0.0;

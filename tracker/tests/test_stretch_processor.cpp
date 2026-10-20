@@ -63,7 +63,7 @@ TEST_CASE("StretchProcessor mode 0 is inert") {
   InstrumentSample sample = makeSample(data, 48000);
   StretchProcessor stretch;
   stretch.init(48000.0, false);
-  stretch.configure(&sample, 0, 50.0f, 0.0f, 0, 255);
+  stretch.configure(&sample, 0, 50.0f, 0.0f, 0, 255, sample.loopMode);
   CHECK_FALSE(stretch.active());
   stretch.noteOn();
   CHECK_FALSE(stretch.active());
@@ -79,7 +79,7 @@ TEST_CASE("StretchProcessor stretches 1 second to 1 bar at tickRate 50") {
   StretchProcessor stretch;
   stretch.init(48000.0, false);
   // 96 ticks at 50 Hz = 1.92 s target for a 1.0 s source.
-  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
   stretch.noteOn();
   CHECK(stretch.active());
 
@@ -98,7 +98,7 @@ TEST_CASE("StretchProcessor stretches 1 second to 1 beat at tickRate 50") {
   StretchProcessor stretch;
   stretch.init(48000.0, false);
   // 24 ticks at 50 Hz = 0.48 s target for a 1.0 s source (compression).
-  stretch.configure(&sample, 1, 50.0f, 0.0f, 0, 255);
+  stretch.configure(&sample, 1, 50.0f, 0.0f, 0, 255, sample.loopMode);
   stretch.noteOn();
 
   std::vector<float> scratch(8192 * 2);
@@ -118,7 +118,7 @@ TEST_CASE("StretchProcessor speed mode follows speed, not clock") {
   auto renderSpeed = [&](uint16_t speedPercent, float tickRateHz) {
     StretchProcessor stretch;
     stretch.init(48000.0, false);
-    stretch.configure(&sample, 0, speedPercent, tickRateHz, 0.0f, 0, 255);
+    stretch.configure(&sample, 0, speedPercent, tickRateHz, 0.0f, 0, 255, sample.loopMode);
     stretch.noteOn();
     return renderAll(stretch, scratch, 256).frames;
   };
@@ -138,13 +138,13 @@ TEST_CASE("StretchProcessor follows a tempo change mid-note") {
   InstrumentSample sample = makeSample(data, 48000);
   StretchProcessor stretch;
   stretch.init(48000.0, false);
-  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
   stretch.noteOn();
 
   std::vector<float> scratch(8192 * 2);
   // Render half a bar, then double the tempo (half the target duration).
   for (int i = 0; i < 180; ++i) stretch.process(scratch.data(), 256);
-  stretch.configure(&sample, 3, 100.0f, 0.0f, 0, 255);
+  stretch.configure(&sample, 3, 100.0f, 0.0f, 0, 255, sample.loopMode);
   // Reconfiguration must not kill the running note.
   CHECK(stretch.active());
   RenderResult result = renderAll(stretch, scratch.data(), 256);
@@ -159,7 +159,7 @@ TEST_CASE("StretchProcessor loop mode 1 sustains indefinitely") {
   sample.loopMode = 1;
   StretchProcessor stretch;
   stretch.init(48000.0, false);
-  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
   stretch.noteOn();
 
   std::vector<float> scratch(8192 * 2);
@@ -182,7 +182,7 @@ TEST_CASE("StretchProcessor ping-pong loop sustains and stays finite") {
   sample.loopMode = 2;
   StretchProcessor stretch;
   stretch.init(48000.0, false);
-  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
   stretch.noteOn();
 
   std::vector<float> scratch(8192 * 2);
@@ -198,13 +198,77 @@ TEST_CASE("StretchProcessor ping-pong loop sustains and stays finite") {
   CHECK(energy > 0.0);
 }
 
+TEST_CASE("StretchProcessor ping-pong reverses across per-tick reconfigures") {
+  // Regression: the engine reconfigures every tick. The old code reset the
+  // runtime direction from the marker order on each configure, so the
+  // ping-pong flip at the window end was undone and the playhead re-seeked
+  // to the start - the note looped forward forever and never reversed.
+  auto data = makeSine(440.0, 48000, 0.25);
+  InstrumentSample sample = makeSample(data, 48000);
+  sample.loopMode = 2;
+  StretchProcessor stretch;
+  stretch.init(48000.0, false);
+  // Speed mode 200% consumes the 0.25 s window quickly, so several direction
+  // flips happen within the iteration budget.
+  stretch.configure(&sample, 0, 200, 50.0f, 0.0f, 0, 255, sample.loopMode);
+  stretch.noteOn();
+
+  std::vector<float> scratch(8192 * 2);
+  double maxSeen = 0.0;
+  bool descended = false;
+  bool roseAgain = false;
+  double minAfterDescend = 1e30;
+  for (int i = 0; i < 600; ++i) {
+    REQUIRE(stretch.active());
+    // Simulate the engine's per-tick configure call.
+    stretch.configure(&sample, 0, 200, 50.0f, 0.0f, 0, 255, sample.loopMode);
+    stretch.process(scratch.data(), 256);
+    for (size_t j = 0; j < 256 * 2; ++j) CHECK(std::isfinite(scratch[j]));
+    double position = stretch.sourcePosition();
+    if (position > maxSeen) maxSeen = position;
+    if (maxSeen > 0.8 * (double)sample.frameCount && position < maxSeen - 16.0) {
+      descended = true;
+      if (position < minAfterDescend) minAfterDescend = position;
+      if (minAfterDescend < 0.5 * (double)sample.frameCount &&
+          position > minAfterDescend + 16.0) roseAgain = true;
+    }
+  }
+  // The playhead must have reached the window end, come back down (reverse
+  // pass) and risen again (forward pass) - a full ping-pong cycle.
+  CHECK(maxSeen > 0.8 * (double)sample.frameCount);
+  CHECK(descended);
+  CHECK(roseAgain);
+}
+
+TEST_CASE("StretchProcessor uses the passed loop mode, not the instrument field") {
+  // SPL 02/03 override the instrument's loop setting; the engine passes the
+  // effective mode to configure(). The instrument field says one-shot here,
+  // but the passed ping-pong mode must keep the note alive.
+  auto data = makeSine(440.0, 48000, 0.25);
+  InstrumentSample sample = makeSample(data, 48000);
+  sample.loopMode = 0;
+  StretchProcessor stretch;
+  stretch.init(48000.0, false);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, 2);
+  stretch.noteOn();
+
+  std::vector<float> scratch(8192 * 2);
+  // A one-shot 1-bar stretch ends after ~92160 frames (360 chunks); 400
+  // chunks must still be active when ping-pong is in effect.
+  for (int i = 0; i < 400; ++i) {
+    REQUIRE(stretch.active());
+    stretch.process(scratch.data(), 256);
+    for (size_t j = 0; j < 256 * 2; ++j) CHECK(std::isfinite(scratch[j]));
+  }
+}
+
 TEST_CASE("StretchProcessor reverse window plays and drains") {
   auto data = makeSine(440.0, 48000, 0.5);
   InstrumentSample sample = makeSample(data, 48000);
   StretchProcessor stretch;
   stretch.init(48000.0, false);
   // Start > End: reverse playback of the whole sample.
-  stretch.configure(&sample, 3, 50.0f, 0.0f, 255, 0);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 255, 0, sample.loopMode);
   stretch.noteOn();
   CHECK(stretch.active());
 
@@ -222,7 +286,7 @@ TEST_CASE("StretchProcessor pitch transpose keeps duration") {
   InstrumentSample sample = makeSample(data, 48000);
   StretchProcessor stretch;
   stretch.init(48000.0, false);
-  stretch.configure(&sample, 3, 50.0f, 12.0f, 0, 255);
+  stretch.configure(&sample, 3, 50.0f, 12.0f, 0, 255, sample.loopMode);
   stretch.noteOn();
 
   std::vector<float> scratch(8192 * 2);
@@ -239,7 +303,7 @@ TEST_CASE("StretchProcessor reset deactivates immediately") {
   sample.loopMode = 1;
   StretchProcessor stretch;
   stretch.init(48000.0, false);
-  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
   stretch.noteOn();
   CHECK(stretch.active());
 
@@ -256,7 +320,7 @@ TEST_CASE("StretchProcessor reset deactivates immediately") {
 TEST_CASE("StretchProcessor configure with null sample is safe") {
   StretchProcessor stretch;
   stretch.init(48000.0, false);
-  stretch.configure(nullptr, 3, 50.0f, 0.0f, 0, 255);
+  stretch.configure(nullptr, 3, 50.0f, 0.0f, 0, 255, 0);
   stretch.noteOn();
   CHECK_FALSE(stretch.active());
 }
@@ -267,14 +331,14 @@ TEST_CASE("StretchProcessor per-tick reconfigure preserves the running note") {
   sample.loopMode = 1;
   StretchProcessor stretch;
   stretch.init(48000.0, false);
-  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
   stretch.noteOn();
 
   std::vector<float> scratch(8192 * 2);
   stretch.process(scratch.data(), 256);
   // Simulate the per-tick configure calls the engine makes.
   for (int i = 0; i < 50; ++i) {
-    stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255);
+    stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
     CHECK(stretch.active());
     stretch.process(scratch.data(), 256);
   }
