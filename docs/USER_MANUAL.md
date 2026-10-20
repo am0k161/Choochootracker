@@ -672,10 +672,27 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
 
 - Tap **Sample** to load an uncompressed `8-bit`, `16-bit` or `24-bit` PCM WAV. Press **PLAY** in the browser to audition the highlighted file.
 - When a sample is loaded, **EDIT** appears next to its name. Tap it to open the Sample Edit screen. **OPT** or **SELECT + [LEFT]** returns to the instrument.
-- The Sample Edit screen shows the filename (with a `*` marker when the sample in RAM differs from the file on disk), a format readout (sample rate, channels), a tall waveform, and the **Region**, **Select**, **Slice**, **Process** and **File** fields.
+- The Sample Edit screen shows the filename (with a `*` marker when the sample in RAM differs from the file on disk), a format readout (sample rate, channels), a tall waveform, and the **Region**, **Select**, **Loop**, **Slice**, **Process** and **File** fields.
 - Edits live in RAM only until a save flow writes them: the project stores the sample's file path and reloads the WAV from disk on the next project load, so leaving the tracker without **Save**/**Save As** discards process operations (the `*` marker is the warning). Loading a different sample into the instrument also discards unsaved edits and resets the Region to the full sample (Start `00`, End `FF`).
 - **Region** sets the playback Start/End markers, also available on the Sampler instrument screen. They set normalised playback boundaries (`00-FF`); if Start is after End, the sample plays in reverse. **EDIT + [LEFT/RIGHT]** fine-adjusts the marker in steps of one (`01`) and zooms the waveform around it while **EDIT** is held; **EDIT + [UP/DOWN]** coarse-adjusts (step 16) and returns the view to the full sample. **EDIT + OPT** resets the marker to its default (Start `00`, End `FF`).
 - The waveform view zooms to a fixed window of one second of audio around the edited marker and pans to keep it visible; samples that fit inside the window stay at the full 1:1 view. The zoom is transient: it lasts while **EDIT** is held, and releasing **EDIT** returns to the full 1:1 view, as do coarse steps. Entering the screen always resets the view to the full sample.
+- **Loop** is a row with two cells: **LST** (loop start) and **SPD ALGO**
+ (speed algorithm). It sits between **Select** and **Slice** on screen.
+- **LST** shows the loop wrap point in hex. It is active when the instrument's
+ **Loop** setting is Loop or Ping-Pong, or when the playing phrase row carries
+ an `SPL` value of `02` or `03`; otherwise the cell is dimmed and skipped in
+ navigation. **EDIT + [LEFT/RIGHT]** fine-adjusts the marker in steps of one
+ (`01`) and zooms the waveform around it while **EDIT** is held; **EDIT +
+ [UP/DOWN]** coarse-adjusts (step 16) and returns the view to the full sample.
+ **EDIT + OPT** snaps the marker to the Region Start. The wrap point is drawn
+ as a red marker on the waveform and clamps to the Region: it can never sit
+ before the Region Start or at/after the Region End. Editing the Region
+ markers moves the wrap point back to the Region Start whenever it would fall
+ outside the new Region. Projects saved before this feature load with the
+ wrap point at the Region Start (no audible change).
+- **SPD ALGO** picks the time-stretch algorithm used when **Speed** differs
+ from `100%`: `Granular` (default) or `Stretch`. The box shows `-` when the
+ mode is OFF.
 - **Select** sets a processing selection in absolute frames, independent of the playback Start/End markers. **EDIT + [LEFT/RIGHT]** moves a handle twenty frames and zooms onto it while **EDIT** is held; **EDIT + [UP/DOWN]** jumps by `frameCount/64` (minimum 16) and returns to the full-sample view. **EDIT (tap)** on a handle copies the current Start or End marker position to it. **EDIT + OPT** on either handle empties the whole selection. When the selection is empty both handles show `-`; when the handles are inverted they swap automatically. The selection is session-only editor state: it is not saved with the project, and entering the screen seeds it with the playback Region span (the whole sample with the default markers).
 - **Slice** is a single row with four value cells - **Mode**, **Count**,
   **Slice** and **Frame** - and is saved with the instrument. Off plays the
@@ -785,7 +802,7 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
 - On the Sample instrument screen, use **EDIT + [LEFT/RIGHT]** to load the previous or next WAV in the same folder.
 - **Pitch** transposes by semitones (`-48` to `+48`).
 - **Loop** selects Off, Loop or Ping-Pong.
-- **Speed** controls granular time-stretching from `0%` to `500%` (`100%` is normal).
+- **Speed** controls time-stretching from `0%` to `500%` (`100%` is normal); the algorithm (Granular or Stretch) is picked on the Sample Edit screen's **SPD ALGO** cell.
 
 Unsupported WAV formats display an error. Convert unusual files to `PCM8`, `PCM16` or `PCM24` WAV before importing them.
 
@@ -1143,7 +1160,7 @@ The value is interpreted as a signed `8-bit` relative change (`01` adds `1`, `FF
 
 | FX | Value | Meaning |
 |---|---|---|
-| `SPL` | `00-03` | Playback mode: `00` Forward, `01` Reverse, `02` Loop, `03` Ping-Pong |
+| `SPL` | `00-03` | Playback mode: `00` Forward, `01` Reverse, `02` Loop, `03` Ping-Pong. `02`/`03` use the sample's loop start marker as the wrap point |
 | `SLI` | `00-FF` | Play the numbered slice (`01` = first slice) regardless of the note; `00` keeps normal note mapping. Requires slice mode enabled on the instrument |
 | `SPT` | signed `XX` | Sample transposition in semitones |
 | `SST` | `00-FF` | Normalised playback start |
