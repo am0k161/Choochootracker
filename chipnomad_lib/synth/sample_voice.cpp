@@ -441,9 +441,12 @@ void SampleVoice::noteOn() {
 
 float SampleVoice::sampleAt(double position, int channel) const {
   uint32_t frame = (uint32_t)position;
-  uint32_t next = direction_ > 0
-    ? (frame + 1 < endFrame_ ? frame + 1 : frame)
-    : (frame > startFrame_ ? frame - 1 : frame);
+  // Direction-independent interpolation: the fractional part always
+  // interpolates toward frame + 1. Mirroring the fraction toward frame - 1
+  // for descending reads zigzags around every integer frame and buzzes on
+  // low-rate samples (step < 1); the stretch processor reads this way for
+  // the same reason.
+  uint32_t next = frame + 1 < endFrame_ ? frame + 1 : frame;
   int sourceChannel = sample_->channels == 1 ? 0 : channel;
   float a = sample_->data[frame * sample_->channels + sourceChannel] / 32768.0f;
   float b = sample_->data[next * sample_->channels + sourceChannel] / 32768.0f;
@@ -477,10 +480,10 @@ float SampleVoice::grainSampleAt(double position, int channel) const {
   } else if (position < first || position >= endFrame_) {
     return 0.0f;
   }
+  // Same direction-independent interpolation as sampleAt: mirroring the
+  // fraction for descending grains buzzes on low-rate material.
   uint32_t frame = (uint32_t)position;
-  uint32_t next = direction_ > 0
-    ? (frame + 1 < endFrame_ ? frame + 1 : frame)
-    : (frame > startFrame_ ? frame - 1 : frame);
+  uint32_t next = frame + 1 < endFrame_ ? frame + 1 : frame;
   int sourceChannel = sample_->channels == 1 ? 0 : channel;
   float a = sample_->data[frame * sample_->channels + sourceChannel] / 32768.0f;
   float b = sample_->data[next * sample_->channels + sourceChannel] / 32768.0f;
