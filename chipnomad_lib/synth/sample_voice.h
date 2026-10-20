@@ -17,7 +17,7 @@ class SampleVoice {
                  uint8_t resonance, int attack = -1, int decay = -1, int sustain = -1,
                  int release = -1, int envelopeShape = -1, uint8_t sliceCount = 0,
                  uint8_t sliceIndex = 0, uint8_t stretchMode = 0, float tickRateHz = 50.0f,
-                 uint8_t speedAlgorithm = 0, uint8_t forceReverse = 0);
+                 uint8_t speedAlgorithm = 0, uint8_t forceReverse = 0, uint8_t loopStart = 0);
   void noteOn();
   void noteOff();
   void kill();
@@ -53,6 +53,9 @@ class SampleVoice {
   uint32_t grainHop_;
   uint32_t startFrame_;
   uint32_t endFrame_;
+  // Loop wrap point: the LOOP START marker when a loop mode is active,
+  // startFrame_ otherwise (inert path stays bit-identical).
+  uint32_t loopStartFrame_;
   bool active_;
   StretchProcessor stretch_;
   bool useStretch_;
