@@ -38,6 +38,15 @@ static constexpr int selValX = 15;
 static constexpr int selValWidth = 6;
 static constexpr int endLabelX = 22;     // "END"
 static constexpr int selEndValX = 26;
+// Loop start row: "LST [] SPD ALGO []" - the loop wrap marker shares the
+// row with the speed algorithm selector (swapped with the Slice row, which
+// needs the full width for its four cells).
+static constexpr int loopStartLabelX = 9;   // "LST"
+static constexpr int loopStartValX = 15;
+static constexpr int loopStartValWidth = 6;
+static constexpr int spdAlgoLabelX = 22;    // "SPD ALGO"
+static constexpr int spdAlgoValX = 26;
+static constexpr int spdAlgoValWidth = 6;
 // A blank row separates the preview from the field block; the File row
 // stays above the message line (screen row 19). The two recording rows
 // (Input at y=2, REC at y=3) squeeze the preview to seven rows.
@@ -46,8 +55,15 @@ static constexpr int previewWidth = 32;
 static constexpr int previewHeight = 7;
 static constexpr int fieldRow0 = 12;
 // Logical rows 0/1 are the recording rows (y=2/3); the editor field rows
-// start at logical row 2 and draw downward from fieldRow0.
-static inline int fieldY(int row) { return fieldRow0 + row - 2; }
+// start at logical row 2 and draw downward from fieldRow0. Logical rows 4
+// (Slice) and 5 (Loop start / Spd algo) are swapped on screen: the Slice
+// row needs the full width for its four cells, so it takes the lower line
+// while the two-cell loop start row sits above it.
+static inline int fieldY(int row) {
+  if (row == 4) return fieldRow0 + 3; // Slice draws below Loop start
+  if (row == 5) return fieldRow0 + 2; // Loop start draws above Slice
+  return fieldRow0 + row - 2;
+}
 static const char* speedAlgorithmLabels[] = {"Dirty", "Clean"};
 
 // Slice row: one row hosting four value cells - Mode / Count / Slice /
@@ -105,6 +121,7 @@ static Bitmap* samplePreviewBitmap;
 static Bitmap* sampleSliceMarkerBitmap;
 static Bitmap* sampleStartMarkerBitmap;
 static Bitmap* sampleEndMarkerBitmap;
+static Bitmap* sampleLoopStartMarkerBitmap;
 static Bitmap* sampleSelectionBitmap;
 static Bitmap* sampleSliceBandBitmap;
 static Bitmap* samplePlaybackMarkerBitmap;
@@ -140,6 +157,39 @@ static void sampleBasenameSansExt(const char* path, char* out, size_t outSize) {
 
 static InstrumentSample* currentSample(void) {
   return &chipnomadState->project.instruments[cInstrument].chip.sample;
+}
+
+// A loop is active when the instrument's loop mode is set, or the playing
+// phrase row overrides the playback mode with SPL 02 (loop) or 03
+// (ping-pong). The SPL read follows the same tolerated cross-thread pattern
+// as the voice monitors: the UI reads the published playback status copy.
+static int loopActive(const InstrumentSample* sample) {
+  if (sample->loopMode != 0) return 1;
+  const PlaybackStatus* playback = chipnomadGetPlaybackStatus(chipnomadState);
+  const PlaybackTrackState* track = &playback->tracks[*pSongTrack];
+  if (track->mode != PlaybackMode::phraseRow) return 0;
+  if (track->note.instrument != cInstrument) return 0;
+  return track->note.fx[fxSLP].isOn && track->note.fx[fxSLP].fxValue >= 2;
+}
+
+// The frame the LOOP START marker plays at: the normalized value mapped
+// through the sample length and clamped into the playback region exactly
+// like SampleVoice::configure clamps it. Used for the cell readout and the
+// waveform marker.
+static uint32_t loopStartDisplayFrame(const InstrumentSample* sample) {
+  uint32_t startFrame = sampleMarkerToStartFrame(sample->frameCount, sample->start);
+  uint32_t endFrame = sampleMarkerToEndFrame(sample->frameCount, sample->end);
+  if (startFrame > endFrame) {
+    uint32_t swap = startFrame;
+    startFrame = endFrame;
+    endFrame = swap;
+  }
+  if (endFrame <= startFrame) endFrame = startFrame + 1;
+  if (endFrame > sample->frameCount) endFrame = sample->frameCount;
+  uint32_t frame = sampleMarkerToStartFrame(sample->frameCount, sample->loopStart);
+  if (frame < startFrame) frame = startFrame;
+  if (frame >= endFrame && endFrame > startFrame) frame = endFrame - 1;
+  return frame;
 }
 
 // ---------------------------------------------------------------------------
@@ -548,6 +598,12 @@ static void settingsUpdateHint(int row, int col, int ownsBar) {
   } else if (row == 4 && col == 3) {
     // Slice frame cell: single static hint.
     issued = "Adjust slice start";
+  } else if (row == 5 && col == 0) {
+    // Loop start cell: single static hint.
+    issued = "Set the loop wrap point";
+  } else if (row == 5 && col == 1) {
+    // Speed algorithm cell: single static hint.
+    issued = "Pick the stretch algorithm";
   }
   if (issued) {
     if (!ownsBar || changed || strcmp(issued, hintOwnedText) != 0) {
@@ -574,13 +630,14 @@ static Bitmap* ensurePreviewBitmap(Bitmap** bitmap) {
 }
 
 // Which marker the view window follows: 0 none, 1 Start, 2 End,
-// 3/4 the selection handles.
+// 3/4 the selection handles, 5 the loop start marker.
 enum {
   kViewAnchorNone = 0,
   kViewAnchorStart = 1,
   kViewAnchorEnd = 2,
   kViewAnchorSelStart = 3,
   kViewAnchorSelEnd = 4,
+  kViewAnchorLoopStart = 5,
 };
 
 // View window into the sample: viewStart is the first visible frame,
@@ -647,7 +704,8 @@ static uint32_t zoomSpan(const InstrumentSample* sample) {
 
 // Frame position of the view anchor: a playback marker (1 = Start, 2 = End,
 // before the reverse-order swap - the zoom anchor follows the marker itself,
-// not the active region) or a selection handle (3/4).
+// not the active region), a selection handle (3/4) or the loop start
+// marker (5).
 static uint32_t anchorFrame(const InstrumentSample* sample,
                             const SampleEditorSelection* selection, int anchor) {
   switch (anchor) {
@@ -655,6 +713,7 @@ static uint32_t anchorFrame(const InstrumentSample* sample,
     case kViewAnchorEnd: return sampleMarkerToEndFrame(sample->frameCount, sample->end);
     case kViewAnchorSelStart: return selection->start;
     case kViewAnchorSelEnd: return selection->end;
+    case kViewAnchorLoopStart: return sampleMarkerToStartFrame(sample->frameCount, sample->loopStart);
     default: return 0;
   }
 }
@@ -729,9 +788,11 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
   Bitmap* markers = ensurePreviewBitmap(&sampleSliceMarkerBitmap);
   Bitmap* startMarker = ensurePreviewBitmap(&sampleStartMarkerBitmap);
   Bitmap* endMarker = ensurePreviewBitmap(&sampleEndMarkerBitmap);
+  Bitmap* loopStartMarker = ensurePreviewBitmap(&sampleLoopStartMarkerBitmap);
   Bitmap* selectionBand = ensurePreviewBitmap(&sampleSelectionBitmap);
   Bitmap* sliceBand = ensurePreviewBitmap(&sampleSliceBandBitmap);
-  if (!waveform || !markers || !startMarker || !endMarker || !selectionBand || !sliceBand) return;
+  if (!waveform || !markers || !startMarker || !endMarker || !loopStartMarker ||
+      !selectionBand || !sliceBand) return;
 
   // Calculate actual start/end positions in frames
   uint32_t frameCount = sample->frameCount;
@@ -768,6 +829,19 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
     if (endX >= 0) {
       for (int y = 0; y < height; y++) {
         endMarker->data[y * width + endX] = 255;
+      }
+    }
+  }
+  // Create the loop start marker (single vertical line): the loop wrap
+  // point, drawn only when a loop is active (instrument loop mode or an
+  // SPL 02/03 override on the playing row). The frame is clamped into the
+  // region exactly like the voice clamps it.
+  gfxBitmapClear(loopStartMarker);
+  if (loopActive(sample)) {
+    const int loopX = frameToPixel(loopStartDisplayFrame(sample), view, width, 0);
+    if (loopX >= 0) {
+      for (int y = 0; y < height; y++) {
+        loopStartMarker->data[y * width + loopX] = 255;
       }
     }
   }
@@ -914,6 +988,12 @@ static void drawSamplePreview(void) {
     gfxSetFgColor(0xFFA500); // Orange
     gfxDrawBitmap(sampleEndMarkerBitmap, 0, previewRow);
   }
+  // Draw the loop start marker (red) - only populated when a loop is
+  // active; the bitmap is empty (nothing drawn) otherwise.
+  if (sampleLoopStartMarkerBitmap) {
+    gfxSetFgColor(0xFF0000); // Red
+    gfxDrawBitmap(sampleLoopStartMarkerBitmap, 0, previewRow);
+  }
   // Draw the slice markers on top (dark orange, 2px wide)
   if (sampleSliceMarkerBitmap) {
     gfxSetFgColor(0xFF8C00); // Dark orange
@@ -923,12 +1003,14 @@ static void drawSamplePreview(void) {
 
 static int settingsColumnCount(int row) {
   // Input row: source + meter + MON; Record row: button + CLEAR;
-  // Region/Select rows: START + END; Slice row: Mode + Count + Slice +
-  // Frame; Process row: op + GO + UNDO; File row: action + GO
+  // Region/Select rows: START + END; Loop row: loop start + speed
+  // algorithm; Slice row: Mode + Count + Slice + Frame; Process row: op +
+  // GO + UNDO; File row: action + GO
   if (row == 0) return 3;
   if (row == 1) return recordState == RecordState::complete ? 2 : 1;
   if (row == 2 || row == 3) return 2;
   if (row == 4) return 4;
+  if (row == 5) return 2;
   if (row == 6) return 3;
   if (row == 7) return 2;
   return 1;
@@ -971,8 +1053,10 @@ static void settingsDrawStatic(void) {
   gfxPrint(0, fieldY(3), "Select");
   gfxPrint(markerLabelX, fieldY(3), "START");
   gfxPrint(endLabelX, fieldY(3), "END");
+  gfxPrint(0, fieldY(5), "Loop");
+  gfxPrint(loopStartLabelX, fieldY(5), "LST");
+  gfxPrint(spdAlgoLabelX, fieldY(5), "SPD ALGO");
   gfxPrint(0, fieldY(4), "Slice");
-  gfxPrint(0, fieldY(5), "Spd algo");
   gfxPrint(0, fieldY(6), "Process");
   gfxPrint(0, fieldY(7), "File");
 }
@@ -993,6 +1077,10 @@ static void settingsDrawCursor(int col, int row) {
     const int w = col == 0 ? sliceModeW : col == 1 ? sliceNumW :
                   col == 2 ? sliceBrowseW : sliceFrameW;
     gfxCursor(x, fieldY(row), w);
+  } else if (row == 5) {
+    // Loop row: LST value + speed algorithm
+    gfxCursor(col == 0 ? loopStartValX : spdAlgoValX, fieldY(row),
+              col == 0 ? loopStartValWidth : spdAlgoValWidth);
   } else if (row == 6) {
     gfxCursor(col == 0 ? valueX : col == 1 ? goX : undoX, fieldY(row),
               col == 0 ? opWidth : col == 1 ? goWidth : undoWidth);
@@ -1084,9 +1172,23 @@ static void settingsDrawField(int col, int row, CellState state) {
     return;
   }
   if (row == 5) {
-    gfxClearRect(valueX, fieldY(row), sliceWidth, 1);
-    gfxPrint(valueX, fieldY(row),
-             speedAlgorithmLabels[sample->speedAlgorithm <= 1 ? sample->speedAlgorithm : 0]);
+    // Loop row: the LOOP START marker readout (hex frame, dimmed when no
+    // loop is active) and the speed algorithm selector.
+    if (col == 0) {
+      gfxClearRect(loopStartValX, fieldY(row), loopStartValWidth, 1);
+      if (!loopActive(sample)) gfxSetFgColor(appSettings.colorScheme.textEmpty);
+      if (!sample->data || sample->frameCount == 0) {
+        gfxPrint(loopStartValX, fieldY(row), "------");
+      } else {
+        char text[16];
+        snprintf(text, sizeof(text), "%06X", (unsigned)loopStartDisplayFrame(sample));
+        gfxPrint(loopStartValX, fieldY(row), text);
+      }
+    } else {
+      gfxClearRect(spdAlgoValX, fieldY(row), spdAlgoValWidth, 1);
+      gfxPrint(spdAlgoValX, fieldY(row),
+               speedAlgorithmLabels[sample->speedAlgorithm <= 1 ? sample->speedAlgorithm : 0]);
+    }
     return;
   }
   if (row == 2 || row == 3) {
@@ -1190,7 +1292,11 @@ static void sampleEditorNormalizeState(const InstrumentSample* sample,
       // Drop the anchor when its marker no longer exists (empty selection,
       // or a playback marker that fell outside the sample)
       uint32_t frame = anchorFrame(sample, selection, view->anchor);
-      if (view->anchor >= kViewAnchorSelStart && !selection->active) {
+      // Selection-handle anchors die with the selection; the loop start
+      // anchor is a playback marker and only dies when its frame leaves
+      // the view (checked below).
+      if ((view->anchor == kViewAnchorSelStart || view->anchor == kViewAnchorSelEnd) &&
+          !selection->active) {
         view->anchor = kViewAnchorNone;
       } else if (frame < view->viewStart || frame > view->viewEnd) {
         view->anchor = kViewAnchorNone;
@@ -1212,6 +1318,7 @@ static void settingsRepaintAfterOp(void) {
     }
   }
   settingsDrawField(0, 5, CellState::normal);
+  settingsDrawField(1, 5, CellState::normal);
   settingsDrawField(0, 6, CellState::normal);
   settingsDrawField(1, 6, CellState::normal);
   settingsDrawField(2, 6, CellState::normal);
@@ -2009,13 +2116,56 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
     return 1;
   }
   if (row == 5) {
-    if (col) return 0;
+    if (col == 0) {
+      // LOOP START: inert when no loop is active (the marker does not
+      // affect playback then). Fine steps move one normalized unit and
+      // zoom onto the marker; coarse steps move 16 and return to the full
+      // view - the same convention as the Region row. EDIT+OPT snaps the
+      // marker back to the Region START (value 0).
+      if (!loopActive(sample)) return 0;
+      action = convertMultiAction(action);
+      if (action == CellEditAction::clear) {
+        if (sample->loopStart != 0) handled = 1;
+        sample->loopStart = 0;
+      } else if (action == CellEditAction::increase || action == CellEditAction::decrease ||
+                 action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig) {
+        const int fine = action == CellEditAction::increase || action == CellEditAction::decrease;
+        const int up = action == CellEditAction::increase || action == CellEditAction::increaseBig;
+        const uint8_t step = fine ? 1 : 16;
+        uint8_t next;
+        if (up) next = sample->loopStart > 255 - step ? 255 : (uint8_t)(sample->loopStart + step);
+        else next = sample->loopStart < step ? 0 : (uint8_t)(sample->loopStart - step);
+        if (next != sample->loopStart) {
+          sample->loopStart = next;
+          handled = 1;
+        }
+      }
+      if (handled) {
+        projectModified = 1;
+        settingsDrawField(0, 5, CellState::focus);
+        // Same zoom-hold pattern as the Region markers: fine steps zoom
+        // onto the marker while EDIT stays down, coarse steps and clear
+        // return to the full-sample view.
+        if (action == CellEditAction::increase || action == CellEditAction::decrease) {
+          editorView.anchor = kViewAnchorLoopStart;
+          zoomToMarker(sample, &editorView, loopStartDisplayFrame(sample));
+          zoomHoldActive = 1;
+        } else {
+          zoomOutFull(sample, &editorView);
+          zoomHoldActive = 0;
+        }
+        sampleEditorNormalizeState(sample, &editorSelection, &editorView);
+        drawSamplePreview();
+      }
+      return handled;
+    }
+    // col 1: speed algorithm (unchanged behavior, new position)
     uint8_t algorithm = sample->speedAlgorithm <= 1 ? sample->speedAlgorithm : 0;
     handled = edit8noLast(action, &algorithm, 1, 0, 1);
     if (handled) {
       sample->speedAlgorithm = algorithm;
       projectModified = 1;
-      settingsDrawField(0, 5, CellState::focus);
+      settingsDrawField(1, 5, CellState::focus);
     }
     return handled;
   }
@@ -2089,6 +2239,19 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
       }
     }
     marker = col == 0 ? kViewAnchorStart : kViewAnchorEnd;
+    // Keep the loop start marker inside the playback region: when a Region
+    // edit moves the markers past it, snap the marker to the Region START
+    // (the same predictable behavior as the markers themselves when the
+    // region shrinks past them).
+    if (handled) {
+      const uint32_t regionStart = sampleMarkerToStartFrame(sample->frameCount, sample->start);
+      const uint32_t regionEnd = sampleMarkerToEndFrame(sample->frameCount, sample->end);
+      const uint32_t loopFrame = sampleMarkerToStartFrame(sample->frameCount, sample->loopStart);
+      if (loopFrame < regionStart || loopFrame >= regionEnd) {
+        sample->loopStart = sample->start;
+        settingsDrawField(0, 5, CellState::normal);
+      }
+    }
   } else if (row == 3) {
     // Select row: processing-selection handles. Fine steps move twenty
     // frames and zoom onto the handle; coarse steps jump frameCount/64 (min 16)
@@ -2187,6 +2350,9 @@ static int settingsIsCellValid(int col, int row) {
   if (row == 4 && sample->stretchMode != 0) return 0;
   if (row == 4 && col == 1 &&
       sampleDecodeSliceMode(sample->slice) == sliceModeLazy) return 0;
+  // The LOOP START cell is inert without an active loop: skip it in
+  // navigation (the cursor lands on the speed algorithm instead).
+  if (row == 5 && col == 0 && !loopActive(sample)) return 0;
   if (row == 7 && col == 0) {
     return fileAction == 0 ? sample->path[0] != 0 : (sample->data != NULL && sample->frameCount > 0);
   }
@@ -2528,6 +2694,10 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
     } else if (fromRow == 4 && fromCol == 2 && keys == keyLeft) {
       toCol = 0;
     } else if (fromRow == 3 && fromCol == 1 && keys == keyDown) {
+      // Coming down from the Select row's END marker: land on the Slice
+      // browser. The Loop row sits between them on screen, but the
+      // framework navigation already skips its inert LST cell, so only
+      // the LAZY-specific dead-cell recovery needs the explicit target.
       toRow = 4;
       toCol = 2;
     }
