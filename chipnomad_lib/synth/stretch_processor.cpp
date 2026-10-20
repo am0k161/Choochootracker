@@ -46,8 +46,8 @@ StretchProcessor::~StretchProcessor() {
 
 void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretchMode,
                                  float tickRateHz, float pitchSemitones,
-                                 uint8_t startMarker, uint8_t endMarker) {
-  configure(sample, stretchMode, 0, tickRateHz, pitchSemitones, startMarker, endMarker);
+                                 uint8_t startMarker, uint8_t endMarker, uint8_t loopMode) {
+  configure(sample, stretchMode, 0, tickRateHz, pitchSemitones, startMarker, endMarker, loopMode);
 }
 
 void StretchProcessor::init(double outputSampleRate, bool cheap) {
@@ -72,7 +72,7 @@ void StretchProcessor::init(double outputSampleRate, bool cheap) {
 
 void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretchMode,
                                  uint16_t speedPercent, float tickRateHz, float pitchSemitones,
-                                 uint8_t startMarker, uint8_t endMarker) {
+                                 uint8_t startMarker, uint8_t endMarker, uint8_t loopMode) {
   if (!stretch_ || !sample || !sample->data || sample->frameCount == 0 ||
       (stretchMode == 0 && speedPercent == 0)) {
     configured_ = false;
@@ -85,7 +85,9 @@ void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretch
   sampleFrames_ = sample->frameCount;
   sampleChannels_ = sample->channels >= 2 ? 2 : 1;
   sampleRate_ = sample->sampleRate > 0 ? (double)sample->sampleRate : (double)outputSampleRate_;
-  loopMode_ = sample->loopMode > 2 ? 0 : sample->loopMode;
+  // Effective playback mode (instrument setting or SPL override): 0 one-shot,
+  // 1 loop, 2 ping-pong.
+  loopMode_ = loopMode > 2 ? 0 : loopMode;
 
   // Source window: same Start/End mapping as the plain playback path, with
   // the same reverse detection (Start > End plays the window backwards).
@@ -99,12 +101,16 @@ void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretch
   }
   if (endFrame <= startFrame) endFrame = startFrame + 1;
   if (endFrame > sampleFrames_) endFrame = sampleFrames_;
+  // windowReverse_ records the CONFIGURED window direction (marker order);
+  // sourceReverse_/sourceDirection_ are runtime playback state that ping-pong
+  // flips in process(). Comparing the runtime flag here would treat every
+  // direction flip as a window change (re-seek + playhead reset), and the
+  // engine's per-tick reconfigure would stomp the flip back to forward.
   bool windowChanged = sourceStartFrame_ != startFrame || sourceEndFrame_ != endFrame ||
-    sourceReverse_ != reverse;
+    windowReverse_ != reverse;
   sourceStartFrame_ = startFrame;
   sourceEndFrame_ = endFrame;
-  sourceReverse_ = reverse;
-  sourceDirection_ = reverse ? -1.0 : 1.0;
+  windowReverse_ = reverse;
 
   double sourceSeconds = (double)(sourceEndFrame_ - sourceStartFrame_) / sampleRate_;
   double targetSeconds;
@@ -136,6 +142,8 @@ void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretch
   // new ratio. Only a change of the actual source window forces a re-seek.
   if (!configured_ || windowChanged) {
     sourcePosition_ = (double)sourceStartFrame_;
+    sourceReverse_ = windowReverse_;
+    sourceDirection_ = windowReverse_ ? -1.0 : 1.0;
     inputAccumulator_ = 0.0;
     primed_ = false;
     draining_ = false;
@@ -149,6 +157,11 @@ void StretchProcessor::noteOn() {
     active_ = false;
     return;
   }
+  // A new note always starts from the window edge in the window's own
+  // direction; leftover ping-pong direction from a previous note must not
+  // leak into the priming seek.
+  sourceReverse_ = windowReverse_;
+  sourceDirection_ = windowReverse_ ? -1.0 : 1.0;
   auto* s = static_cast<signalsmith::stretch::SignalsmithStretch<float>*>(stretch_);
   // Prime the stretcher's internal latency so output starts immediately.
   // outputSeek allocates and resets internally; safe here (not in render()).
