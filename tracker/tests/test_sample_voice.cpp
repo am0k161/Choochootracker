@@ -883,3 +883,48 @@ TEST_CASE("SampleVoice plays stored slice bounds and legacy fallback identically
   voice.render(output, 4);
   CHECK(std::fabs(output[0] - pcm[0] / 32768.0f) < 0.01f);
 }
+
+TEST_CASE("reverse playback interpolates without mirroring the fraction") {
+  // A low-rate sample (step < 1) played backwards must interpolate toward
+  // frame + 1 like forward playback. Mirroring the fraction toward frame - 1
+  // zigzags around every integer frame crossing and buzzes.
+  int16_t pcm[64];
+  for (int i = 0; i < 64; ++i) pcm[i] = (int16_t)(i * 512); // ramp: value i/64
+
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  // 24 kHz source at a 48 kHz output puts the plain path at step 0.5
+  // (speedPercent stays 100 so the granular path does not engage).
+  sample.sampleRate = 24000;
+  sample.frameCount = 64;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255; // full window: marker 255 maps to frameCount
+  sample.sustain = 255;
+
+  SampleVoice voice;
+  float output[32 * 2];
+  voice.init(48000.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
+                  sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
+                  -1, -1, 0, 0, 0, 50.0f, 0, 1);
+  voice.noteOn();
+  voice.render(output, 32);
+
+  // The descending cursor starts at frame 63 and moves -0.5 per frame:
+  // 63, 62.5, 62, 61.5, ... Correct interpolation glides down the ramp
+  // (0.5 ramp-LSB per frame). The mirrored-fraction bug reads 63, 61.5,
+  // 62, 60.5 ... and jumps ~1.5 ramp-LSB every other frame.
+  double maxJump = 0.0;
+  for (int i = 1; i < 32; ++i) {
+    const double jump = std::fabs((double)output[i * 2] - (double)output[(i - 1) * 2]);
+    if (jump > maxJump) maxJump = jump;
+  }
+  // 0.5 ramp-LSB = 0.0078 normalized; the bug jumps 0.023.
+  CHECK(maxJump < 0.015);
+  // output[2*i] is output frame i; the cursor sits at 63 - 0.5*i.
+  CHECK(std::fabs(output[0] - 63.0f / 64.0f) < 0.001f);
+  CHECK(std::fabs(output[2] - 62.5f / 64.0f) < 0.001f);
+  CHECK(std::fabs(output[4] - 62.0f / 64.0f) < 0.001f);
+  CHECK(std::fabs(output[8] - 61.0f / 64.0f) < 0.001f);
+}
