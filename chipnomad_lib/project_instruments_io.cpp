@@ -297,6 +297,7 @@ static int loadInstrumentSample(FILE* file, Instrument* instrument) {
     else if (strncmp(line, "- Sample start: ", 16) == 0) sscanf(line, "- Sample start: %hhu", &sample->start);
     else if (strncmp(line, "- Sample end: ", 14) == 0) sscanf(line, "- Sample end: %hhu", &sample->end);
     else if (strncmp(line, "- Sample loop: ", 15) == 0) sscanf(line, "- Sample loop: %hhu", &sample->loopMode);
+    else if (strncmp(line, "- Sample loop start: ", 21) == 0) sscanf(line, "- Sample loop start: %hhu", &sample->loopStart);
     else if (strncmp(line, "- Sample slice: ", 16) == 0) sscanf(line, "- Sample slice: %hhu", &sample->slice);
     else if (strncmp(line, "- Sample auto sensitivity: ", 26) == 0) sscanf(line, "- Sample auto sensitivity: %hhu", &sample->autoSensitivity);
     else if (strncmp(line, "- Sample slice bounds: ", 23) == 0) {
@@ -859,6 +860,12 @@ static int saveInstrumentSample(FILE* file, Instrument* instrument) {
   fprintf(file, "- Sample start: %hhu\n", sample->start);
   fprintf(file, "- Sample end: %hhu\n", sample->end);
   fprintf(file, "- Sample loop: %hhu\n", sample->loopMode);
+  // Loop start marker: only written when it differs from the default, so
+  // existing files stay byte-identical. 0 means the loop wraps to the
+  // Region START.
+  if (sample->loopStart != 0) {
+    fprintf(file, "- Sample loop start: %hhu\n", sample->loopStart);
+  }
   fprintf(file, "- Sample slice: %hhu\n", sampleNormalizeSliceEx(sample->slice));
   // AUTO sensitivity: only written when it differs from the default, so
   // existing files stay byte-identical.

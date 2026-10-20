@@ -307,7 +307,7 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
                             uint16_t cutoffHz, uint8_t resonance, int attack, int decay,
                             int sustain, int release, int envelopeShape, uint8_t sliceCount,
                             uint8_t sliceIndex, uint8_t stretchMode, float tickRateHz,
-                            uint8_t speedAlgorithm, uint8_t forceReverse) {
+                            uint8_t speedAlgorithm, uint8_t forceReverse, uint8_t loopStart) {
   sample_ = sample;
   post_.setGain(gain);
   if (!sample_ || !sample_->data || sample_->frameCount == 0) return;
@@ -387,6 +387,19 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
   timeStretch_ = speedPercent / 100.0f;
   granular_ = fabsf(timeStretch_ - 1.0f) > 0.001f;
   loopMode_ = loopMode > 2 ? 0 : loopMode;
+  // Loop wrap point: the LOOP START marker when a loop mode is active, clamped
+  // inside the playback region (Region START <= LOOP START < Region END). With
+  // no loop the marker is inert and startFrame_ keeps the old behavior
+  // bit-identical. Region edits that move the markers re-clamp loopStart in
+  // the sample editor. Placed after the loopMode_ assignment so the wrap
+  // point follows the loop mode being configured, not the previous one.
+  if (loopMode_ != 0) {
+    loopStartFrame_ = sampleMarkerToStartFrame(sample_->frameCount, loopStart);
+    if (loopStartFrame_ < startFrame_) loopStartFrame_ = startFrame_;
+    if (loopStartFrame_ >= endFrame_) loopStartFrame_ = endFrame_ - 1;
+  } else {
+    loopStartFrame_ = startFrame_;
+  }
   grainSize_ = (uint32_t)(outputSampleRate_ * 0.040f);
   grainHop_ = grainSize_ / 2;
   post_.setFilter(sample_->filterEnabled != 0, sample_->filterCharacter, sample_->filterMode,
@@ -438,18 +451,29 @@ float SampleVoice::sampleAt(double position, int channel) const {
 }
 
 float SampleVoice::grainSampleAt(double position, int channel) const {
-  const double first = startFrame_;
-  const double length = endFrame_ - startFrame_;
+  // With a loop mode active the granular fold uses the LOOP START marker as
+  // the lower bound; without a loop it keeps the region start.
+  const double first = loopMode_ != 0 ? loopStartFrame_ : startFrame_;
+  const double length = loopMode_ != 0 ? endFrame_ - loopStartFrame_
+                                       : endFrame_ - startFrame_;
   if (loopMode_ == 1) {
-    position = fmod(position - first, length);
-    if (position < 0.0) position += length;
-    position += first;
+    if (position >= startFrame_ && position < endFrame_) {
+      // Inside the region: no fold, the first pass plays through.
+    } else {
+      position = fmod(position - first, length);
+      if (position < 0.0) position += length;
+      position += first;
+    }
   } else if (loopMode_ == 2) {
-    double span = length > 1.0 ? length - 1.0 : 1.0;
-    double period = span * 2.0;
-    position = fmod(position - first, period);
-    if (position < 0.0) position += period;
-    position = first + (position <= span ? position : period - position);
+    if (position >= startFrame_ && position < endFrame_) {
+      // Inside the region: no fold, the first pass plays through.
+    } else {
+      double span = length > 1.0 ? length - 1.0 : 1.0;
+      double period = span * 2.0;
+      position = fmod(position - first, period);
+      if (position < 0.0) position += period;
+      position = first + (position <= span ? position : period - position);
+    }
   } else if (position < first || position >= endFrame_) {
     return 0.0f;
   }
@@ -465,14 +489,23 @@ float SampleVoice::grainSampleAt(double position, int channel) const {
 
 bool SampleVoice::advancePosition() {
   position_ += step_ * direction_;
-  if (position_ >= startFrame_ && position_ < endFrame_) return true;
+  // A descending ping-pong pass bounces at the loop start marker; every
+  // other path keeps the region bounds here and folds below. The first pass
+  // still starts at the region start (see noteOn), so ascending playback may
+  // travel the region below the marker before entering the loop window.
+  if (loopMode_ == 2 && direction_ < 0) {
+    if (position_ >= loopStartFrame_ && position_ < endFrame_) return true;
+  } else if (position_ >= startFrame_ && position_ < endFrame_) {
+    return true;
+  }
   if (loopMode_ == 0) return false;
-  double first = startFrame_;
+  // The loop wraps between the LOOP START marker and the region end.
+  double first = loopStartFrame_;
   double last = endFrame_ - 1.0;
   if (loopMode_ == 1) {
-    double length = endFrame_ - startFrame_;
+    double length = endFrame_ - loopStartFrame_;
     while (position_ >= endFrame_) position_ -= length;
-    while (position_ < startFrame_) position_ += length;
+    while (position_ < loopStartFrame_) position_ += length;
   } else if (position_ > last) {
     position_ = last - (position_ - last);
     direction_ = -1;

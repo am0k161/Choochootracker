@@ -2,11 +2,13 @@
 // formerly SLP). Uses the same fixture pattern as test_lazy_mode.cpp.
 #include "doctest.h"
 #include "../../chipnomad_lib/project_instruments.h"
+#include "../../chipnomad_lib/project.h"
 #include "../../chipnomad_lib/synth/sample_voice.h"
 #include "../../src/project_utils.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -289,6 +291,183 @@ TEST_CASE("SPL 02 maps to loop and SPL 03 maps to ping-pong") {
     engine.render(882 * 3);
     CHECK(engine.voice()->active());
   }
+}
+
+// --- LOOP START marker -------------------------------------------------------
+// loopStart is a 0-255 normalized marker (like start/end). When a loop mode is
+// active (instrument loopMode != 0 or SPL >= 02) the voice wraps back to the
+// LOOP START frame instead of the Region START frame. With no loop the marker
+// is inert and playback stays bit-identical. On the 8820-frame fixture,
+// loopStart 0x40 maps to frame 2213 (sampleMarkerToStartFrame).
+
+TEST_CASE("loop start is inert when the loop is off") {
+  // Two engines, same sample: one with loopStart 0, one with 0x40, both with
+  // loopMode 0. The cursor trajectory must be identical (inert marker).
+  EngineSample es;
+  es.init(8820);
+
+  std::vector<double> baseline;
+  {
+    LazyEngine engine(es.s, 0);
+    PhraseRow row = makeRow(48);
+    chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+    for (int tick = 0; tick < 8; ++tick) {
+      engine.render(882);
+      baseline.push_back(engine.voice()->playbackFrame());
+    }
+  }
+
+  es.s.loopStart = 0x40;
+  std::vector<double> withMarker;
+  {
+    LazyEngine engine(es.s, 0);
+    PhraseRow row = makeRow(48);
+    chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+    for (int tick = 0; tick < 8; ++tick) {
+      engine.render(882);
+      withMarker.push_back(engine.voice()->playbackFrame());
+    }
+  }
+
+  REQUIRE(baseline.size() == withMarker.size());
+  for (size_t i = 0; i < baseline.size(); ++i) {
+    CHECK(baseline[i] == withMarker[i]);
+  }
+}
+
+TEST_CASE("forward loop wraps to the loop start marker") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopMode = 1;
+  es.s.loopStart = 0x40; // frame 2213 of 8820
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+  // One tick = 882 frames at 44100 Hz / 50 Hz. The region is the whole
+  // sample, so the first wrap happens during tick 10.
+  for (int tick = 0; tick < 9; ++tick) engine.render(882);
+  const double before = engine.voice()->playbackFrame();
+  CHECK(before > 7000.0); // still in the first pass, near the end
+  engine.render(882);
+  const double after = engine.voice()->playbackFrame();
+  // Wrapped back to the LOOP START frame (2213), not the Region START (0).
+  CHECK(after >= 2213.0);
+  CHECK(after < 2213.0 + 882.0);
+}
+
+TEST_CASE("ping-pong bounces at the loop start marker") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopMode = 2;
+  es.s.loopStart = 0x40;
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+  // Play until the cursor has passed the end and reversed: after enough
+  // ticks the cursor must bounce at the LOOP START frame, never reaching
+  // the region start (0).
+  double minSeen = 1e18;
+  for (int tick = 0; tick < 40; ++tick) {
+    engine.render(882);
+    const double frame = engine.voice()->playbackFrame();
+    if (tick >= 12) minSeen = frame < minSeen ? frame : minSeen;
+  }
+  // The loop window is [2213, 8820); the bounce lower bound is 2213.
+  CHECK(minSeen >= 2213.0 - 1.0);
+  // And the cursor did travel up to the top at least once (sanity).
+  CHECK(minSeen < 8820.0);
+}
+
+TEST_CASE("region end moved below the loop start clamps it") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopMode = 1;
+  es.s.loopStart = 0x80; // frame 4426
+  // Region END at 0x40 puts the region end frame (2239) below the marker
+  // frame (4426): the voice must clamp the wrap point into the region.
+  es.s.end = 0x40;
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+  // The clamped loop window is [0, 2239): the voice must keep looping
+  // inside it instead of wrapping to the unclamped marker frame.
+  bool wrapped = false;
+  for (int tick = 0; tick < 12; ++tick) {
+    engine.render(882);
+    const double frame = engine.voice()->playbackFrame();
+    if (tick > 0 && frame < 2239.0) wrapped = true;
+    CHECK(frame < 2239.0);
+  }
+  CHECK(wrapped);
+}
+
+TEST_CASE("SPL 03 ping-pong respects the loop start marker") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopMode = 0; // instrument loop off; SPL must override
+  es.s.loopStart = 0x40;
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  row.fx[0][0] = fxSLP;
+  row.fx[0][1] = 3; // ping-pong via SPL
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+  double minSeen = 1e18;
+  for (int tick = 0; tick < 40; ++tick) {
+    engine.render(882);
+    const double frame = engine.voice()->playbackFrame();
+    if (tick >= 12) minSeen = frame < minSeen ? frame : minSeen;
+  }
+  // SPL 03 activates the loop, so the bounce lower bound is the marker
+  // frame (2213), not the region start (0).
+  CHECK(minSeen >= 2213.0 - 1.0);
+  CHECK(minSeen < 8820.0);
+}
+
+TEST_CASE("sample loop start survives save and load; missing field is zero") {
+  Project saved, loaded;
+  projectInit(&saved);
+  projectInit(&loaded);
+  saved.chipsCount = 1;
+  saved.tracksCount = 1;
+  saved.chipType = ChipType::AY;
+  std::strcpy(saved.pitchTable.name, "Test");
+  saved.pitchTable.length = 1;
+  std::strcpy(saved.pitchTable.noteNames[0], "C-4");
+  saved.pitchTable.values[0] = 1000;
+  getInstrumentFunctions(InstrumentType::Sample).init(&saved.instruments[0]);
+  saved.instruments[0].chip.sample.loopStart = 0x40;
+  const char* path = "build/tests/sample_loop_start_io.cct";
+  REQUIRE(projectSave(&saved, path) == 0);
+  INFO(projectFileError);
+  REQUIRE(projectLoad(&loaded, path) == 0);
+  CHECK(loaded.instruments[0].type == InstrumentType::Sample);
+  CHECK(loaded.instruments[0].chip.sample.loopStart == 0x40);
+
+  // A file without the field loads with loopStart 0 (Region START wrap).
+  FILE* in = std::fopen(path, "r");
+  REQUIRE(in != nullptr);
+  const char* stripped = "build/tests/sample_loop_start_missing.cct";
+  FILE* out = std::fopen(stripped, "w");
+  REQUIRE(out != nullptr);
+  char line[512];
+  while (std::fgets(line, sizeof(line), in)) {
+    if (std::strncmp(line, "- Sample loop start:", 20) == 0) continue;
+    std::fputs(line, out);
+  }
+  std::fclose(in);
+  std::fclose(out);
+
+  Project missing;
+  projectInit(&missing);
+  REQUIRE(projectLoad(&missing, stripped) == 0);
+  CHECK(missing.instruments[0].type == InstrumentType::Sample);
+  CHECK(missing.instruments[0].chip.sample.loopStart == 0);
+  std::remove(path);
+  std::remove(stripped);
 }
 
 }  // TEST_SUITE("sample_fx")

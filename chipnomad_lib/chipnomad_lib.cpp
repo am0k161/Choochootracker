@@ -2157,7 +2157,7 @@ static void updateSampleVoices(ChipNomadState* state) {
       voices[slot]->configure(sample, (float)voicePitchCents, gain / track->chordVoiceCount, (float)speedPercent, start, end, (uint8_t)loopMode,
                               (uint16_t)cutoff, (uint8_t)resonance, attack, decay, sustain, release, shape,
                               sliceCount, voiceSliceIndex, sample->stretchMode, project->tickRate,
-                              sample->speedAlgorithm, forceReverse);
+                              sample->speedAlgorithm, forceReverse, sample->loopStart);
     }
   }
 }
