@@ -106,7 +106,8 @@ TRACKER_SRC_SOURCES = src/screens/instrument_monk.cpp src/soundbank_library.cpp 
                       src/import/pt3_tables.cpp \
                       src/import/import_midi.cpp \
                       src/import/import_m8s.cpp \
-                      src/import/import_lsdj.cpp
+                      src/import/import_lsdj.cpp \
+                      src/import/import_fur.cpp
 
 # Mock sources
 MOCK_SOURCES = $(wildcard tests/mocks/*.cpp)

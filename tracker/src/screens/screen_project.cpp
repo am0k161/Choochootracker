@@ -13,6 +13,8 @@
 #include "import/import_vt2.h"
 #include "import/import_midi.h"
 #include "import/import_m8s.h"
+#include "import/import_fur.h"
+#include "screens/screen_fur_channels.h"
 #include "string_utils.h"
 #include "midi/midi_router.h"
 #include "link/link_client.h"
@@ -23,6 +25,14 @@
 
 #ifdef WEB_BUILD
 #include <emscripten/emscripten.h>
+#endif
+
+// Furnace modules are imported on desktop and Android only.
+#if defined(DESKTOP_BUILD) || defined(ANDROID_BUILD)
+#define PROJECT_IMPORT_FUR
+#define PROJECT_LOAD_EXTENSIONS ".cct,.vt2,.mid,.midi,.m8s,.fur"
+#else
+#define PROJECT_LOAD_EXTENSIONS ".cct,.vt2,.mid,.midi,.m8s"
 #endif
 
 static int isCharEdit = 0;
@@ -45,6 +55,18 @@ static uint8_t clockSourceMirror = 0;
 #define BPM_MAX (500)
 #define BPM_DEFAULT (125) // the old 50 Hz default
 
+#ifdef PROJECT_IMPORT_FUR
+// A Furnace module with more than 8 channels playing notes asks which ones to
+// keep: projectLoadFromPath shows the picker and returns PROJECT_LOAD_PENDING,
+// the picker's callback then loads again with the choice in pendingFur*.
+#define PROJECT_LOAD_PENDING (2)
+static char furPickPath[2048];
+static int pendingFurCount = 0;
+static int pendingFurChannels[PROJECT_MAX_TRACKS];
+static void onFurChannelsPicked(const int* channels, int count);
+static void onFurPickCancelled(void);
+#endif
+
 int projectLoadFromPath(const char* path) {
   if (!path) {
     return 1;
@@ -65,6 +87,9 @@ int projectLoadFromPath(const char* path) {
   // Check file extension to determine loader
   const char* ext = strrchr(path, '.');
   int loadResult = -1;
+#ifdef PROJECT_IMPORT_FUR
+  int furImported = 0;
+#endif
   Project replacement;
   projectInitAY(&replacement);
 
@@ -78,6 +103,24 @@ int projectLoadFromPath(const char* path) {
     } else if (strcasecmp(ext, ".m8s") == 0) {
       // Import a Dirtywave M8 song (structure and notes only)
       loadResult = projectLoadM8S(&replacement, path);
+#ifdef PROJECT_IMPORT_FUR
+    } else if (strcasecmp(ext, ".fur") == 0) {
+      // Import a Furnace module; its samples are written to the sample folder
+      if (pendingFurCount == 0) {
+        static FurChannelInfo channels[256];
+        int channelCount = 0;
+        if (furListChannels(path, 0, channels, 256, &channelCount) == 0 && channelCount > PROJECT_MAX_TRACKS) {
+          snprintf(furPickPath, sizeof(furPickPath), "%s", path);
+          furChannelsPick(channels, channelCount, onFurChannelsPicked, onFurPickCancelled);
+          screenSetup(&screenFurChannels, 0);
+          loadResult = PROJECT_LOAD_PENDING;
+        }
+      }
+      if (loadResult != PROJECT_LOAD_PENDING) {
+        loadResult = projectLoadFurChannels(&replacement, path, appSettings.samplePath, pendingFurChannels, pendingFurCount, 0);
+        furImported = 1;
+      }
+#endif
     } else if (strcasecmp(ext, ".cct") == 0) {
       // Load ChooChooTracker native format
       loadResult = projectLoad(&replacement, path);
@@ -108,6 +151,19 @@ int projectLoadFromPath(const char* path) {
     for (int i = 0; i < PROJECT_MAX_TRACKS; i++) {
       chipnomadQueuePlaybackClearTrackFX(chipnomadState, i);
     }
+#ifdef PROJECT_IMPORT_FUR
+    if (furImported) {
+      // Tell how much of the module could not be converted
+      const char* notes = projectLoadFurWarnings();
+      int count = 0;
+      for (const char* c = notes; *c; c++) if (*c == '\n') count++;
+      if (notes[0]) screenMessage(MESSAGE_TIME, "Furnace import: %d conversion notes", count + 1);
+    }
+#endif
+#ifdef PROJECT_IMPORT_FUR
+  } else if (loadResult == PROJECT_LOAD_PENDING) {
+    projectFree(&replacement);   // the picker is on screen; its callback loads again
+#endif
   } else {
     projectFree(&replacement);
     screenMessage(MESSAGE_TIME_ERROR, "%s", projectFileError);
@@ -117,11 +173,32 @@ int projectLoadFromPath(const char* path) {
 }
 
 static void onProjectLoaded(const char* path) {
-  if (projectLoadFromPath(path) == 0 && projectReturnScreen == &screenTitle)
+  int result = projectLoadFromPath(path);
+#ifdef PROJECT_IMPORT_FUR
+  if (result == PROJECT_LOAD_PENDING) return;   // the Furnace channel picker is showing
+#endif
+  if (result == 0 && projectReturnScreen == &screenTitle)
     screenSetup(&screenSong, 0);
   else
     screenSetup(projectReturnScreen, 0);
 }
+
+#ifdef PROJECT_IMPORT_FUR
+static void onFurChannelsPicked(const int* channels, int count) {
+  pendingFurCount = count < PROJECT_MAX_TRACKS ? count : PROJECT_MAX_TRACKS;
+  for (int i = 0; i < pendingFurCount; i++) pendingFurChannels[i] = channels[i];
+  int result = projectLoadFromPath(furPickPath);
+  pendingFurCount = 0;
+  if (result == 0 && projectReturnScreen == &screenTitle)
+    screenSetup(&screenSong, 0);
+  else
+    screenSetup(projectReturnScreen, 0);
+}
+
+static void onFurPickCancelled(void) {
+  screenSetup(projectReturnScreen, 0);
+}
+#endif
 
 #ifdef WEB_BUILD
 extern "C" EMSCRIPTEN_KEEPALIVE int webLoadProject(const char* path) {
@@ -151,7 +228,7 @@ static void onProjectCancelled(void) {
 }
 
 static void doLoadProject(void) {
-  fileBrowserSetup("LOAD PROJECT", ".cct,.vt2,.mid,.midi,.m8s", appSettings.projectPath,
+  fileBrowserSetup("LOAD PROJECT", PROJECT_LOAD_EXTENSIONS, appSettings.projectPath,
     onProjectLoaded, onProjectCancelled);
   screenSetup(&screenFileBrowser, 0);
 }
@@ -175,7 +252,7 @@ void projectOpenFromScreen(const AppScreen* returnScreen) {
 
 void projectOpenFromScreenAtPath(const AppScreen* returnScreen, const char* path) {
   projectReturnScreen = returnScreen ? returnScreen : &screenProject;
-  fileBrowserSetup("LOAD PROJECT", ".cct,.vt2,.mid,.midi,.m8s", path,
+  fileBrowserSetup("LOAD PROJECT", PROJECT_LOAD_EXTENSIONS, path,
     onProjectLoaded, onProjectCancelled);
   screenSetup(&screenFileBrowser, 0);
 }

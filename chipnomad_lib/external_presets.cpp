@@ -23,6 +23,16 @@ using Bytes = std::vector<uint8_t>;
 void need(bool ok, const std::string& why) {
   if (!ok) throw std::runtime_error(why);
 }
+// Set while a song's instrument is converted (importFurnaceInstrument):
+// what the engine cannot play is dropped, and listed in droppedNotes, instead
+// of rejecting the whole instrument.
+bool tolerantFurnace = false;
+std::string droppedNotes;
+void noteDropped(const std::string& what) {
+  if (droppedNotes.find(what) != std::string::npos) return;
+  if (!droppedNotes.empty()) droppedNotes += ", ";
+  droppedNotes += what;
+}
 struct Reader {
   const Bytes& b;
   size_t pos = 0, end;
@@ -795,10 +805,27 @@ void encodeMacros(Furnace& f, ExternalPreset& p) {
   ChipProgram* program = sid               ? &p.instrument.chip.sid.program
                          : isSimpleChip(t) ? &p.instrument.chip.simpleChip.program
                                            : nullptr;
-  need(!f.opMacros, "Furnace operator macros are not supported");
+  need(tolerantFurnace || !f.opMacros, "Furnace operator macros are not supported");
+  if (tolerantFurnace && sid) {
+    // The engine has no filter mode or resonance lane: take the first step of
+    // the Furnace macros (ex1: filter mode, ex2: resonance) as static values.
+    auto& v = p.instrument.chip.sid.value;
+    auto mode = f.macros.find(5);
+    if (mode != f.macros.end() && !mode->second.data.empty() && (f.c64[0] & 16)) {
+      int x = mode->second.data[0] & 7;
+      v[sidFilterMode] = (x & 1) | ((x & 4) >> 1) | ((x & 2) << 1);
+      if (mode->second.data.size() > 1) noteDropped("filter mode macro (first step kept)");
+    }
+    auto res = f.macros.find(6);
+    if (res != f.macros.end() && !res->second.data.empty()) {
+      v[sidResonance] = std::clamp(res->second.data[0], 0, 15);
+      if (res->second.data.size() > 1) noteDropped("resonance macro (first step kept)");
+    }
+  }
   for (auto& entry : f.macros) {
     Macro m = entry.second;
     if (m.data.empty()) continue;
+    try {
     need(!(m.open & 6), "Furnace ADSR/LFO macro mode is not supported");
     bool allZero = std::all_of(m.data.begin(), m.data.end(), [](int v) { return v == 0; });
     if (!program) {
@@ -837,7 +864,10 @@ void encodeMacros(Furnace& f, ExternalPreset& p) {
       m.id = 5;
     }
     if (m.id == 3)
-      for (auto& v : m.data) need(v > 0 && v <= 8, "Unsupported SID waveform combination");
+      for (auto& v : m.data) {
+        if (tolerantFurnace && v > 8) v = 8;
+        need(v >= 0 && v <= 8, "Unsupported SID waveform combination");
+      }
     if (m.id == 0 && (t == InstrumentType::GBPulse || t == InstrumentType::GBNoise) &&
         f.gb.size() >= 3 && !(f.gb[2] & 1))
       continue;
@@ -884,6 +914,14 @@ void encodeMacros(Furnace& f, ExternalPreset& p) {
       for (int k = 0; k < 4; ++k) dst[8 + 4 * j + k] = v >> (8 * k);
     }
     program->size += n;
+    } catch (const std::exception& e) {
+      if (!tolerantFurnace) throw;
+      static const char* const names[] = {"volume", "arpeggio", "pulse width", "waveform", "pitch", "filter mode",
+                                          "resonance", "extra 3", "cutoff"};
+      std::string name = entry.first >= 0 && entry.first < 9 ? names[entry.first] : "macro " + std::to_string(entry.first);
+      if (entry.first == 5 || entry.first == 6) continue;     // kept as static values above
+      noteDropped(name + " macro");
+    }
   }
 }
 void applyFM(Furnace& source, ExternalPreset& p) {
@@ -988,7 +1026,7 @@ ExternalPreset furnace(const Bytes& b, InstrumentType target, const std::string&
                   : target == InstrumentType::SegaPSG  ? 0
                                                        : 2;
   need(f.type == want, "Furnace instrument belongs to another chip");
-  need(!f.extra, "Furnace instrument uses unsupported features");
+  need(tolerantFurnace || !f.extra, "Furnace instrument uses unsupported features");
   auto p = init(target, f.title.empty() ? fallback : f.title);
   if (isFourOp(target) || isOPL(target) || isOPLL(target)) {
     need(!f.fm.empty(), "Missing Furnace FM patch");
@@ -1001,6 +1039,11 @@ ExternalPreset furnace(const Bytes& b, InstrumentType target, const std::string&
     auto* v = d.value;
     v[sidPulseDepth] = v[sidPulseRate] = v[sidVibratoDepth] = v[sidVibratoRate] = 0;
     v[sidWave] = f.c64[0] & 15;
+    if (tolerantFurnace) {
+      // The engine plays waveforms 1-8: noise wins, no waveform means pulse.
+      if (v[sidWave] > 8) v[sidWave] = 8;
+      else if (v[sidWave] == 0) v[sidWave] = 4;
+    }
     v[sidAttack] = f.c64[2] >> 4;
     v[sidDecay] = f.c64[2] & 15;
     v[sidSustain] = f.c64[3] >> 4;
@@ -1010,7 +1053,13 @@ ExternalPreset furnace(const Bytes& b, InstrumentType target, const std::string&
     v[sidResonance] = f.c64[7] >> 4;
     v[sidFilterMode] =
         (f.c64[0] & 16) ? ((f.c64[1] & 1) | ((f.c64[1] & 4) >> 1) | ((f.c64[1] & 2) << 1)) : 0;
-    need(!(f.c64[1] & 0xe8), "SID patch depends on another voice or retained oscillator state");
+    if (tolerantFurnace) {
+      v[sidRing] = (f.c64[1] >> 6) & 1;
+      v[sidSync] = (f.c64[1] >> 7) & 1;
+      if (f.c64[1] & 0x28) noteDropped("channel 3 off and retained oscillator flags");
+    } else {
+      need(!(f.c64[1] & 0xe8), "SID patch depends on another voice or retained oscillator state");
+    }
   } else {
     auto& d = p.instrument.chip.simpleChip;
     d.attack = d.decay = 0;
@@ -1177,6 +1226,26 @@ ExternalPreset sbi(const Bytes& b, InstrumentType target, const std::string& tit
   return p;
 }
 }  // namespace
+
+bool importFurnaceInstrument(InstrumentType target, const std::vector<uint8_t>& data,
+                             ExternalPreset& output, std::string& dropped) {
+  dropped.clear();
+  droppedNotes.clear();
+  tolerantFurnace = true;
+  bool ok = false;
+  try {
+    need(target == InstrumentType::SID || target == InstrumentType::SegaPSG,
+         "Only SID and Sega PSG instruments keep their macros");
+    need(!data.empty() && data.size() <= 1024 * 1024, "Instrument exceeds 1 MiB limit");
+    output = furnace(data, target, "");
+    ok = true;
+    dropped = droppedNotes;
+  } catch (const std::exception& e) {
+    dropped = e.what();
+  }
+  tolerantFurnace = false;
+  return ok;
+}
 
 bool externalPresetExtension(InstrumentType t, const std::string& path) {
   auto e = ext(path);

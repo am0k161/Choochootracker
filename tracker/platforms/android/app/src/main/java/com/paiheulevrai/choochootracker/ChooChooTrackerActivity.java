@@ -1028,9 +1028,12 @@ public final class ChooChooTrackerActivity extends SDLActivity {
             }
         } catch (Exception ignored) { }
         name = name.replaceAll("[^A-Za-z0-9._ -]", "_");
-        String expectedExtension = "samples".equals(importDirectory) ? ".wav" : ".cct";
-        if (!name.toLowerCase(Locale.ROOT).endsWith(expectedExtension)) {
-            android.widget.Toast.makeText(this, "Choose a " + expectedExtension + " file", android.widget.Toast.LENGTH_SHORT).show();
+        // Projects can also be Furnace modules, which Load converts.
+        String lowerName = name.toLowerCase(Locale.ROOT);
+        boolean samples = "samples".equals(importDirectory);
+        if (!(samples ? lowerName.endsWith(".wav") : lowerName.endsWith(".cct") || lowerName.endsWith(".fur"))) {
+            android.widget.Toast.makeText(this, samples ? "Choose a .wav file" : "Choose a .cct or .fur file",
+                android.widget.Toast.LENGTH_SHORT).show();
             return;
         }
         try (InputStream input = getContentResolver().openInputStream(uri);
