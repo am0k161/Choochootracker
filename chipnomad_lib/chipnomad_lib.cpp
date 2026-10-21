@@ -2070,12 +2070,18 @@ static void updateSampleVoices(ChipNomadState* state) {
     if (track->note.fx[fxSCF].isOn) cutoff = instrumentFXCutoff(track->note.fx[fxSCF].fxValue);
     if (track->note.fx[fxSRS].isOn) resonance = track->note.fx[fxSRS].fxValue;
     if (track->note.fx[fxSSP].isOn) speedPercent = track->note.fx[fxSSP].fxValue * 500 / 255;
-    // SPL playback modes: 00 forward, 01 reverse, 02 loop, 03 ping-pong.
+    // SPL playback modes: 00 forward, 01 reverse, 02 loop, 03 ping-pong,
+    // 04 loop with X-fade, 05 ping-pong with X-fade. The X-fade flag comes
+    // from the SPL value itself, not the mod-routed loopMode: destination 6
+    // only shifts the wrap mode, it never turns the crossfade on.
     uint8_t forceReverse = 0;
+    uint8_t xfade = 0;
     if (track->note.fx[fxSLP].isOn) {
       uint8_t playbackMode = track->note.fx[fxSLP].fxValue;
       forceReverse = playbackMode == 1 ? 1 : 0;
-      loopMode = playbackMode == 3 ? 2 : (playbackMode == 2 ? 1 : 0);
+      loopMode = playbackMode == 3 || playbackMode == 5 ? 2
+        : (playbackMode == 2 || playbackMode == 4 ? 1 : 0);
+      xfade = playbackMode >= 4 ? 1 : 0;
     }
     // SLI plays the numbered slice regardless of the note pitch (sliced
     // instruments only; 00 keeps the normal note mapping).
@@ -2157,7 +2163,7 @@ static void updateSampleVoices(ChipNomadState* state) {
       voices[slot]->configure(sample, (float)voicePitchCents, gain / track->chordVoiceCount, (float)speedPercent, start, end, (uint8_t)loopMode,
                               (uint16_t)cutoff, (uint8_t)resonance, attack, decay, sustain, release, shape,
                               sliceCount, voiceSliceIndex, sample->stretchMode, project->tickRate,
-                              sample->speedAlgorithm, forceReverse, sample->loopStart);
+                              sample->speedAlgorithm, forceReverse, sample->loopStart, xfade);
     }
   }
 }
