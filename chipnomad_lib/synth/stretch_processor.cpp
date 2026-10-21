@@ -176,11 +176,35 @@ void StretchProcessor::noteOn() {
   sourceReverse_ = windowReverse_;
   sourceDirection_ = windowReverse_ ? -1.0 : 1.0;
   auto* s = static_cast<signalsmith::stretch::SignalsmithStretch<float>*>(stretch_);
-  // Prime the stretcher's internal latency so output starts immediately.
-  // outputSeek allocates and resets internally; safe here (not in render()).
+  // Priming seek: outputSeek consumes its input as warm-up and renders it as
+  // the beginning of the output, so the live feed continues from
+  // start + seekLength*step and the first pass plays from the region edge.
   size_t seekLength = s->outputSeekLength((float)(1.0 / stretchRatio_));
-  if (seekLength > (size_t)(sourceEndFrame_ - sourceStartFrame_)) {
-    seekLength = (size_t)(sourceEndFrame_ - sourceStartFrame_);
+  const double seekFrames = (double)seekLength * sourceStep_;
+  const double windowFrames = (double)(sourceEndFrame_ - sourceStartFrame_);
+  // When the window cannot supply the seek (short sample or extreme stretch),
+  // the clamped seek produces only a near-silent pre-roll and parks the feed
+  // at the region edge, where the wrap branches immediately fold it to the
+  // loop start marker - the first pass would never play from the region
+  // start. In loop modes a feed landing at/past the loop start marker is
+  // equally wrong: playback would begin at the marker instead of the region
+  // marker. Skip the seek and start cold at the region edge; the stretcher
+  // fades in naturally while the first pass plays from the region marker.
+  bool skipSeek = seekFrames >= windowFrames;
+  if (!skipSeek && loopMode_ != 0) {
+    skipSeek = sourceReverse_
+      ? (double)(sourceEndFrame_ - 1) - seekFrames <= (double)loopStartFrame_
+      : (double)sourceStartFrame_ + seekFrames >= (double)loopStartFrame_;
+  }
+  if (skipSeek) {
+    s->reset();
+    sourcePosition_ = sourceReverse_ ? (double)(sourceEndFrame_ - 1)
+                                     : (double)sourceStartFrame_;
+    inputAccumulator_ = 0.0;
+    primed_ = true;
+    draining_ = false;
+    active_ = true;
+    return;
   }
   struct SeekIn {
     const int16_t* data;

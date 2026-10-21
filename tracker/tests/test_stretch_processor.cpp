@@ -345,9 +345,9 @@ TEST_CASE("StretchProcessor per-tick reconfigure preserves the running note") {
 }
 
 TEST_CASE("StretchProcessor loop wraps at the loop start marker") {
-  // loopStart 0x40 maps to frame 2213 of 48000 (sampleMarkerToStartFrame).
-  // With loop mode 1 the stretched source cursor must wrap back to the
-  // marker frame, not the window start (0).
+  // loopStart 0x40 maps to frame 12046 of 48000 (sampleMarkerToStartFrame:
+  // 64*47999/255). With loop mode 1 the stretched source cursor must wrap
+  // back to the marker frame, not the window start (0).
   auto data = makeSine(440.0, 48000, 1.0);
   InstrumentSample sample = makeSample(data, 48000);
   sample.loopMode = 1;
@@ -361,7 +361,10 @@ TEST_CASE("StretchProcessor loop wraps at the loop start marker") {
   // Stretch mode 3 = 1 bar = 96 ticks at 50 Hz = 1.92 s of output from a
   // 1 s source: the cursor reaches the window end (48000) well before the
   // note ends. After the first wrap the position must stay above the
-  // marker frame (2213) - the old code folded all the way down to 0.
+  // marker frame (12046) - the old code folded all the way down to 0.
+  // The FIRST pass now starts at the region start (the priming seek is
+  // skipped when it would land past the marker), so the lower bound only
+  // applies once the cursor has wrapped.
   bool wrapped = false;
   double minSeen = 1e18;
   for (int i = 0; i < 400; ++i) {
@@ -370,7 +373,7 @@ TEST_CASE("StretchProcessor loop wraps at the loop start marker") {
     const double pos = stretch.sourcePosition();
     if (pos >= 47000.0) wrapped = true;
     if (wrapped) minSeen = pos < minSeen ? pos : minSeen;
-    CHECK(pos >= 2213.0 - 1.0);
+    if (wrapped) CHECK(pos >= 12046.0 - 1.0);
   }
   CHECK(wrapped);
   CHECK(minSeen < 48000.0);
@@ -388,7 +391,10 @@ TEST_CASE("StretchProcessor ping-pong bounces at the loop start marker") {
 
   std::vector<float> scratch(8192 * 2);
   // After the cursor has reached the top and reversed, the bounce lower
-  // bound is the marker frame (2213), never the window start (0).
+  // bound is the marker frame (12046), never the window start (0).
+  // The FIRST pass now starts at the region start (the priming seek is
+  // skipped when it would land past the marker), so the lower bound only
+  // applies once the cursor has reversed.
   bool reversed = false;
   double minSeen = 1e18;
   for (int i = 0; i < 400; ++i) {
@@ -397,8 +403,103 @@ TEST_CASE("StretchProcessor ping-pong bounces at the loop start marker") {
     const double pos = stretch.sourcePosition();
     if (pos >= 47000.0) reversed = true;
     if (reversed) minSeen = pos < minSeen ? pos : minSeen;
-    CHECK(pos >= 2213.0 - 1.0);
+    if (reversed) CHECK(pos >= 12046.0 - 1.0);
   }
   CHECK(reversed);
   CHECK(minSeen < 48000.0);
+}
+
+TEST_CASE("StretchProcessor short sample starts the first pass at the region start") {
+  // Regression: with a clamped priming seek (window smaller than the seek
+  // length) the playhead parked at the window edge and the wrap branches
+  // folded it straight to the loop start marker - the first pass never
+  // played from the region start. The seek must be skipped instead so the
+  // playhead starts at the region edge.
+  const uint32_t frameCount = 256;
+  std::vector<int16_t> data(frameCount);
+  for (uint32_t i = 0; i < frameCount; ++i) data[i] = (int16_t)(i * 100);
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = frameCount;
+  sample.channels = 1;
+  sample.data = data.data();
+  sample.start = 0;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.loopMode = 1;
+  sample.loopStart = 0x40;  // frame 64 of 256
+
+  StretchProcessor stretch;
+  stretch.init(44100.0, false);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
+  stretch.noteOn();
+  // The playhead must sit at the region start, not at the window edge (255)
+  // and not at the loop marker (64).
+  CHECK(stretch.sourcePosition() == 0.0);
+
+  std::vector<float> scratch(8192 * 2);
+  // The first pass sweeps the whole window before any wrap: the position
+  // must climb past the loop marker (64) and stay below the window end
+  // while the first pass is still running.
+  bool climbedPastMarker = false;
+  for (int i = 0; i < 40; ++i) {
+    if (!stretch.active()) break;
+    stretch.process(scratch.data(), 256);
+    const double pos = stretch.sourcePosition();
+    if (pos > 64.0) climbedPastMarker = true;
+    CHECK(pos >= 0.0);
+    CHECK(pos < 256.0);
+  }
+  CHECK(climbedPastMarker);
+}
+
+TEST_CASE("StretchProcessor seek landing past the loop marker is skipped") {
+  // A seek that fits the window but lands at/past the loop start marker
+  // would make playback begin at the marker instead of the region marker.
+  // The seek must be skipped and the playhead must start at the region edge.
+  auto data = makeSine(440.0, 48000, 1.0);
+  InstrumentSample sample = makeSample(data, 48000);
+  sample.loopMode = 1;
+  // Marker 0x1E -> frame 5646 of 48000; the unclamped seek at speed 100%
+  // (output rate 48000) is 5760 frames, so the feed would land at 5760,
+  // past the marker.
+  sample.loopStart = 0x1E;
+  StretchProcessor stretch;
+  stretch.init(48000.0, false);
+  stretch.configure(&sample, 0, 100, 50.0f, 0.0f, 0, 255, sample.loopMode);
+  stretch.noteOn();
+  CHECK(stretch.sourcePosition() == 0.0);
+
+  std::vector<float> scratch(8192 * 2);
+  // The first pass must climb through the whole region before wrapping.
+  // The playhead may touch the window end (48000) exactly at the wrap.
+  bool reachedEnd = false;
+  for (int i = 0; i < 400; ++i) {
+    if (!stretch.active()) break;
+    stretch.process(scratch.data(), 256);
+    const double pos = stretch.sourcePosition();
+    if (pos >= 47000.0) reachedEnd = true;
+    CHECK(pos >= 0.0);
+    CHECK(pos <= 48000.0);
+  }
+  CHECK(reachedEnd);
+}
+
+TEST_CASE("StretchProcessor unclamped seek keeps the primed start") {
+  // When the window can supply the full seek and the feed lands before the
+  // loop marker, the seek stays: the playhead starts seekLength*step into
+  // the region (the seeked material is rendered as the output's beginning,
+  // so the first pass still starts at the region marker audibly).
+  auto data = makeSine(440.0, 48000, 1.0);
+  InstrumentSample sample = makeSample(data, 48000);
+  sample.loopMode = 1;
+  sample.loopStart = 0xC0;  // frame 36127 of 48000, far past the seek landing
+  StretchProcessor stretch;
+  stretch.init(48000.0, false);
+  stretch.configure(&sample, 0, 100, 50.0f, 0.0f, 0, 255, sample.loopMode);
+  stretch.noteOn();
+  // Speed 100% at 48k/48k: seek 5760 frames, step 1.0 -> feedPos 5760.
+  CHECK(stretch.sourcePosition() > 4000.0);
+  CHECK(stretch.sourcePosition() < 6000.0);
 }
