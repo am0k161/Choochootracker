@@ -38,10 +38,10 @@ static constexpr int selValX = 15;
 static constexpr int selValWidth = 6;
 static constexpr int endLabelX = 22;     // "END"
 static constexpr int selEndValX = 26;
-// Loop start row: "LST [] SPD ALGO []" - the loop wrap marker shares the
+// Loop start row: "START [] SPD ALGO []" - the loop wrap marker shares the
 // row with the speed algorithm selector (swapped with the Slice row, which
 // needs the full width for its four cells).
-static constexpr int loopStartLabelX = 9;   // "LST"
+static constexpr int loopStartLabelX = 9;   // "START"
 static constexpr int loopStartValX = 15;
 static constexpr int loopStartValWidth = 6;
 static constexpr int spdAlgoLabelX = 22;    // "SPD ALGO"
@@ -1054,7 +1054,7 @@ static void settingsDrawStatic(void) {
   gfxPrint(markerLabelX, fieldY(3), "START");
   gfxPrint(endLabelX, fieldY(3), "END");
   gfxPrint(0, fieldY(5), "Loop");
-  gfxPrint(loopStartLabelX, fieldY(5), "LST");
+  gfxPrint(loopStartLabelX, fieldY(5), "START");
   gfxPrint(spdAlgoLabelX, fieldY(5), "SPD ALGO");
   gfxPrint(0, fieldY(4), "Slice");
   gfxPrint(0, fieldY(6), "Process");
@@ -1078,7 +1078,7 @@ static void settingsDrawCursor(int col, int row) {
                   col == 2 ? sliceBrowseW : sliceFrameW;
     gfxCursor(x, fieldY(row), w);
   } else if (row == 5) {
-    // Loop row: LST value + speed algorithm
+    // Loop row: START value + speed algorithm
     gfxCursor(col == 0 ? loopStartValX : spdAlgoValX, fieldY(row),
               col == 0 ? loopStartValWidth : spdAlgoValWidth);
   } else if (row == 6) {
@@ -2696,7 +2696,7 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
     } else if (fromRow == 3 && fromCol == 1 && keys == keyDown) {
       // Coming down from the Select row's END marker: land on the Slice
       // browser. The Loop row sits between them on screen, but the
-      // framework navigation already skips its inert LST cell, so only
+      // framework navigation already skips its inert START cell, so only
       // the LAZY-specific dead-cell recovery needs the explicit target.
       toRow = 4;
       toCol = 2;
