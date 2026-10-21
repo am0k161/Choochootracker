@@ -2680,33 +2680,76 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
   }
   // LAZY: the Count box is display-only (hand-placed slices have no
   // division to recalculate), so the cursor skips it: horizontal moves
-  // step over col 1 and a vertical entry from the Select row lands on
-  // the Slice browser. The intercept runs before the framework
-  // navigation - its dead-cell recovery moves up a row instead of aside -
-  // and repaints the affected cells itself (row/col headers are no-ops).
+  // step over col 1. The intercept runs before the framework navigation -
+  // its dead-cell recovery moves up a row instead of aside - and repaints
+  // the affected cells itself (row/col headers are no-ops). Vertical moves
+  // are handled by the visual-order intercept below.
   if (isKeyDown && sampleDecodeSliceMode(sample->slice) == sliceModeLazy) {
     const int fromRow = screenSampleSettingsData.cursorRow;
     const int fromCol = screenSampleSettingsData.cursorCol;
-    int toRow = fromRow;
     int toCol = -1;
     if (fromRow == 4 && fromCol == 0 && keys == keyRight) {
       toCol = 2;
     } else if (fromRow == 4 && fromCol == 2 && keys == keyLeft) {
       toCol = 0;
-    } else if (fromRow == 3 && fromCol == 1 && keys == keyDown) {
-      // Coming down from the Select row's END marker: land on the Slice
-      // browser. The Loop row sits between them on screen, but the
-      // framework navigation already skips its inert START cell, so only
-      // the LAZY-specific dead-cell recovery needs the explicit target.
-      toRow = 4;
-      toCol = 2;
     }
     if (toCol >= 0) {
-      screenSampleSettingsData.cursorRow = toRow;
+      screenSampleSettingsData.cursorRow = fromRow;
       screenSampleSettingsData.cursorCol = toCol;
       settingsDrawField(fromCol, fromRow, CellState::normal);
-      settingsDrawField(toCol, toRow, CellState::focus);
-      settingsDrawCursor(toCol, toRow);
+      settingsDrawField(toCol, fromRow, CellState::focus);
+      settingsDrawCursor(toCol, fromRow);
+      return 1;
+    }
+  }
+  // Vertical navigation follows the VISUAL row order, not the logical row
+  // order: the Loop row (logical 5) draws between Select (3) and Slice
+  // (4), so plain up/down must visit rows in the order they appear on
+  // screen (0,1,2,3,5,4,6,7). Columns map 1:1 (Select and Loop share x
+  // positions). The intercept mirrors the framework's conventions: clamp
+  // the column to the target row's width, skip dead cells by continuing
+  // the visual scan, and stay put when nothing valid remains. Runs before
+  // the framework navigation so the logical-order walk never fires.
+  if (isKeyDown && (keys == keyUp || keys == keyDown)) {
+    // Visual order: logical rows 5 and 4 are swapped on screen.
+    static const int visualOrder[8] = {0, 1, 2, 3, 5, 4, 6, 7};
+    int visIndex = -1;
+    for (int i = 0; i < 8; ++i) {
+      if (visualOrder[i] == screenSampleSettingsData.cursorRow) {
+        visIndex = i;
+        break;
+      }
+    }
+    if (visIndex >= 0) {
+      const int step = keys == keyDown ? 1 : -1;
+      const int fromRow = screenSampleSettingsData.cursorRow;
+      const int fromCol = screenSampleSettingsData.cursorCol;
+      int target = -1;
+      for (int i = visIndex + step; i >= 0 && i < 8; i += step) {
+        const int row = visualOrder[i];
+        int col = fromCol;
+        const int columns = settingsColumnCount(row);
+        if (col >= columns) col = columns - 1;
+        if (settingsIsCellValid(col, row)) {
+          target = i;
+          break;
+        }
+      }
+      if (target >= 0) {
+        const int toRow = visualOrder[target];
+        int toCol = fromCol;
+        const int columns = settingsColumnCount(toRow);
+        if (toCol >= columns) toCol = columns - 1;
+        if (toRow != fromRow || toCol != fromCol) {
+          screenSampleSettingsData.cursorRow = toRow;
+          screenSampleSettingsData.cursorCol = toCol;
+          settingsDrawField(fromCol, fromRow, CellState::normal);
+          settingsDrawField(toCol, toRow, CellState::focus);
+          settingsDrawCursor(toCol, toRow);
+        }
+        return 1;
+      }
+      // Nothing valid in the scan direction: stay put (framework parity).
       return 1;
     }
   }
