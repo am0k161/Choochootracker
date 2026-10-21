@@ -65,7 +65,7 @@ class SampleVoice {
   StretchProcessor stretch_;
   bool useStretch_;
   // Seamless loop crossfade. Armed when the playhead enters the fade window
-  // (the last quarter of the loop window, in source frames) before a wrap;
+  // (35% of the loop window, in source frames) before a wrap;
   // the fade mixes the outgoing pass (still reading toward the seam) with
   // the incoming pass (already reading from the wrap target).
   LoopXfade xfade_;

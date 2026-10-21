@@ -343,3 +343,62 @@ TEST_CASE("StretchProcessor per-tick reconfigure preserves the running note") {
     stretch.process(scratch.data(), 256);
   }
 }
+
+TEST_CASE("StretchProcessor loop wraps at the loop start marker") {
+  // loopStart 0x40 maps to frame 2213 of 48000 (sampleMarkerToStartFrame).
+  // With loop mode 1 the stretched source cursor must wrap back to the
+  // marker frame, not the window start (0).
+  auto data = makeSine(440.0, 48000, 1.0);
+  InstrumentSample sample = makeSample(data, 48000);
+  sample.loopMode = 1;
+  sample.loopStart = 0x40;
+  StretchProcessor stretch;
+  stretch.init(48000.0, false);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
+  stretch.noteOn();
+
+  std::vector<float> scratch(8192 * 2);
+  // Stretch mode 3 = 1 bar = 96 ticks at 50 Hz = 1.92 s of output from a
+  // 1 s source: the cursor reaches the window end (48000) well before the
+  // note ends. After the first wrap the position must stay above the
+  // marker frame (2213) - the old code folded all the way down to 0.
+  bool wrapped = false;
+  double minSeen = 1e18;
+  for (int i = 0; i < 400; ++i) {
+    if (!stretch.active()) break;
+    stretch.process(scratch.data(), 256);
+    const double pos = stretch.sourcePosition();
+    if (pos >= 47000.0) wrapped = true;
+    if (wrapped) minSeen = pos < minSeen ? pos : minSeen;
+    CHECK(pos >= 2213.0 - 1.0);
+  }
+  CHECK(wrapped);
+  CHECK(minSeen < 48000.0);
+}
+
+TEST_CASE("StretchProcessor ping-pong bounces at the loop start marker") {
+  auto data = makeSine(440.0, 48000, 1.0);
+  InstrumentSample sample = makeSample(data, 48000);
+  sample.loopMode = 2;
+  sample.loopStart = 0x40;
+  StretchProcessor stretch;
+  stretch.init(48000.0, false);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
+  stretch.noteOn();
+
+  std::vector<float> scratch(8192 * 2);
+  // After the cursor has reached the top and reversed, the bounce lower
+  // bound is the marker frame (2213), never the window start (0).
+  bool reversed = false;
+  double minSeen = 1e18;
+  for (int i = 0; i < 400; ++i) {
+    if (!stretch.active()) break;
+    stretch.process(scratch.data(), 256);
+    const double pos = stretch.sourcePosition();
+    if (pos >= 47000.0) reversed = true;
+    if (reversed) minSeen = pos < minSeen ? pos : minSeen;
+    CHECK(pos >= 2213.0 - 1.0);
+  }
+  CHECK(reversed);
+  CHECK(minSeen < 48000.0);
+}

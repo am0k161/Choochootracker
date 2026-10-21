@@ -74,6 +74,9 @@ class StretchProcessor {
   double inputAccumulator_ = 0.0;
   double outputSampleRate_ = 0.0;
   uint8_t loopMode_ = 0;
+  // Loop wrap point in source frames: the LOOP START marker clamped inside
+  // the window when a loop mode is active, the window start otherwise.
+  uint32_t loopStartFrame_ = 0;
   bool cheap_ = false;
   bool active_ = false;
   bool configured_ = false;
