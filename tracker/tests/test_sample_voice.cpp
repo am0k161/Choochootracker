@@ -930,7 +930,7 @@ TEST_CASE("reverse playback interpolates without mirroring the fraction") {
 }
 
 // --- Loop X-fade (engine side; SPL 04/05 wiring is covered in PR3) -----------
-// The crossfade replaces the hard wrap: over the last quarter of the loop
+// The crossfade replaces the hard wrap: over the last 35% of the loop
 // window the outgoing pass (still reading toward the seam) mixes with the
 // incoming pass (already reading from the wrap target). The fixture ramp
 // (data[i] = i) is the worst case: the seam material jumps ~8000 LSB.
@@ -986,7 +986,7 @@ TEST_CASE("xfade forward loop removes the wrap discontinuity") {
   const double hardJump = maxJump(renderXfadeVoice(&sample, 1, 0, 30));
   CHECK(hardJump > 0.15);
 
-  // Crossfaded: the transition spreads over the 1651-frame window; the
+  // Crossfaded: the transition spreads over the 2312-frame window; the
   // worst single-sample jump is a small fraction of the hard cut.
   const double fadeJump = maxJump(renderXfadeVoice(&sample, 1, 1, 30));
   CHECK(fadeJump < 0.01);
@@ -1034,12 +1034,12 @@ TEST_CASE("xfade disabled path is bit-identical to the hard wrap") {
   sample.data = data.data();
 
   // The fade must only alter output inside the window: before the fade
-  // window opens (frame 7169 = 8820 - 1651) the xfade render is
+  // window opens (frame 6508 = 8820 - 2312) the xfade render is
   // bit-identical to the hard-wrap render; inside the window it differs.
   const std::vector<float> hard = renderXfadeVoice(&sample, 1, 0, 14);
   const std::vector<float> xfade = renderXfadeVoice(&sample, 1, 1, 14);
   REQUIRE(hard.size() == xfade.size());
-  const size_t windowStart = 7169 * 2;
+  const size_t windowStart = 6508 * 2;
   for (size_t i = 0; i < windowStart; ++i) CHECK(hard[i] == xfade[i]);
   int diffs = 0;
   for (size_t i = windowStart; i < hard.size(); ++i) {
@@ -1121,8 +1121,8 @@ TEST_CASE("xfade survives per-tick reconfigure") {
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
                   -1, -1, 0, 0, 0, 50.0f, 0, 0, sample.loopStart, 1);
   voice.noteOn();
-  // Play into the fade window (window = (8820-2213)/4 = 1651 frames, so it
-  // starts at frame ~7169 = tick 8.1), reconfigure every tick.
+  // Play into the fade window (window = (8820-2213)*7/20 = 2312 frames, so
+  // it starts at frame ~6508 = tick 7.4), reconfigure every tick.
   for (int t = 0; t < 30; ++t) {
     voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 1,
                     sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,

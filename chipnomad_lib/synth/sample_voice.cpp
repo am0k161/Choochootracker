@@ -403,7 +403,7 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
   }
   grainSize_ = (uint32_t)(outputSampleRate_ * 0.040f);
   grainHop_ = grainSize_ / 2;
-  // X-fade window: a quarter of the loop window (the wrap span), in source
+  // X-fade window: 35% of the loop window (the wrap span), in source
   // frames. SPL 04/05 turn the crossfade on; without them the engine stays
   // disabled and the plain path is bit-identical to the pre-X-fade build.
   // A window shorter than one frame cannot fade - the hard wrap stays.
@@ -413,7 +413,7 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
   uint32_t fadeLen = 0;
   if (xfade != 0 && loopMode_ != 0) {
     const uint32_t loopLength = endFrame_ - loopStartFrame_;
-    fadeLen = loopLength / 4;
+    fadeLen = loopLength * 7 / 20;
     if (fadeLen < 1) fadeLen = 0;
   }
   if (fadeLen != xfade_.length()) xfade_.configure(fadeLen);
