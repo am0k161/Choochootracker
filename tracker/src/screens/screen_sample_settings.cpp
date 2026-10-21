@@ -38,7 +38,6 @@ static constexpr int selValX = 15;
 static constexpr int selValWidth = 6;
 static constexpr int endLabelX = 22;     // "END"
 static constexpr int selEndValX = 26;
-// Loop start row: "START [] SPD ALGO []" - the loop wrap marker shares the
 // row with the speed algorithm selector (swapped with the Slice row, which
 // needs the full width for its four cells).
 static constexpr int loopStartLabelX = 9;   // "START"
@@ -1078,7 +1077,7 @@ static void settingsDrawCursor(int col, int row) {
                   col == 2 ? sliceBrowseW : sliceFrameW;
     gfxCursor(x, fieldY(row), w);
   } else if (row == 5) {
-    // Loop row: START value + speed algorithm
+    // Loop row: LST value + speed algorithm
     gfxCursor(col == 0 ? loopStartValX : spdAlgoValX, fieldY(row),
               col == 0 ? loopStartValWidth : spdAlgoValWidth);
   } else if (row == 6) {
@@ -1616,9 +1615,11 @@ static void recordStop(void) {
   }
   Instrument* instrument = &chipnomadState->project.instruments[recordInstrument];
   // A fresh recording starts with the full playback region, and an empty
-  // instrument name picks up the file name (same as a file load).
+  // instrument name picks up the file name (same as a file load). The loop
+  // wrap marker belongs to the old audio, so it resets too.
   sample->start = 0;
   sample->end = 255;
+  sample->loopStart = 0;
   if (!instrument->name[0]) {
     const char* separator = strrchr(recordFilePath, PATH_SEPARATOR);
     const char* filename = separator ? separator + 1 : recordFilePath;
