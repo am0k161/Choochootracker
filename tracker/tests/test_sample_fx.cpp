@@ -474,7 +474,7 @@ TEST_CASE("sample loop start survives save and load; missing field is zero") {
 // --- SPL 04/05: loop X-fade playback modes -----------------------------------
 // SPL 04 = forward loop with X-fade, SPL 05 = ping-pong with X-fade. The
 // engine maps them to loopMode 1/2 plus the crossfade flag; the fade window
-// is a quarter of the loop window in source frames. The fixture ramp is the
+// is 35% of the loop window in source frames. The fixture ramp is the
 // worst case: the hard wrap jumps (8819 - 2213) / 32768 = 0.2016 in one
 // sample (the wrap target is the loop start marker at frame 2213).
 
@@ -508,7 +508,7 @@ TEST_CASE("SPL 04 crossfades the forward loop wrap") {
   chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
 
   // The hard wrap (SPL 02) jumps 0.2016 in one sample; the crossfaded
-  // render must spread the transition over the 1651-frame window.
+  // render must spread the transition over the 2312-frame window.
   const double fadeJump = xfadeMaxJump(engine, 30);
   CHECK(fadeJump < 0.01);
   CHECK(engine.voice()->active());

@@ -1159,7 +1159,7 @@ The value is interpreted as a signed `8-bit` relative change (`01` adds `1`, `FF
 
 | FX | Value | Meaning |
 |---|---|---|
-| `SPL` | `00-05` | Playback mode: `00` Forward, `01` Reverse, `02` Loop, `03` Ping-Pong, `04` Loop X-Fade, `05` Ping-Pong X-Fade. `02`-`05` use the sample's loop start marker as the wrap point; `04`/`05` crossfade the wrap over the last quarter of the loop window instead of hard-cutting |
+| `SPL` | `00-05` | Playback mode: `00` Forward, `01` Reverse, `02` Loop, `03` Ping-Pong, `04` Loop X-Fade, `05` Ping-Pong X-Fade. `02`-`05` use the sample's loop start marker as the wrap point; `04`/`05` crossfade the wrap over the last 35% of the loop window instead of hard-cutting |
 | `SLI` | `00-FF` | Play the numbered slice (`01` = first slice) regardless of the note; `00` keeps normal note mapping. Requires slice mode enabled on the instrument |
 | `SPT` | signed `XX` | Sample transposition in semitones |
 | `SST` | `00-FF` | Normalised playback start |
