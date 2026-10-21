@@ -118,7 +118,9 @@ TEST_CASE("advance completes once and takeIncoming hands over") {
     if (!x.advance(1.0)) {
       ++completions;
       x.takeIncoming(&position, &direction);
-      CHECK(position == doctest::Approx(0.0));
+      // advance() moves both pointers with the phase: after 10 steps of 1.0
+      // the incoming pointer sits at 0 + 10*1 = 10.
+      CHECK(position == doctest::Approx(10.0));
       CHECK(direction == 1);
       // Further advances stay inert.
       CHECK_FALSE(x.advance(1.0));

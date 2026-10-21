@@ -37,36 +37,56 @@ class LoopXfade {
   // True when the engine will crossfade (amount > 0 and a window exists).
   bool enabled() const { return length_ > 0; }
 
+  // Configured fade window in source frames (0 = disabled). The voice reads
+  // it to detect when the playhead enters the fade window before a wrap.
+  uint32_t length() const { return length_; }
+
+  // Abort an in-flight fade, keeping the configured window. A new note must
+  // not resume a fade armed for the previous one.
+  void reset() {
+    active_ = false;
+    phase_ = 0;
+  }
+
   // True while a fade is in progress (between arm() and completion).
   bool active() const { return active_; }
 
   // Arm a fade between two read pointers.
   //   outgoingPos: where the fading-out pass keeps reading (it continues
-  //     across the seam without wrapping).
+  //     along its natural trajectory to the seam without wrapping).
   //   incomingPos: where the fading-in pass starts reading.
   //   outgoingDir/incomingDir: read directions of the two passes (+1/-1).
-  // For a forward-loop wrap: outgoing = seam, incoming = loop start,
-  //   both directions +1.
-  // For a ping-pong turn at the loop end: outgoing = seam, incoming =
-  //   loop end - 1, directions +1/-1 (the incoming pass reads backwards).
-  // For a ping-pong turn at the loop start: outgoing = seam, incoming =
-  //   loop start, directions -1/+1.
+  //   phase: initial fade phase in frames. 0 arms at the window start; the
+  //     voice arms mid-window when the playhead entered it mid-step, so the
+  //     first mixed sample continues the plain path without a jump.
+  // For a forward-loop wrap: outgoing = playhead, incoming = loop start +
+  //   phase, both directions +1 (at mix index i the incoming reads
+  //   loopStart + i while the outgoing reads loopEnd - fadeLen + i).
+  // For a ping-pong turn at the loop end: outgoing = playhead, incoming =
+  //   loop end - 1 - phase, directions +1/-1 (the incoming pass reads
+  //   backwards from the turn point).
+  // For a ping-pong turn at the loop start: outgoing = playhead, incoming =
+  //   loop start + phase, directions -1/+1.
   void arm(double outgoingPos, double incomingPos, int outgoingDir,
-           int incomingDir) {
+           int incomingDir, double phase = 0.0) {
     if (length_ == 0) return; // disabled engine never arms
     outgoingPos_ = outgoingPos;
     incomingPos_ = incomingPos;
     outgoingDir_ = outgoingDir;
     incomingDir_ = incomingDir;
-    phase_ = 0;
+    phase_ = phase;
     active_ = true;
   }
 
-  // Advance the fade by `step` source frames. Returns false exactly once
-  // when the fade completes; the caller then transfers the incoming
-  // pointer to the main playhead (see takeIncoming).
+  // Advance the fade by `step` source frames. Both read pointers move with
+  // the phase (each along its own direction), so the caller never touches
+  // the pointers directly. Returns false exactly once when the fade
+  // completes; the caller then transfers the incoming pointer to the main
+  // playhead (see takeIncoming).
   bool advance(double step) {
     if (!active_) return false;
+    outgoingPos_ += step * outgoingDir_;
+    incomingPos_ += step * incomingDir_;
     phase_ += step;
     if (phase_ >= (double)length_) {
       active_ = false;
@@ -81,6 +101,10 @@ class LoopXfade {
     *position = incomingPos_;
     *direction = incomingDir_;
   }
+
+  // Outgoing read pointer (the fading-out pass). The voice mirrors it into
+  // the main playhead during the fade so the UI cursor keeps moving.
+  double outgoingPosition() const { return outgoingPos_; }
 
   // Mixed sample for one channel at the current fade phase. `reader` reads
   // a source frame (linear interpolation is done by the caller's sampleAt,
