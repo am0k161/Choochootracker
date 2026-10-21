@@ -71,6 +71,10 @@ static void onSampleLoaded(const char* path) {
     // Region when the Sample Edit screen is entered.
     instrument->chip.sample.start = 0;
     instrument->chip.sample.end = 255;
+    // The loop wrap marker belongs to the old audio: a new file starts
+    // unlooped. Project reload is unaffected - the .cct loop start line is
+    // parsed before the WAV load and does not go through this path.
+    instrument->chip.sample.loopStart = 0;
     if (cueCount > 0 && sampleDecodeSliceMode(instrument->chip.sample.slice) == sliceModeOff) {
       // Cues seed an AUTO-mode sample with manual bounds: the sentinel
       // count matches the cue count and playback stays full-sample until
