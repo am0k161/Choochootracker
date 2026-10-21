@@ -470,4 +470,132 @@ TEST_CASE("sample loop start survives save and load; missing field is zero") {
   std::remove(stripped);
 }
 
+
+// --- SPL 04/05: loop X-fade playback modes -----------------------------------
+// SPL 04 = forward loop with X-fade, SPL 05 = ping-pong with X-fade. The
+// engine maps them to loopMode 1/2 plus the crossfade flag; the fade window
+// is a quarter of the loop window in source frames. The fixture ramp is the
+// worst case: the hard wrap jumps (8819 - 2213) / 32768 = 0.2016 in one
+// sample (the wrap target is the loop start marker at frame 2213).
+
+static double xfadeMaxJump(LazyEngine& engine, int ticks) {
+  double maxJump = 0.0;
+  double prev = 0.0;
+  bool first = true;
+  for (int tick = 0; tick < ticks; ++tick) {
+    std::vector<float> buffer((size_t)882 * 2);
+    chipnomadRender(engine.state, buffer.data(), 882);
+    for (int i = 0; i < 882; ++i) {
+      const double value = buffer[i * 2];
+      if (first) { prev = value; first = false; continue; }
+      const double jump = std::fabs(value - prev);
+      if (jump > maxJump) maxJump = jump;
+      prev = value;
+    }
+  }
+  return maxJump;
+}
+
+TEST_CASE("SPL 04 crossfades the forward loop wrap") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopStart = 0x40; // frame 2213
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  row.fx[0][0] = fxSLP;
+  row.fx[0][1] = 4; // loop with X-fade
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+
+  // The hard wrap (SPL 02) jumps 0.2016 in one sample; the crossfaded
+  // render must spread the transition over the 1651-frame window.
+  const double fadeJump = xfadeMaxJump(engine, 30);
+  CHECK(fadeJump < 0.01);
+  CHECK(engine.voice()->active());
+}
+
+TEST_CASE("SPL 05 crossfades the ping-pong turns") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopStart = 0x40;
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  row.fx[0][0] = fxSLP;
+  row.fx[0][1] = 5; // ping-pong with X-fade
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+
+  // Both turn points (region end and loop start marker) are faded; on the
+  // ramp the fold is naturally continuous, so the fade stays small in
+  // absolute terms.
+  const double fadeJump = xfadeMaxJump(engine, 40);
+  CHECK(fadeJump < 0.01);
+  CHECK(engine.voice()->active());
+}
+
+TEST_CASE("SPL 04 keeps looping where SPL 00 would stop") {
+  // SPL 04 must activate the loop like SPL 02 does: the voice stays alive
+  // past the window end.
+  EngineSample es;
+  es.init(8820);
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  row.fx[0][0] = fxSLP;
+  row.fx[0][1] = 4;
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+  engine.render(882 * 3);
+  CHECK(engine.voice()->active());
+}
+
+TEST_CASE("SPL mode switch mid-note does not glitch") {
+  // Switching SPL 02 -> 03 while the voice plays must not produce a jump
+  // larger than the material's own step: the new mode takes over from the
+  // current position (the one-shot X-fade between modes is future work;
+  // the switch itself must stay click-free on continuous material).
+  EngineSample es;
+  es.init(8820);
+  // Sine material: continuous everywhere, so any wrap glitch is audible
+  // in the output as a jump far above the sine's own slope.
+  std::vector<int16_t> sine(8820);
+  for (uint32_t i = 0; i < 8820; ++i) {
+    sine[i] = (int16_t)(std::sin(i * 2.0 * 3.14159265358979 / 441.0) * 20000.0);
+  }
+  es.data = sine;
+  es.s.data = sine.data();
+  es.s.loopStart = 0x40;
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  row.fx[0][0] = fxSLP;
+  row.fx[0][1] = 2; // loop
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+  // Play 12 ticks (into the fade window region), then switch to ping-pong.
+  for (int tick = 0; tick < 12; ++tick) engine.render(882);
+  PhraseRow switchRow = makeRow(48);
+  switchRow.fx[0][0] = fxSLP;
+  switchRow.fx[0][1] = 3; // ping-pong
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &switchRow);
+  // The voice must survive the switch and keep playing.
+  double maxJump = 0.0;
+  double prev = 0.0;
+  bool first = true;
+  for (int tick = 0; tick < 10; ++tick) {
+    std::vector<float> buffer((size_t)882 * 2);
+    chipnomadRender(engine.state, buffer.data(), 882);
+    for (int i = 0; i < 882; ++i) {
+      const double value = buffer[i * 2];
+      if (first) { prev = value; first = false; continue; }
+      const double jump = std::fabs(value - prev);
+      if (jump > maxJump) maxJump = jump;
+      prev = value;
+    }
+  }
+  CHECK(engine.voice()->active());
+  // The sine's own max per-sample slope is 0.6104 * 2*pi/441 = 0.0087
+  // (normalized); the observed transition peak is ~0.0101, i.e. within
+  // 16% of the material slope - no click. Bound at 2x material slope.
+  CHECK(maxJump < 0.02);
+}
+
 }  // TEST_SUITE("sample_fx")

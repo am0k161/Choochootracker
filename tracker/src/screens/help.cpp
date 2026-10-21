@@ -368,9 +368,10 @@ const char* helpFXHint(uint8_t* fx, int isTable, uint8_t instrumentIdx) {
     case fxSRS: snprintf(buffer, bufferSize, "Sample resonance %hhu", fx[1]); break;
     case fxSSP: snprintf(buffer, bufferSize, "Sample speed %hhu", fx[1]); break;
     case fxSLP: {
-      static const char* playbackModes[] = {"forward", "reverse", "loop", "ping-pong"};
+      static const char* playbackModes[] = {"forward", "reverse", "loop", "ping-pong",
+        "loop x-fade", "ping-pong x-fade"};
       snprintf(buffer, bufferSize, "Sample playback: %s",
-        fx[1] <= 3 ? playbackModes[fx[1]] : "?");
+        fx[1] <= 5 ? playbackModes[fx[1]] : "?");
       break;
     }
     case fxSLI: {
@@ -548,7 +549,7 @@ static void initFxHelpText() {
   fxHelpText[fxSCF] = "Sample Cutoff FX\n00-FF logarithmic cutoff\nuntil the next note trigger";
   fxHelpText[fxSRS] = "Sample Resonance FX\nOverrides resonance until\nthe next note trigger";
   fxHelpText[fxSSP] = "Sample Speed FX\n00-FF maps to 0-500 percent\nuntil the next note trigger";
-  fxHelpText[fxSLP] = "Sample Playback FX\n00 forward, 01 reverse\n02 loop, 03 ping-pong\nuntil the next note trigger";
+  fxHelpText[fxSLP] = "Sample Playback FX\n00 forward, 01 reverse\n02 loop, 03 ping-pong\n04 loop x-fade, 05 ping-pong\nx-fade. 04/05 crossfade the\nloop wrap over a quarter\nof the loop window\nuntil the next note trigger";
   fxHelpText[fxSLI] = "Sample Slice FX\nPlays the numbered slice\nregardless of the note;\n01 = first slice. Needs\nslice mode enabled";
   fxHelpText[fxRNS] = "Random Slice FX\nPlays random slice\nwhen in slicing mode";
   fxHelpText[fxRNN] = "Random Note FX\nPlays random note\nX: mode, Y: range";
