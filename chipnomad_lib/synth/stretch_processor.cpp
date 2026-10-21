@@ -112,6 +112,19 @@ void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretch
   sourceEndFrame_ = endFrame;
   windowReverse_ = reverse;
 
+  // Loop wrap point: the LOOP START marker when a loop mode is active,
+  // clamped inside the window (start <= loop < end), the window start
+  // otherwise. Mirrors SampleVoice::configure. Deliberately NOT part of
+  // windowChanged: tweaking the marker mid-note must not re-seek the
+  // playhead, the next wrap simply picks up the new point.
+  if (loopMode_ != 0) {
+    loopStartFrame_ = sampleMarkerToStartFrame(sampleFrames_, sample->loopStart);
+    if (loopStartFrame_ < sourceStartFrame_) loopStartFrame_ = sourceStartFrame_;
+    if (loopStartFrame_ >= sourceEndFrame_) loopStartFrame_ = sourceEndFrame_ - 1;
+  } else {
+    loopStartFrame_ = sourceStartFrame_;
+  }
+
   double sourceSeconds = (double)(sourceEndFrame_ - sourceStartFrame_) / sampleRate_;
   double targetSeconds;
   if (stretchMode != 0) {
@@ -266,26 +279,27 @@ bool StretchProcessor::process(float* out, size_t frames) {
     if ((size_t)inputCount > kMaxBlockFrames) inputCount = (int)kMaxBlockFrames;
 
     // Fill the input buffer from the source window with linear interpolation.
-    // When the source is exhausted: loop modes wrap, one-shot feeds silence
+    // When the source is exhausted: loop modes wrap at the LOOP START frame
+    // (the window start when no loop is active), one-shot feeds silence
     // and lets the stretcher drain its tail.
     bool exhausted = false;
     for (int i = 0; i < inputCount; ++i) {
       if (sourceReverse_) {
-        if (sourcePosition_ <= (double)sourceStartFrame_) {
+        if (sourcePosition_ <= (double)loopStartFrame_) {
           if (loopMode_ == 1) {
             // Wrap to the top of the window, clamped inside [start, end) so
             // the interpolation never reads past the end of the sample.
-            double length = (double)(sourceEndFrame_ - sourceStartFrame_);
+            double length = (double)(sourceEndFrame_ - loopStartFrame_);
             sourcePosition_ = (double)sourceEndFrame_ - 1.0 -
-              std::fmod((double)sourceStartFrame_ - sourcePosition_, length);
+              std::fmod((double)loopStartFrame_ - sourcePosition_, length);
             if (sourcePosition_ >= (double)sourceEndFrame_) sourcePosition_ = (double)sourceEndFrame_ - 1.0;
           } else if (loopMode_ == 2) {
             sourceDirection_ = 1.0;
             sourceReverse_ = false;
             // Reflect back into the window: the position may have stepped
             // below the start already.
-            sourcePosition_ = (double)sourceStartFrame_ +
-              ((double)sourceStartFrame_ - sourcePosition_);
+            sourcePosition_ = (double)loopStartFrame_ +
+              ((double)loopStartFrame_ - sourcePosition_);
             if (sourcePosition_ >= (double)sourceEndFrame_) sourcePosition_ = (double)sourceEndFrame_ - 1.0;
           } else {
             exhausted = true;
@@ -293,9 +307,9 @@ bool StretchProcessor::process(float* out, size_t frames) {
         }
       } else if (sourcePosition_ >= (double)sourceEndFrame_) {
         if (loopMode_ == 1) {
-          double length = (double)(sourceEndFrame_ - sourceStartFrame_);
-          sourcePosition_ = sourceStartFrame_ +
-            std::fmod(sourcePosition_ - (double)sourceStartFrame_, length);
+          double length = (double)(sourceEndFrame_ - loopStartFrame_);
+          sourcePosition_ = loopStartFrame_ +
+            std::fmod(sourcePosition_ - (double)loopStartFrame_, length);
         } else if (loopMode_ == 2) {
           sourceDirection_ = -1.0;
           sourceReverse_ = true;
@@ -303,7 +317,7 @@ bool StretchProcessor::process(float* out, size_t frames) {
           // the end already.
           double last = (double)(sourceEndFrame_ - 1);
           sourcePosition_ = last - (sourcePosition_ - last);
-          if (sourcePosition_ < (double)sourceStartFrame_) sourcePosition_ = (double)sourceStartFrame_;
+          if (sourcePosition_ < (double)loopStartFrame_) sourcePosition_ = (double)loopStartFrame_;
         } else {
           exhausted = true;
         }
