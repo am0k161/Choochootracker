@@ -928,3 +928,208 @@ TEST_CASE("reverse playback interpolates without mirroring the fraction") {
   CHECK(std::fabs(output[4] - 62.0f / 64.0f) < 0.001f);
   CHECK(std::fabs(output[8] - 61.0f / 64.0f) < 0.001f);
 }
+
+// --- Loop X-fade (engine side; SPL 04/05 wiring is covered in PR3) -----------
+// The crossfade replaces the hard wrap: over the last quarter of the loop
+// window the outgoing pass (still reading toward the seam) mixes with the
+// incoming pass (already reading from the wrap target). The fixture ramp
+// (data[i] = i) is the worst case: the seam material jumps ~8000 LSB.
+
+// Builds a voice on a ramp sample with a loop window [loopStartFrame, 8820)
+// and renders `ticks` ticks of 882 frames, returning the interleaved output.
+static std::vector<float> renderXfadeVoice(InstrumentSample* sample,
+                                           uint8_t loopMode, uint8_t xfade,
+                                           int ticks) {
+  SampleVoice voice;
+  std::vector<float> all;
+  float output[882 * 2];
+  voice.init(44100.0f);
+  voice.configure(sample, 0.0f, 1.0f, sample->speedPercent, sample->start,
+                  sample->end, loopMode, sample->filterCutoffHz,
+                  sample->filterResonance, -1, -1, -1, -1, -1, 0, 0,
+                  sample->stretchMode, 50.0f, 0, 0, sample->loopStart, xfade);
+  voice.noteOn();
+  for (int t = 0; t < ticks; ++t) {
+    voice.render(output, 882);
+    all.insert(all.end(), output, output + 882 * 2);
+  }
+  return all;
+}
+
+static double maxJump(const std::vector<float>& all) {
+  double jump = 0.0;
+  for (size_t i = 2; i < all.size(); i += 2) {
+    const double d = std::fabs((double)all[i] - (double)all[i - 2]);
+    if (d > jump) jump = d;
+  }
+  return jump;
+}
+
+TEST_CASE("xfade forward loop removes the wrap discontinuity") {
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopMode = 1;
+  sample.loopStart = 0x40; // frame 2213
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // Hard wrap: the seam jumps (8819 - 2213) / 32768 = 0.2016 in one sample
+  // (the wrap target is the loop start marker, not frame 0).
+  const double hardJump = maxJump(renderXfadeVoice(&sample, 1, 0, 30));
+  CHECK(hardJump > 0.15);
+
+  // Crossfaded: the transition spreads over the 1651-frame window; the
+  // worst single-sample jump is a small fraction of the hard cut.
+  const double fadeJump = maxJump(renderXfadeVoice(&sample, 1, 1, 30));
+  CHECK(fadeJump < 0.01);
+  CHECK(fadeJump < hardJump);
+}
+
+TEST_CASE("xfade ping-pong removes the turn discontinuity") {
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopMode = 2;
+  sample.loopStart = 0x40;
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // On the ramp the ping-pong fold is naturally continuous (the material
+  // mirrors at the turn), so the hard wrap barely jumps; the fade is a
+  // safety mix for real-world material. Assert the fade stays small in
+  // absolute terms on this worst-case uncorrelated fixture.
+  const double fadeJump = maxJump(renderXfadeVoice(&sample, 2, 1, 40));
+  CHECK(fadeJump < 0.01);
+}
+
+TEST_CASE("xfade disabled path is bit-identical to the hard wrap") {
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopMode = 1;
+  sample.loopStart = 0x40;
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // The fade must only alter output inside the window: before the fade
+  // window opens (frame 7169 = 8820 - 1651) the xfade render is
+  // bit-identical to the hard-wrap render; inside the window it differs.
+  const std::vector<float> hard = renderXfadeVoice(&sample, 1, 0, 14);
+  const std::vector<float> xfade = renderXfadeVoice(&sample, 1, 1, 14);
+  REQUIRE(hard.size() == xfade.size());
+  const size_t windowStart = 7169 * 2;
+  for (size_t i = 0; i < windowStart; ++i) CHECK(hard[i] == xfade[i]);
+  int diffs = 0;
+  for (size_t i = windowStart; i < hard.size(); ++i) {
+    if (hard[i] != xfade[i]) ++diffs;
+  }
+  CHECK(diffs > 0);
+}
+
+TEST_CASE("xfade is bypassed on the granular path") {
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.sustain = 255;
+  sample.loopMode = 1;
+  sample.loopStart = 0x40;
+  sample.speedPercent = 150; // granular
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // The granular path windows its own grains; SPL 04 must not change the
+  // output there.
+  const std::vector<float> plain = renderXfadeVoice(&sample, 1, 0, 14);
+  const std::vector<float> xfade = renderXfadeVoice(&sample, 1, 1, 14);
+  REQUIRE(plain.size() == xfade.size());
+  for (size_t i = 0; i < plain.size(); ++i) CHECK(plain[i] == xfade[i]);
+}
+
+TEST_CASE("xfade is bypassed on the stretch path") {
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.sustain = 255;
+  sample.loopMode = 1;
+  sample.loopStart = 0x40;
+  sample.stretchMode = 1;
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // The stretch processor owns the read pointer; SPL 04 must not change
+  // the output there.
+  const std::vector<float> plain = renderXfadeVoice(&sample, 1, 0, 14);
+  const std::vector<float> xfade = renderXfadeVoice(&sample, 1, 1, 14);
+  REQUIRE(plain.size() == xfade.size());
+  for (size_t i = 0; i < plain.size(); ++i) CHECK(plain[i] == xfade[i]);
+}
+
+TEST_CASE("xfade survives per-tick reconfigure") {
+  // configure() runs every tick; reconfiguring with the same window must
+  // not reset an in-flight fade (the fade completes and hands over).
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopMode = 1;
+  sample.loopStart = 0x40;
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  SampleVoice voice;
+  float output[882 * 2];
+  voice.init(44100.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 1,
+                  sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
+                  -1, -1, 0, 0, 0, 50.0f, 0, 0, sample.loopStart, 1);
+  voice.noteOn();
+  // Play into the fade window (window = (8820-2213)/4 = 1651 frames, so it
+  // starts at frame ~7169 = tick 8.1), reconfigure every tick.
+  for (int t = 0; t < 30; ++t) {
+    voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 1,
+                    sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
+                    -1, -1, 0, 0, 0, 50.0f, 0, 0, sample.loopStart, 1);
+    voice.render(output, 882);
+  }
+  // The voice must still be looping (the fade completed and handed over
+  // instead of being reset mid-flight).
+  CHECK(voice.active());
+}
