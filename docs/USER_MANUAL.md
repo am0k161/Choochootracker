@@ -675,9 +675,9 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
 - Edits live in RAM only until a save flow writes them: the project stores the sample's file path and reloads the WAV from disk on the next project load, so leaving the tracker without **Save**/**Save As** discards process operations (the `*` marker is the warning). Loading a different sample into the instrument also discards unsaved edits and resets the Region to the full sample (Start `00`, End `FF`).
 - **Region** sets the playback Start/End markers, also available on the Sampler instrument screen. They set normalised playback boundaries (`00-FF`); if Start is after End, the sample plays in reverse. **EDIT + [LEFT/RIGHT]** fine-adjusts the marker in steps of one (`01`) and zooms the waveform around it while **EDIT** is held; **EDIT + [UP/DOWN]** coarse-adjusts (step 16) and returns the view to the full sample. **EDIT + OPT** resets the marker to its default (Start `00`, End `FF`).
 - The waveform view zooms to a fixed window of one second of audio around the edited marker and pans to keep it visible; samples that fit inside the window stay at the full 1:1 view. The zoom is transient: it lasts while **EDIT** is held, and releasing **EDIT** returns to the full 1:1 view, as do coarse steps. Entering the screen always resets the view to the full sample.
-- **Loop** is a row with two cells: **LST** (loop start) and **SPD ALGO**
+- **Loop** is a row with two cells: **START** (loop start) and **SPD ALGO**
  (speed algorithm). It sits between **Select** and **Slice** on screen.
-- **LST** shows the loop wrap point in hex. It is active when the instrument's
+- **START** shows the loop wrap point in hex. It is active when the instrument's
  **Loop** setting is Loop or Ping-Pong, or when the playing phrase row carries
  an `SPL` value of `02` or `03`; otherwise the cell is dimmed and skipped in
  navigation. **EDIT + [LEFT/RIGHT]** fine-adjusts the marker in steps of one
