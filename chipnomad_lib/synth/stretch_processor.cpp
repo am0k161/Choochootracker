@@ -1,6 +1,7 @@
 #include "stretch_processor.h"
 
 #include "../project_instruments.h"
+#include "loop_xfade.h"
 
 #include <cmath>
 #include <new>
@@ -89,8 +90,13 @@ void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretch
   sampleChannels_ = sample->channels >= 2 ? 2 : 1;
   sampleRate_ = sample->sampleRate > 0 ? (double)sample->sampleRate : (double)outputSampleRate_;
   // Effective playback mode (instrument setting or SPL override): 0 one-shot,
-  // 1 loop, 2 ping-pong.
-  loopMode_ = loopMode > 2 ? 0 : loopMode;
+  // 1 loop, 2 ping-pong, 3 loop with X-fade, 4 ping-pong with X-fade. The
+  // X-fade variants wrap exactly like the plain modes; the crossfade is
+  // applied to the material fed into the stretcher at the wrap (see the
+  // input fill loop below).
+  loopMode_ = loopMode > 4 ? 0 : loopMode;
+  bool xfadeOn = loopMode_ >= 3;
+  if (loopMode_ >= 3) loopMode_ -= 2;
 
   // Source window: same Start/End mapping as the plain playback path, with
   // the same reverse detection (Start > End plays the window backwards).
@@ -129,6 +135,18 @@ void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretch
     loopStartFrame_ = sourceStartFrame_;
   }
 
+  // X-fade window: a fraction of the loop span, clamped so the incoming and
+  // outgoing windows never overlap (the incoming pass must finish fading in
+  // before the outgoing pass reaches the seam). Mirrors SampleVoice's
+  // 7/20 rule. The window is recomputed on every configure() - the wrap
+  // branches below only consult it when the playhead approaches the seam.
+  xfadeLength_ = 0;
+  if (xfadeOn && loopMode_ != 0) {
+    uint32_t loopLength = sourceEndFrame_ - loopStartFrame_;
+    uint32_t fadeLen = loopLength * 7 / 20;
+    xfadeLength_ = fadeLen;
+  }
+
   double sourceSeconds = (double)(sourceEndFrame_ - sourceStartFrame_) / sampleRate_;
   double targetSeconds;
   if (stretchMode != 0) {
@@ -162,6 +180,8 @@ void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretch
     sourceReverse_ = windowReverse_;
     sourceDirection_ = windowReverse_ ? -1.0 : 1.0;
     inputAccumulator_ = 0.0;
+    xfadeActive_ = false;
+    xfadePhase_ = 0.0;
     primed_ = false;
     draining_ = false;
     active_ = false;
@@ -179,6 +199,9 @@ void StretchProcessor::noteOn() {
   // leak into the priming seek.
   sourceReverse_ = windowReverse_;
   sourceDirection_ = windowReverse_ ? -1.0 : 1.0;
+  // A new note must not resume a fade armed for the previous one.
+  xfadeActive_ = false;
+  xfadePhase_ = 0.0;
   auto* s = static_cast<signalsmith::stretch::SignalsmithStretch<float>*>(stretch_);
   // Priming seek: outputSeek consumes its input as warm-up and renders it as
   // the beginning of the output, so the live feed continues from
@@ -310,6 +333,17 @@ bool StretchProcessor::process(float* out, size_t frames) {
     // When the source is exhausted: loop modes wrap at the LOOP START frame
     // (the window start when no loop is active), one-shot feeds silence
     // and lets the stretcher drain its tail.
+    //
+    // X-fade modes (3/4): the wrap is crossfaded on the INPUT side. For the
+    // last xfadeLength_ source frames before the seam the outgoing pass
+    // (still reading across the seam) is mixed with the incoming pass
+    // (already reading from the top of the loop), using the same equal-power
+    // gains as the plain path's LoopXfade engine. The incoming pointer is
+    // phase-aligned with the outgoing one, so the handover at the seam lands
+    // exactly on the position the hard wrap would have produced - the fade
+    // removes the discontinuity without shifting the loop. The stretcher
+    // then sees a smooth input instead of a step, so no spectral artifact
+    // is generated at the wrap.
     bool exhausted = false;
     for (int i = 0; i < inputCount; ++i) {
       if (sourceReverse_) {
@@ -352,6 +386,106 @@ bool StretchProcessor::process(float* out, size_t frames) {
       }
       if (exhausted) {
         for (size_t c = 0; c < kMaxChannels; ++c) inBuf_[(size_t)i * kMaxChannels + c] = 0.0f;
+        continue;
+      }
+      // X-fade window: the playhead is inside the last xfadeLength_ source
+      // frames before the seam (or a fade is already in flight). The
+      // outgoing pass keeps its natural trajectory across the seam; the
+      // incoming pass is phase-aligned with it. The wrap branches above
+      // still fold the outgoing pointer - the fade is computed from the
+      // pre-wrap geometry, then the mixed read uses the folded position.
+      // Descending forward loops (mode 1) hard-wrap like the plain path;
+      // only ping-pong (mode 2) arms a fade on the way down.
+      bool inWindow = xfadeLength_ > 0 &&
+        (xfadeActive_ ||
+         (sourceDirection_ > 0.0
+           ? (double)sourceEndFrame_ - sourcePosition_ <= (double)xfadeLength_
+           : loopMode_ == 2 && sourcePosition_ - (double)loopStartFrame_ <= (double)xfadeLength_));
+      if (inWindow) {
+        double phase;
+        if (!xfadeActive_) {
+          phase = (double)xfadeLength_ -
+            (sourceDirection_ > 0.0
+              ? (double)sourceEndFrame_ - sourcePosition_
+              : sourcePosition_ - (double)loopStartFrame_);
+          if (phase < 0.0) phase = 0.0;
+          if (phase > (double)xfadeLength_) phase = (double)xfadeLength_;
+          // Arm: outgoing = the playhead's pre-wrap trajectory, incoming =
+          // the wrap target phase-aligned with it. The outgoing pointer is
+          // NOT folded here - the mixed read below folds it via sampleAt.
+          double outPos = sourcePosition_;
+          int outDir = sourceDirection_ > 0.0 ? 1 : -1;
+          double inPos;
+          int inDir;
+          if (loopMode_ == 1) {
+            // Forward wrap: incoming restarts at the loop start marker.
+            inPos = (double)loopStartFrame_ + phase;
+            inDir = 1;
+          } else if (outDir > 0) {
+            // Ping-pong turn at the region end: incoming reads backwards
+            // from the last frame, mirroring the fold
+            // position_ = last - overshoot.
+            inPos = (double)(sourceEndFrame_ - 1) - phase;
+            inDir = -1;
+          } else {
+            // Ping-pong turn at the loop start marker: incoming reads
+            // forwards from the marker, mirroring
+            // position_ = first + (first - pos).
+            inPos = (double)loopStartFrame_ + phase;
+            inDir = 1;
+          }
+          xfadeOutPos_ = outPos;
+          xfadeInPos_ = inPos;
+          xfadeOutDir_ = outDir;
+          xfadeInDir_ = inDir;
+          xfadePhase_ = phase;
+          xfadeActive_ = true;
+        }
+        // Mixed read: outgoing keeps its natural trajectory (it may already
+        // be past the seam - the fold below maps it back into the window),
+        // incoming steps from the wrap target.
+        float gOut, gIn;
+        xfadeGains(xfadePhase_, gOut, gIn);
+        uint32_t outFrame = (uint32_t)xfadeOutPos_;
+        uint32_t outNext = outFrame + 1 < sourceEndFrame_ ? outFrame + 1 : outFrame;
+        double outFrac = xfadeOutPos_ - (double)outFrame;
+        uint32_t inFrame = (uint32_t)xfadeInPos_;
+        uint32_t inNext = inFrame + 1 < sourceEndFrame_ ? inFrame + 1 : inFrame;
+        double inFrac = xfadeInPos_ - (double)inFrame;
+        for (size_t c = 0; c < kMaxChannels; ++c) {
+          uint32_t srcChannel = sampleChannels_ == 1 ? 0 : (uint32_t)c;
+          float outA = sampleData_[(size_t)outFrame * sampleChannels_ + srcChannel] / 32768.0f;
+          float outB = sampleData_[(size_t)outNext * sampleChannels_ + srcChannel] / 32768.0f;
+          float outSample = outA + (outB - outA) * (float)outFrac;
+          float inA = sampleData_[(size_t)inFrame * sampleChannels_ + srcChannel] / 32768.0f;
+          float inB = sampleData_[(size_t)inNext * sampleChannels_ + srcChannel] / 32768.0f;
+          float inSample = inA + (inB - inA) * (float)inFrac;
+          inBuf_[(size_t)i * kMaxChannels + c] =
+            gOut * outSample + gIn * inSample;
+        }
+        // Advance the fade pointers by the source step. The outgoing pass
+        // may cross the seam mid-fade: the fold below maps it back into the
+        // window, so the mixed read stays inside the sample data.
+        xfadeOutPos_ += (double)xfadeOutDir_ * sourceStep_;
+        xfadeInPos_ += (double)xfadeInDir_ * sourceStep_;
+        xfadePhase_ += sourceStep_;
+        if (xfadePhase_ >= (double)xfadeLength_) {
+          // Fade complete: hand the incoming pointer to the main playhead.
+          xfadeActive_ = false;
+          sourcePosition_ = xfadeInPos_;
+          sourceDirection_ = (double)xfadeInDir_;
+          sourceReverse_ = xfadeInDir_ < 0;
+          // The incoming pointer may sit a hair past the seam (fractional
+          // step); fold it back into the window so the next iteration
+          // starts clean.
+          if (sourceReverse_) {
+            if (sourcePosition_ < (double)loopStartFrame_) {
+              sourcePosition_ = (double)loopStartFrame_;
+            }
+          } else if (sourcePosition_ >= (double)sourceEndFrame_) {
+            sourcePosition_ = (double)loopStartFrame_;
+          }
+        }
         continue;
       }
       uint32_t frame = (uint32_t)sourcePosition_;
@@ -413,4 +547,18 @@ void StretchProcessor::reset() {
   draining_ = false;
   drainRemaining_ = 0;
   drainOffset_ = 0;
+  xfadeActive_ = false;
+  xfadePhase_ = 0.0;
+}
+
+// Equal-power gains, quantized to 256 steps - the same curve the plain
+// path's LoopXfade engine uses (cos/sin quarter period, phase 0 -> gOut=1,
+// phase length -> gIn=1). Reads the shared kLoopXfadeTables so both paths
+// stay bit-identical.
+void StretchProcessor::xfadeGains(double phase, float& gOut, float& gIn) const {
+  int index = (int)(phase * 255.0 / (double)xfadeLength_ + 0.5);
+  if (index < 0) index = 0;
+  if (index > 255) index = 255;
+  gOut = kLoopXfadeTables.out[index];
+  gIn = kLoopXfadeTables.in[index];
 }

@@ -324,7 +324,7 @@ static int loadInstrumentSample(FILE* file, Instrument* instrument) {
     char error[64];
     sampleLoadWav16(sample->path, sample, error, sizeof(error));
   }
-  if (sample->loopMode > 2) sample->loopMode = 0;
+  if (sample->loopMode > 4) sample->loopMode = 0;
   sample->slice = sampleNormalizeSliceEx(sample->slice);
   if (sample->autoSensitivity < 1 || sample->autoSensitivity > 99) sample->autoSensitivity = 50;
   if (sample->stretchMode > 6) sample->stretchMode = 0;

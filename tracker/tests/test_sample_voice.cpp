@@ -1133,3 +1133,70 @@ TEST_CASE("xfade survives per-tick reconfigure") {
   // instead of being reset mid-flight).
   CHECK(voice.active());
 }
+
+TEST_CASE("xfade derives from loop modes 3/4 without the xfade parameter") {
+  // Modes 3 (Loop X) and 4 (Ping X) turn the crossfade on themselves: the
+  // explicit xfade parameter stays 0. The wrap geometry matches the plain
+  // modes 1/2.
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopStart = 0x40; // frame 2213
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // Mode 3: the hard wrap jumps 0.2016 in one sample; the crossfade
+  // spreads it over the 2312-frame window.
+  sample.loopMode = 3;
+  const double fadeJump3 = maxJump(renderXfadeVoice(&sample, 3, 0, 30));
+  CHECK(fadeJump3 < 0.01);
+
+  // Mode 4: both turn points are faded; on the ramp the fold is naturally
+  // continuous, so the fade stays small in absolute terms.
+  sample.loopMode = 4;
+  const double fadeJump4 = maxJump(renderXfadeVoice(&sample, 4, 0, 40));
+  CHECK(fadeJump4 < 0.01);
+}
+
+TEST_CASE("mode 3 descending hard-wraps like mode 1") {
+  // Legacy Start > End windows reverse the playback direction. A descending
+  // forward loop (mode 1 or 3) must hard-wrap: the phase-aligned incoming
+  // pass would read past the sample data (the wrap target sits at the
+  // region end). Only ping-pong (modes 2/4) arms a fade on the way down.
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 200; // descending window: start marker above end marker
+  sample.end = 40;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopMode = 3;
+  sample.loopStart = 0x40;
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // The descending pass must survive the wrap and keep looping: the voice
+  // stays active and the cursor stays inside the sample.
+  SampleVoice voice;
+  float output[882 * 2];
+  voice.init(44100.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 3,
+                  sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
+                  -1, -1, 0, 0, 0, 50.0f, 0, 0, sample.loopStart, 0);
+  voice.noteOn();
+  for (int t = 0; t < 4; ++t) voice.render(output, 882);
+  CHECK(voice.active());
+  const double frame = voice.playbackFrame();
+  CHECK(frame >= 0.0);
+  CHECK(frame < 8820.0);
+}

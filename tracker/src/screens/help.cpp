@@ -550,7 +550,7 @@ static void initFxHelpText() {
   fxHelpText[fxSCF] = "Sample Cutoff FX\n00-FF logarithmic cutoff\nuntil the next note trigger";
   fxHelpText[fxSRS] = "Sample Resonance FX\nOverrides resonance until\nthe next note trigger";
   fxHelpText[fxSSP] = "Sample Speed FX\n00-FF maps to 0-500 percent\nuntil the next note trigger";
-  fxHelpText[fxSLP] = "Sample Playback FX\n00 forward, 01 reverse\n02 loop, 03 ping-pong\n04 loop x-fade, 05 ping-pong\nx-fade. 04/05 crossfade the\nloop wrap over 35 percent\nof the loop window\nuntil the next note trigger";
+  fxHelpText[fxSLP] = "Sample Playback FX\n00 forward, 01 reverse\n02 loop, 03 ping-pong\n04 loop x-fade, 05 ping-pong\nx-fade. 02-05 write the\nloop mode to the instrument\nuntil the next note trigger;\n04/05 crossfade the loop\nwrap over 35 percent of\nthe loop window";
   fxHelpText[fxSLI] = "Sample Slice FX\nPlays the numbered slice\nregardless of the note;\n01 = first slice. Needs\nslice mode enabled";
   fxHelpText[fxRNS] = "Random Slice FX\nPlays random slice\nwhen in slicing mode";
   fxHelpText[fxRNN] = "Random Note FX\nPlays random note\nX: mode, Y: range";

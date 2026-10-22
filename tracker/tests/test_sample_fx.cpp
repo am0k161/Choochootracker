@@ -294,6 +294,81 @@ TEST_CASE("SPL 02 maps to loop and SPL 03 maps to ping-pong") {
   }
 }
 
+// --- SPL 02-05 write-through -------------------------------------------------
+// SPL 02-05 WRITE THROUGH to the instrument's loopMode on the audio project:
+// the instrument view parameter is the central source of truth, so the lane
+// FX changes it while the tracker proceeds. 00/01 keep the legacy local
+// override and must not clobber the instrument's loop mode.
+
+TEST_CASE("SPL 02-05 write the mapped loop mode into the instrument") {
+  EngineSample es;
+  es.init(8820);
+
+  // SPL 02 -> loopMode 1 (Loop), 03 -> 2 (Ping), 04 -> 3 (Loop X),
+  // 05 -> 4 (Ping X). The write lands on the audio project's instrument.
+  const uint8_t splValues[] = {2, 3, 4, 5};
+  for (uint8_t spl : splValues) {
+    LazyEngine engine(es.s, 0);
+    PhraseRow row = makeRow(48);
+    row.fx[0][0] = fxSLP;
+    row.fx[0][1] = spl;
+    chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+    engine.render(882);
+    REQUIRE(engine.voice()->active());
+    CHECK(engine.state->audioProject.instruments[0].chip.sample.loopMode == spl - 1);
+  }
+}
+
+TEST_CASE("SPL 00 and 01 do not clobber the instrument loop mode") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopMode = 2; // instrument says ping-pong
+
+  // SPL 00 (forward): legacy local override, instrument field untouched.
+  {
+    LazyEngine engine(es.s, 0);
+    PhraseRow row = makeRow(48);
+    row.fx[0][0] = fxSLP;
+    row.fx[0][1] = 0;
+    chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+    engine.render(882);
+    CHECK(engine.state->audioProject.instruments[0].chip.sample.loopMode == 2);
+  }
+
+  // SPL 01 (reverse): same - the one-shot preview relies on this.
+  {
+    LazyEngine engine(es.s, 0);
+    PhraseRow row = makeRow(48);
+    row.fx[0][0] = fxSLP;
+    row.fx[0][1] = 1;
+    chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+    engine.render(882);
+    CHECK(engine.state->audioProject.instruments[0].chip.sample.loopMode == 2);
+  }
+}
+
+TEST_CASE("SPL write-through persists across retriggers") {
+  // The write-through mutates the audio project's instrument, so a later
+  // row without SPL keeps the mode the previous row wrote.
+  EngineSample es;
+  es.init(8820);
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  row.fx[0][0] = fxSLP;
+  row.fx[0][1] = 3; // ping-pong
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+  engine.render(882);
+  REQUIRE(engine.state->audioProject.instruments[0].chip.sample.loopMode == 2);
+
+  // Retrigger without SPL: the mode written by the previous row persists.
+  PhraseRow plain = makeRow(48);
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &plain);
+  engine.render(882);
+  CHECK(engine.state->audioProject.instruments[0].chip.sample.loopMode == 2);
+  CHECK(engine.voice()->active());
+}
+
 // --- LOOP START marker -------------------------------------------------------
 // loopStart is a 0-255 normalized marker (like start/end). When a loop mode is
 // active (instrument loopMode != 0 or SPL >= 02) the voice wraps back to the
@@ -597,6 +672,83 @@ TEST_CASE("SPL mode switch mid-note does not glitch") {
   // (normalized); the observed transition peak is ~0.0101, i.e. within
   // 16% of the material slope - no click. Bound at 2x material slope.
   CHECK(maxJump < 0.02);
+}
+
+// --- Instrument loop modes 3/4 (X-fade variants) -----------------------------
+// Modes 3 (Loop X) and 4 (Ping X) derive the crossfade from the mode itself:
+// the xfade parameter stays 0 (the SPL lane FX path can still force it for
+// modes 1/2). The wrap geometry matches the plain modes 1/2.
+
+TEST_CASE("instrument mode 3 crossfades the forward wrap without xfade param") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopStart = 0x40; // frame 2213
+  es.s.loopMode = 3;     // Loop X: xfade derived from the mode
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+
+  // Same worst-case ramp as SPL 04: the hard wrap jumps 0.2016 in one
+  // sample; the crossfade spreads it over the 2312-frame window.
+  const double fadeJump = xfadeMaxJump(engine, 30);
+  CHECK(fadeJump < 0.01);
+  CHECK(engine.voice()->active());
+}
+
+TEST_CASE("instrument mode 4 crossfades the ping-pong turns without xfade param") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopStart = 0x40;
+  es.s.loopMode = 4; // Ping X: xfade derived from the mode
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+
+  const double fadeJump = xfadeMaxJump(engine, 40);
+  CHECK(fadeJump < 0.01);
+  CHECK(engine.voice()->active());
+}
+
+TEST_CASE("instrument modes 3 and 4 keep looping where mode 0 stops") {
+  EngineSample es;
+  es.init(8820);
+
+  for (uint8_t mode : {3, 4}) {
+    LazyEngine engine(es.s, 0);
+    es.s.loopMode = mode;
+    engine.setSampleInstrument(0, es.s);
+    PhraseRow row = makeRow(48);
+    chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+    engine.render(882 * 3);
+    CHECK(engine.voice()->active());
+  }
+}
+
+TEST_CASE("instrument mode 3 descending hard-wraps like mode 1") {
+  // Legacy Start > End windows reverse the playback direction. A descending
+  // forward loop (mode 1 or 3) must hard-wrap: the phase-aligned incoming
+  // pass would read past the sample data (the wrap target sits at the
+  // region end). Only ping-pong (modes 2/4) arms a fade on the way down.
+  EngineSample es;
+  es.init(8820);
+  es.s.start = 200; // descending window: start marker above end marker
+  es.s.end = 40;
+  es.s.loopStart = 0x40;
+  es.s.loopMode = 3;
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+
+  // The descending pass must survive the wrap and keep playing (a bad
+  // incoming read would produce garbage or kill the voice).
+  engine.render(882 * 4);
+  CHECK(engine.voice()->active());
+  const double frame = engine.voice()->playbackFrame();
+  CHECK(frame >= 0.0);
+  CHECK(frame < 8820.0);
 }
 
 // --- LST: relative loop start FX ---------------------------------------------
