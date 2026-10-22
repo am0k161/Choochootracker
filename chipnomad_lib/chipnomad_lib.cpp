@@ -2139,6 +2139,13 @@ static void updateSampleVoices(ChipNomadState* state) {
     if (track->note.fx[fxESU].isOn) sustain = track->note.fx[fxESU].fxValue;
     if (track->note.fx[fxERL].isOn) release = track->note.fx[fxERL].fxValue;
     if (track->note.fx[fxESH].isOn) shape = track->note.fx[fxESH].fxValue;
+    // LST shifts the loop start marker relative to its current position;
+    // the accumulated signed offset persists until the next note trigger.
+    // Without an active loop the marker is ignored by the voice anyway.
+    uint8_t effectiveLoopStart = sample->loopStart;
+    if (track->note.fx[fxLST].isOn) {
+      effectiveLoopStart = (uint8_t)clampInt((int)sample->loopStart + track->note.fx[fxLST].acc, 0, 255);
+    }
     applyVoicePostModulations(track, InstrumentType::Sample, &attack, &decay, &sustain, &release,
                               &shape, &triggerDecay, &triggerColor);
     for (int slot = 0; slot < track->chordVoiceCount; ++slot) {
@@ -2163,7 +2170,7 @@ static void updateSampleVoices(ChipNomadState* state) {
       voices[slot]->configure(sample, (float)voicePitchCents, gain / track->chordVoiceCount, (float)speedPercent, start, end, (uint8_t)loopMode,
                               (uint16_t)cutoff, (uint8_t)resonance, attack, decay, sustain, release, shape,
                               sliceCount, voiceSliceIndex, sample->stretchMode, project->tickRate,
-                              sample->speedAlgorithm, forceReverse, sample->loopStart, xfade);
+                              sample->speedAlgorithm, forceReverse, effectiveLoopStart, xfade);
     }
   }
 }

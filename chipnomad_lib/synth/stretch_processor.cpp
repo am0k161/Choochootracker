@@ -46,8 +46,10 @@ StretchProcessor::~StretchProcessor() {
 
 void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretchMode,
                                  float tickRateHz, float pitchSemitones,
-                                 uint8_t startMarker, uint8_t endMarker, uint8_t loopMode) {
-  configure(sample, stretchMode, 0, tickRateHz, pitchSemitones, startMarker, endMarker, loopMode);
+                                 uint8_t startMarker, uint8_t endMarker, uint8_t loopMode,
+                                 uint8_t loopStart) {
+  configure(sample, stretchMode, 0, tickRateHz, pitchSemitones, startMarker, endMarker, loopMode,
+            loopStart);
 }
 
 void StretchProcessor::init(double outputSampleRate, bool cheap) {
@@ -72,7 +74,8 @@ void StretchProcessor::init(double outputSampleRate, bool cheap) {
 
 void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretchMode,
                                  uint16_t speedPercent, float tickRateHz, float pitchSemitones,
-                                 uint8_t startMarker, uint8_t endMarker, uint8_t loopMode) {
+                                 uint8_t startMarker, uint8_t endMarker, uint8_t loopMode,
+                                 uint8_t loopStart) {
   if (!stretch_ || !sample || !sample->data || sample->frameCount == 0 ||
       (stretchMode == 0 && speedPercent == 0)) {
     configured_ = false;
@@ -112,13 +115,14 @@ void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretch
   sourceEndFrame_ = endFrame;
   windowReverse_ = reverse;
 
-  // Loop wrap point: the LOOP START marker when a loop mode is active,
-  // clamped inside the window (start <= loop < end), the window start
-  // otherwise. Mirrors SampleVoice::configure. Deliberately NOT part of
-  // windowChanged: tweaking the marker mid-note must not re-seek the
-  // playhead, the next wrap simply picks up the new point.
+  // Loop wrap point: the EFFECTIVE loop start marker (instrument setting
+  // plus the LST FX offset) when a loop mode is active, clamped inside the
+  // window (start <= loop < end), the window start otherwise. Mirrors
+  // SampleVoice::configure. Deliberately NOT part of windowChanged: tweaking
+  // the marker mid-note must not re-seek the playhead, the next wrap simply
+  // picks up the new point.
   if (loopMode_ != 0) {
-    loopStartFrame_ = sampleMarkerToStartFrame(sampleFrames_, sample->loopStart);
+    loopStartFrame_ = sampleMarkerToStartFrame(sampleFrames_, loopStart);
     if (loopStartFrame_ < sourceStartFrame_) loopStartFrame_ = sourceStartFrame_;
     if (loopStartFrame_ >= sourceEndFrame_) loopStartFrame_ = sourceEndFrame_ - 1;
   } else {

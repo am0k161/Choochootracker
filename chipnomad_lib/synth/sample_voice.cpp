@@ -326,7 +326,7 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
       stretchStart = end;
       stretchEnd = start;
     }
-    stretch_.configure(sample, stretchMode, speedPercent, tickRateHz, pitchCents / 100.0f, stretchStart, stretchEnd, loopMode);
+    stretch_.configure(sample, stretchMode, speedPercent, tickRateHz, pitchCents / 100.0f, stretchStart, stretchEnd, loopMode, loopStart);
   }
 
   uint32_t startFrame;

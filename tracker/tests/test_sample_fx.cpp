@@ -1,6 +1,7 @@
 // Engine tests for the sample FX: SLI (slice select) and SPL (playback mode,
 // formerly SLP). Uses the same fixture pattern as test_lazy_mode.cpp.
 #include "doctest.h"
+#include "../../chipnomad_lib/playback_internal.h"
 #include "../../chipnomad_lib/project_instruments.h"
 #include "../../chipnomad_lib/project.h"
 #include "../../chipnomad_lib/synth/sample_voice.h"
@@ -596,6 +597,169 @@ TEST_CASE("SPL mode switch mid-note does not glitch") {
   // (normalized); the observed transition peak is ~0.0101, i.e. within
   // 16% of the material slope - no click. Bound at 2x material slope.
   CHECK(maxJump < 0.02);
+}
+
+// --- LST: relative loop start FX ---------------------------------------------
+// LST shifts the loop start marker relative to its current position: the
+// signed value accumulates per row (init) and survives retriggers (no-op
+// restart) until the next note trigger. The effective marker is
+// clamp(loopStart + acc, 0, 255). On the 8820-frame fixture, marker 0x40
+// maps to frame 2213 and one marker unit is (8820-1)/255 = 34.6 frames.
+
+TEST_CASE("LST positive shift moves the loop wrap point") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopMode = 1;
+  es.s.loopStart = 0x40; // frame 2213
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  row.fx[0][0] = fxLST;
+  row.fx[0][1] = 0x20; // +32 markers -> 0x60 = frame 3319
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+  for (int tick = 0; tick < 9; ++tick) engine.render(882);
+  const double before = engine.voice()->playbackFrame();
+  CHECK(before > 7000.0); // still in the first pass, near the end
+  engine.render(882);
+  const double after = engine.voice()->playbackFrame();
+  // Wrapped back to the SHIFTED marker frame (3319), not the base 2213.
+  CHECK(after >= 3319.0);
+  CHECK(after < 3319.0 + 882.0);
+}
+
+TEST_CASE("LST negative shift moves the loop wrap point back") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopMode = 1;
+  es.s.loopStart = 0x80; // frame 4426
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  row.fx[0][0] = fxLST;
+  row.fx[0][1] = 0xFF; // -1 marker -> 0x7F = frame 4392
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+  for (int tick = 0; tick < 9; ++tick) engine.render(882);
+  const double before = engine.voice()->playbackFrame();
+  CHECK(before > 7000.0); // still in the first pass, near the end
+  engine.render(882);
+  const double after = engine.voice()->playbackFrame();
+  // Wrapped back to the SHIFTED marker frame (4392), not the base 4426.
+  CHECK(after >= 4392.0);
+  CHECK(after < 4392.0 + 882.0);
+}
+
+TEST_CASE("LST accumulates across rows and survives retriggers") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopMode = 1;
+  es.s.loopStart = 0x40; // frame 2213
+  LazyEngine engine(es.s, 0);
+
+  // Row 0: LST +0x10. Row 1: LST +0x10 again -> accumulated 0x20.
+  PhraseRow row0 = makeRow(48);
+  row0.fx[0][0] = fxLST;
+  row0.fx[0][1] = 0x10;
+  PhraseRow row1 = makeRow(48);
+  row1.instrument = EMPTY_VALUE_8;
+  row1.fx[0][0] = fxLST;
+  row1.fx[0][1] = 0x10;
+  PhraseRow retrig = makeRow(48); // no LST: retrigger must keep the offset
+  retrig.instrument = EMPTY_VALUE_8;
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row0);
+  engine.render(882);
+  readPhraseRowDirect(&engine.state->playbackState, 0, &row1, 0);
+  engine.render(882);
+  // Retrigger without an LST cell: the accumulated offset must persist.
+  readPhraseRowDirect(&engine.state->playbackState, 0, &retrig, 0);
+  for (int tick = 0; tick < 9; ++tick) engine.render(882);
+  const double before = engine.voice()->playbackFrame();
+  CHECK(before > 7000.0); // still in the first pass, near the end
+  engine.render(882);
+  const double after = engine.voice()->playbackFrame();
+  // 0x40 + 0x20 = 0x60 markers -> frame 3319.
+  CHECK(after >= 3319.0);
+  CHECK(after < 3319.0 + 882.0);
+}
+
+TEST_CASE("LST clamps the effective marker at 0") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopMode = 1;
+  es.s.loopStart = 0x10; // frame 553
+  LazyEngine engine(es.s, 0);
+
+  // A large negative shift clamps at marker 0 -> wrap point = region start.
+  PhraseRow row = makeRow(48);
+  row.fx[0][0] = fxLST;
+  row.fx[0][1] = 0x80; // -128 markers -> clamped to 0
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+  for (int tick = 0; tick < 9; ++tick) engine.render(882);
+  const double before = engine.voice()->playbackFrame();
+  CHECK(before > 7000.0); // still in the first pass, near the end
+  engine.render(882);
+  const double after = engine.voice()->playbackFrame();
+  // Wrapped back to the region start (0), not the base marker frame.
+  CHECK(after < 882.0);
+}
+
+TEST_CASE("LST negative steps move back from a clamped marker") {
+  EngineSample es;
+  es.init(8820);
+  es.s.loopMode = 1;
+  es.s.loopStart = 0x40;
+  LazyEngine engine(es.s, 0);
+
+  PhraseRow row = makeRow(48);
+  row.fx[0][0] = fxLST;
+  row.fx[0][1] = 0x7F; // +127 -> marker 0xBF
+  chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+  engine.render(400);
+
+  row.instrument = EMPTY_VALUE_8;
+  row.fx[0][1] = 0x7F; // +127 -> clamps at marker 0xFF
+  readPhraseRowDirect(&engine.state->playbackState, 0, &row, 0);
+  CHECK(engine.state->playbackState.tracks[0].note.fx[fxLST].acc == 191);
+
+  row.fx[0][1] = 0x81; // -127 is relative to 0xFF, so marker becomes 0x80
+  readPhraseRowDirect(&engine.state->playbackState, 0, &row, 0);
+  CHECK(engine.state->playbackState.tracks[0].note.fx[fxLST].acc == 64);
+}
+
+TEST_CASE("LST is inert when the loop is off") {
+  // Two engines, same sample: one with LST +0x20, one without any FX, both
+  // with loopMode 0. The cursor trajectory must be identical (the shifted
+  // marker is ignored in playback without an active loop).
+  EngineSample es;
+  es.init(8820);
+
+  std::vector<double> baseline;
+  {
+    LazyEngine engine(es.s, 0);
+    PhraseRow row = makeRow(48);
+    chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+    for (int tick = 0; tick < 8; ++tick) {
+      engine.render(882);
+      baseline.push_back(engine.voice()->playbackFrame());
+    }
+  }
+
+  std::vector<double> withLST;
+  {
+    LazyEngine engine(es.s, 0);
+    PhraseRow row = makeRow(48);
+    row.fx[0][0] = fxLST;
+    row.fx[0][1] = 0x20;
+    chipnomadQueuePlaybackStartPhraseRow(engine.state, 0, &row);
+    for (int tick = 0; tick < 8; ++tick) {
+      engine.render(882);
+      withLST.push_back(engine.voice()->playbackFrame());
+    }
+  }
+
+  REQUIRE(baseline.size() == withLST.size());
+  for (size_t i = 0; i < baseline.size(); ++i) {
+    CHECK(baseline[i] == withLST[i]);
+  }
 }
 
 }  // TEST_SUITE("sample_fx")

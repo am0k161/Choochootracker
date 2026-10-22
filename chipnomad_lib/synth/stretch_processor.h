@@ -28,13 +28,15 @@ class StretchProcessor {
   // semitones (applied by the stretcher so playback speed stays 1:1).
   // loopMode is the EFFECTIVE playback mode (0 one-shot, 1 loop, 2 ping-pong)
   // after SPL/motion overrides - passed in by the engine instead of being read
-  // from the sample so FX-driven modes apply while stretching.
+  // from the sample so FX-driven modes apply while stretching. loopStart is
+  // likewise the EFFECTIVE loop start marker (instrument setting plus the LST
+  // FX offset) - passed in for the same reason.
   void configure(const InstrumentSample* sample, uint8_t stretchMode,
                  uint16_t speedPercent, float tickRateHz, float pitchSemitones, uint8_t startMarker,
-                 uint8_t endMarker, uint8_t loopMode);
+                 uint8_t endMarker, uint8_t loopMode, uint8_t loopStart = 0);
   void configure(const InstrumentSample* sample, uint8_t stretchMode,
                  float tickRateHz, float pitchSemitones, uint8_t startMarker,
-                 uint8_t endMarker, uint8_t loopMode);
+                 uint8_t endMarker, uint8_t loopMode, uint8_t loopStart = 0);
   void noteOn();
   // Renders up to `frames` stereo-interleaved output frames into `out`.
   // Returns false when the voice must be killed (non-finite audio or, for
