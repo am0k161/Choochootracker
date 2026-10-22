@@ -158,19 +158,6 @@ static InstrumentSample* currentSample(void) {
   return &chipnomadState->project.instruments[cInstrument].chip.sample;
 }
 
-// A loop is active when the instrument's loop mode is set, or the playing
-// phrase row overrides the playback mode with SPL 02-05. The SPL read follows
-// the same tolerated cross-thread pattern
-// as the voice monitors: the UI reads the published playback status copy.
-static int loopActive(const InstrumentSample* sample) {
-  if (sample->loopMode != 0) return 1;
-  const PlaybackStatus* playback = chipnomadGetPlaybackStatus(chipnomadState);
-  const PlaybackTrackState* track = &playback->tracks[*pSongTrack];
-  if (track->mode != PlaybackMode::phraseRow) return 0;
-  if (track->note.instrument != cInstrument) return 0;
-  return track->note.fx[fxSLP].isOn && track->note.fx[fxSLP].fxValue >= 2;
-}
-
 // The frame the LOOP START marker plays at: the normalized value mapped
 // through the sample length and clamped into the playback region exactly
 // like SampleVoice::configure clamps it. Used for the cell readout and the
@@ -832,11 +819,12 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
     }
   }
   // Create the loop start marker (single vertical line): the loop wrap
-  // point, drawn only when a loop is active (instrument loop mode or an
-  // SPL 02-05 override on the playing row) and the marker is not at 0.
-  // The frame is clamped into the region exactly like the voice clamps it.
+  // point, drawn whenever the marker is not at 0 - regardless of whether
+  // looping is enabled in the instrument view or overridden by SPL, and
+  // regardless of the stretch mode. The frame is clamped into the region
+  // exactly like the voice clamps it.
   gfxBitmapClear(loopStartMarker);
-  if (loopActive(sample) && sample->loopStart != 0) {
+  if (sample->loopStart != 0) {
     const int loopX = frameToPixel(loopStartDisplayFrame(sample), view, width, 0);
     if (loopX >= 0) {
       for (int y = 0; y < height; y++) {
