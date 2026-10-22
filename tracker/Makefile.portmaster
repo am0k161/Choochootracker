@@ -65,6 +65,7 @@ PortMaster-deploy: PortMaster
 	cp ../docs/USER_MANUAL.md $(PORT_DIR)/
 	cp ../LICENSE $(PORT_DIR)/licenses/LICENSE.choochootracker.md
 	cp ../chipnomad_lib/external/insert_fx/LICENSE-JM-Formant $(PORT_DIR)/licenses/
+	cp ../chipnomad_lib/external/taktful/LICENSE $(PORT_DIR)/licenses/LICENSE.taktful.md
 	cp packaging/portmaster/license/* $(PORT_DIR)/licenses/
 	cp packaging/portmaster/ChooChooTracker.sh $(PACKAGE_ROOT)/
 	cp packaging/portmaster/port.json packaging/portmaster/README.md packaging/portmaster/gameinfo.xml packaging/portmaster/cover.png packaging/portmaster/screenshot.png $(PORT_DIR)/
