@@ -370,6 +370,27 @@ static void handleFX_PVB(PlaybackState* state, PlaybackTrackState* track, int tr
   track->note.fineOffset += vibratoCommonLogic(fx, scale);
 }
 
+// LST - Sample loop start (relative). Apply each signed value to the current
+// marker and retain the clamped offset from the instrument's base marker.
+// This keeps later negative steps relative to a marker that hit either limit.
+static void initFX_LST(PlaybackState* state, PlaybackTrackState* track, int trackIdx, PlaybackFXState* fx, PlaybackTableState *tableState, int tableFXColumn) {
+  (void)trackIdx; (void)tableState; (void)tableFXColumn;
+  int baseMarker = 0;
+  if (track->note.instrument < PROJECT_MAX_INSTRUMENTS) {
+    const Instrument& instrument = state->p->instruments[track->note.instrument];
+    if (instrument.type == InstrumentType::Sample) {
+      baseMarker = instrument.chip.sample.loopStart;
+    }
+  }
+  const int currentMarker = clampInt(baseMarker + fx->acc, 0, 255);
+  const int shiftedMarker = clampInt(currentMarker + (int8_t)fx->fxValue, 0, 255);
+  fx->acc = shiftedMarker - baseMarker;
+}
+
+static void restartFX_LST(PlaybackState* state, PlaybackTrackState* track, int trackIdx, PlaybackFXState* fx) {
+  // Do nothing - LST should keep the accumulated offset
+}
+
 
 // PSL - Pitch slide (portamento)
 static void initFX_PSL(PlaybackState* state, PlaybackTrackState* track, int trackIdx, PlaybackFXState* fx, PlaybackTableState *tableState, int tableFXColumn) {
@@ -473,6 +494,7 @@ void initFXHandlers(void) {
   fxHandlers[fxARP] = (PlaybackFXHandler){NULL, handleFX_ARP, restartFX_ARP};
   fxHandlers[fxARC] = (PlaybackFXHandler){initFX_ARC, NULL, NULL};
   fxHandlers[fxPVB] = (PlaybackFXHandler){NULL, handleFX_PVB, restartFX_PVB};
+  fxHandlers[fxLST] = (PlaybackFXHandler){initFX_LST, NULL, restartFX_LST};
   fxHandlers[fxPBN] = (PlaybackFXHandler){initFX_PBN, handleFX_PBN, NULL};
   fxHandlers[fxPSL] = (PlaybackFXHandler){initFX_PSL, handleFX_PSL, NULL};
   fxHandlers[fxPIT] = (PlaybackFXHandler){initFX_PIT, handleFX_PIT, restartFX_PIT};

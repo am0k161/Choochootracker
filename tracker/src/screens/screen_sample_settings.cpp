@@ -159,8 +159,8 @@ static InstrumentSample* currentSample(void) {
 }
 
 // A loop is active when the instrument's loop mode is set, or the playing
-// phrase row overrides the playback mode with SPL 02 (loop) or 03
-// (ping-pong). The SPL read follows the same tolerated cross-thread pattern
+// phrase row overrides the playback mode with SPL 02-05. The SPL read follows
+// the same tolerated cross-thread pattern
 // as the voice monitors: the UI reads the published playback status copy.
 static int loopActive(const InstrumentSample* sample) {
   if (sample->loopMode != 0) return 1;
@@ -833,10 +833,10 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
   }
   // Create the loop start marker (single vertical line): the loop wrap
   // point, drawn only when a loop is active (instrument loop mode or an
-  // SPL 02/03 override on the playing row). The frame is clamped into the
-  // region exactly like the voice clamps it.
+  // SPL 02-05 override on the playing row) and the marker is not at 0.
+  // The frame is clamped into the region exactly like the voice clamps it.
   gfxBitmapClear(loopStartMarker);
-  if (loopActive(sample)) {
+  if (loopActive(sample) && sample->loopStart != 0) {
     const int loopX = frameToPixel(loopStartDisplayFrame(sample), view, width, 0);
     if (loopX >= 0) {
       for (int y = 0; y < height; y++) {
@@ -1171,11 +1171,11 @@ static void settingsDrawField(int col, int row, CellState state) {
     return;
   }
   if (row == 5) {
-    // Loop row: the LOOP START marker readout (hex frame, dimmed when no
-    // loop is active) and the speed algorithm selector.
+    // Loop row: the LOOP START marker readout (hex frame, always
+    // adjustable - it is ignored in playback while no loop is active)
+    // and the speed algorithm selector.
     if (col == 0) {
       gfxClearRect(loopStartValX, fieldY(row), loopStartValWidth, 1);
-      if (!loopActive(sample)) gfxSetFgColor(appSettings.colorScheme.textEmpty);
       if (!sample->data || sample->frameCount == 0) {
         gfxPrint(loopStartValX, fieldY(row), "------");
       } else {
@@ -2118,12 +2118,11 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
   }
   if (row == 5) {
     if (col == 0) {
-      // LOOP START: inert when no loop is active (the marker does not
-      // affect playback then). Fine steps move one normalized unit and
+      // LOOP START: always adjustable (it is ignored in playback while
+      // no loop is active). Fine steps move one normalized unit and
       // zoom onto the marker; coarse steps move 16 and return to the full
       // view - the same convention as the Region row. EDIT+OPT snaps the
       // marker back to the Region START (value 0).
-      if (!loopActive(sample)) return 0;
       action = convertMultiAction(action);
       if (action == CellEditAction::clear) {
         if (sample->loopStart != 0) handled = 1;
@@ -2351,9 +2350,6 @@ static int settingsIsCellValid(int col, int row) {
   if (row == 4 && sample->stretchMode != 0) return 0;
   if (row == 4 && col == 1 &&
       sampleDecodeSliceMode(sample->slice) == sliceModeLazy) return 0;
-  // The LOOP START cell is inert without an active loop: skip it in
-  // navigation (the cursor lands on the speed algorithm instead).
-  if (row == 5 && col == 0 && !loopActive(sample)) return 0;
   if (row == 7 && col == 0) {
     return fileAction == 0 ? sample->path[0] != 0 : (sample->data != NULL && sample->frameCount > 0);
   }

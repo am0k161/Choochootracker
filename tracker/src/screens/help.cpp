@@ -367,6 +367,7 @@ const char* helpFXHint(uint8_t* fx, int isTable, uint8_t instrumentIdx) {
     case fxSCF: snprintf(buffer, bufferSize, "Sample cutoff %hhu", fx[1]); break;
     case fxSRS: snprintf(buffer, bufferSize, "Sample resonance %hhu", fx[1]); break;
     case fxSSP: snprintf(buffer, bufferSize, "Sample speed %hhu", fx[1]); break;
+    case fxLST: snprintf(buffer, bufferSize, "Loop start %+d", (int8_t)fx[1]); break;
     case fxSLP: {
       static const char* playbackModes[] = {"forward", "reverse", "loop", "ping-pong",
         "loop x-fade", "ping-pong x-fade"};
@@ -553,6 +554,7 @@ static void initFxHelpText() {
   fxHelpText[fxSLI] = "Sample Slice FX\nPlays the numbered slice\nregardless of the note;\n01 = first slice. Needs\nslice mode enabled";
   fxHelpText[fxRNS] = "Random Slice FX\nPlays random slice\nwhen in slicing mode";
   fxHelpText[fxRNN] = "Random Note FX\nPlays random note\nX: mode, Y: range";
+  fxHelpText[fxLST] = "Loop Start FX\nShifts the current loop\nstart by signed XX per row\nclamped to 00-FF\nLooping must be enabled\nto affect playback";
   fxHelpText[fxSDT] = "Stereo Osc Detune FX\nSets detune between oscillators\nuntil the next note trigger";
   fxHelpText[fxSMX] = "Stereo Osc Mix FX\nSets oscillator A/B mix\nuntil the next note trigger";
   fxHelpText[fxSCF2] = "Stereo Osc Cutoff FX\n00-FF logarithmic cutoff\nuntil the next note trigger";

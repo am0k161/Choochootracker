@@ -677,10 +677,10 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
 - The waveform view zooms to a fixed window of one second of audio around the edited marker and pans to keep it visible; samples that fit inside the window stay at the full 1:1 view. The zoom is transient: it lasts while **EDIT** is held, and releasing **EDIT** returns to the full 1:1 view, as do coarse steps. Entering the screen always resets the view to the full sample.
 - **Loop** is a row with two cells: **START** (loop start) and **SPD ALGO**
  (speed algorithm). It sits between **Select** and **Slice** on screen.
-- **START** shows the loop wrap point in hex. It is active when the instrument's
- **Loop** setting is Loop or Ping-Pong, or when the playing phrase row carries
- an `SPL` value of `02` or `03`; otherwise the cell is dimmed and skipped in
- navigation. **EDIT + [LEFT/RIGHT]** fine-adjusts the marker in steps of one
+- **START** shows the loop wrap point in hex and is always adjustable; when
+ looping is off, the marker is ignored in playback. The red waveform marker
+ appears only while looping is active and the value is nonzero. **EDIT +
+ [LEFT/RIGHT]** fine-adjusts the marker in steps of one
  (`01`) and zooms the waveform around it while **EDIT** is held; **EDIT +
  [UP/DOWN]** coarse-adjusts (step 16) and returns the view to the full sample.
  **EDIT + OPT** snaps the marker to the Region Start. The wrap point is drawn
@@ -1170,6 +1170,7 @@ The value is interpreted as a signed `8-bit` relative change (`01` adds `1`, `FF
 | `SRS` | `00-FF` | Exponential filter resonance |
 | `SSP` | `00-FF` | Sample speed, mapped from `0%` to `500%` |
 | `RNS` | `M0` | Plays a random slice of a sliced sample instead of the note-mapped one. `M` selects the mode: `0` always random, `1` random per PLAY, `2` pick and keep until the value changes. Requires slice mode enabled on the instrument; the low nibble is unused. |
+| `LST` | signed `XX` | Shifts the current loop-start marker by a signed amount per row (`00` = no change, `01` = +1, `FF` = -1). The marker clamps to `00-FF`; changes accumulate through the PLAY and affect playback only when looping is active. |
 
 ### AY FX shared by AY instruments
 

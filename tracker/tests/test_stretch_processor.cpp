@@ -354,7 +354,7 @@ TEST_CASE("StretchProcessor loop wraps at the loop start marker") {
   sample.loopStart = 0x40;
   StretchProcessor stretch;
   stretch.init(48000.0, false);
-  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode, sample.loopStart);
   stretch.noteOn();
 
   std::vector<float> scratch(8192 * 2);
@@ -386,7 +386,7 @@ TEST_CASE("StretchProcessor ping-pong bounces at the loop start marker") {
   sample.loopStart = 0x40;
   StretchProcessor stretch;
   stretch.init(48000.0, false);
-  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode, sample.loopStart);
   stretch.noteOn();
 
   std::vector<float> scratch(8192 * 2);
@@ -432,7 +432,7 @@ TEST_CASE("StretchProcessor short sample starts the first pass at the region sta
 
   StretchProcessor stretch;
   stretch.init(44100.0, false);
-  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode, sample.loopStart);
   stretch.noteOn();
   // The playhead must sit at the region start, not at the window edge (255)
   // and not at the loop marker (64).
@@ -467,7 +467,7 @@ TEST_CASE("StretchProcessor seek landing past the loop marker is skipped") {
   sample.loopStart = 0x1E;
   StretchProcessor stretch;
   stretch.init(48000.0, false);
-  stretch.configure(&sample, 0, 100, 50.0f, 0.0f, 0, 255, sample.loopMode);
+  stretch.configure(&sample, 0, 100, 50.0f, 0.0f, 0, 255, sample.loopMode, sample.loopStart);
   stretch.noteOn();
   CHECK(stretch.sourcePosition() == 0.0);
 
@@ -497,7 +497,7 @@ TEST_CASE("StretchProcessor unclamped seek keeps the primed start") {
   sample.loopStart = 0xC0;  // frame 36127 of 48000, far past the seek landing
   StretchProcessor stretch;
   stretch.init(48000.0, false);
-  stretch.configure(&sample, 0, 100, 50.0f, 0.0f, 0, 255, sample.loopMode);
+  stretch.configure(&sample, 0, 100, 50.0f, 0.0f, 0, 255, sample.loopMode, sample.loopStart);
   stretch.noteOn();
   // Speed 100% at 48k/48k: seek 5760 frames, step 1.0 -> feedPos 5760.
   CHECK(stretch.sourcePosition() > 4000.0);
