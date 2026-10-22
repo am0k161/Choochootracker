@@ -800,7 +800,7 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
   - The `*` marker before the filename means the sample in RAM differs from the file on disk (any process operation sets it, Save and Save As clear it). The marker is session-only: it is not saved with the project and resets when the screen is re-entered. If several instruments reference the same WAV file, saving one overwrites the file for all of them.
 - On the Sample instrument screen, use **EDIT + [LEFT/RIGHT]** to load the previous or next WAV in the same folder.
 - **Pitch** transposes by semitones (`-48` to `+48`).
-- **Loop** selects Off, Loop or Ping-Pong.
+- **Loop** selects Off, Loop, Ping-Pong, Loop X-Fade or Ping-Pong X-Fade. The X-Fade modes crossfade the loop wrap over the last 35% of the loop window instead of hard-cutting it.
 - **Speed** controls time-stretching from `0%` to `500%` (`100%` is normal); the algorithm (Granular or Stretch) is picked on the Sample Edit screen's **SPD ALGO** cell.
 
 Unsupported WAV formats display an error. Convert unusual files to `PCM8`, `PCM16` or `PCM24` WAV before importing them.
@@ -1159,7 +1159,7 @@ The value is interpreted as a signed `8-bit` relative change (`01` adds `1`, `FF
 
 | FX | Value | Meaning |
 |---|---|---|
-| `SPL` | `00-05` | Playback mode: `00` Forward, `01` Reverse, `02` Loop, `03` Ping-Pong, `04` Loop X-Fade, `05` Ping-Pong X-Fade. `02`-`05` use the sample's loop start marker as the wrap point; `04`/`05` crossfade the wrap over the last 35% of the loop window instead of hard-cutting |
+| `SPL` | `00-05` | Playback mode: `00` Forward, `01` Reverse, `02` Loop, `03` Ping-Pong, `04` Loop X-Fade, `05` Ping-Pong X-Fade. `02`-`05` write the mapped loop mode to the instrument (the instrument view follows along) and use the sample's loop start marker as the wrap point; `04`/`05` crossfade the wrap over the last 35% of the loop window instead of hard-cutting |
 | `SLI` | `00-FF` | Play the numbered slice (`01` = first slice) regardless of the note; `00` keeps normal note mapping. Requires slice mode enabled on the instrument |
 | `SPT` | signed `XX` | Sample transposition in semitones |
 | `SST` | `00-FF` | Normalised playback start |

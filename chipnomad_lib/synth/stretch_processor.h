@@ -79,6 +79,21 @@ class StretchProcessor {
   // Loop wrap point in source frames: the LOOP START marker clamped inside
   // the window when a loop mode is active, the window start otherwise.
   uint32_t loopStartFrame_ = 0;
+  // Input-side wrap crossfade (X-fade loop modes 3/4): equal-power gains
+  // applied to the material fed into the stretcher around the seam. The
+  // outgoing pass keeps its natural trajectory across the seam; the
+  // incoming pass is phase-aligned with it, so the handover lands exactly
+  // on the position the hard wrap would have produced.
+  uint32_t xfadeLength_ = 0;
+  bool xfadeActive_ = false;
+  double xfadeOutPos_ = 0.0;
+  double xfadeInPos_ = 0.0;
+  int xfadeOutDir_ = 1;
+  int xfadeInDir_ = 1;
+  double xfadePhase_ = 0.0;
+  // Equal-power gain pair for phase `p` (0..xfadeLength_): the same
+  // 256-entry Q15 equal-power curve the plain path's LoopXfade engine uses.
+  void xfadeGains(double phase, float& gOut, float& gIn) const;
   bool cheap_ = false;
   bool active_ = false;
   bool configured_ = false;

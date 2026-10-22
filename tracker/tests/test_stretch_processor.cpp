@@ -503,3 +503,58 @@ TEST_CASE("StretchProcessor unclamped seek keeps the primed start") {
   CHECK(stretch.sourcePosition() > 4000.0);
   CHECK(stretch.sourcePosition() < 6000.0);
 }
+
+TEST_CASE("StretchProcessor modes 3/4 map to loop/ping-pong with xfade") {
+  // Modes 3 (Loop X) and 4 (Ping X) map to the plain wrap modes 1/2 with
+  // the crossfade enabled: the note sustains and the output stays finite.
+  auto data = makeSine(440.0, 48000, 0.25);
+  for (uint8_t mode : {3, 4}) {
+    InstrumentSample sample = makeSample(data, 48000);
+    sample.loopMode = mode;
+    StretchProcessor stretch;
+    stretch.init(48000.0, false);
+    stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
+    stretch.noteOn();
+
+    std::vector<float> scratch(8192 * 2);
+    double energy = 0.0;
+    for (int i = 0; i < 400; ++i) {
+      REQUIRE(stretch.active());
+      stretch.process(scratch.data(), 256);
+      for (size_t j = 0; j < 256 * 2; ++j) {
+        CHECK(std::isfinite(scratch[j]));
+        energy += std::fabs(scratch[j]);
+      }
+    }
+    // 400 * 256 = 102400 frames > the 0.25 s source, so it must have looped.
+    CHECK(energy > 0.0);
+  }
+}
+
+TEST_CASE("StretchProcessor mode 3 descending hard-wraps like mode 1") {
+  // Legacy Start > End windows reverse the playback direction. A descending
+  // forward loop (mode 1 or 3) must hard-wrap: the phase-aligned incoming
+  // pass would read past the sample data. Only ping-pong (modes 2/4) arms
+  // a fade on the way down.
+  auto data = makeSine(440.0, 48000, 0.25);
+  InstrumentSample sample = makeSample(data, 48000);
+  sample.loopMode = 3;
+  sample.start = 200; // descending window: start marker above end marker
+  sample.end = 40;
+  StretchProcessor stretch;
+  stretch.init(48000.0, false);
+  stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
+  stretch.noteOn();
+
+  std::vector<float> scratch(8192 * 2);
+  double energy = 0.0;
+  for (int i = 0; i < 400; ++i) {
+    REQUIRE(stretch.active());
+    stretch.process(scratch.data(), 256);
+    for (size_t j = 0; j < 256 * 2; ++j) {
+      CHECK(std::isfinite(scratch[j]));
+      energy += std::fabs(scratch[j]);
+    }
+  }
+  CHECK(energy > 0.0);
+}

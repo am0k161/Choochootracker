@@ -192,7 +192,7 @@ static void drawField(int col, int row, CellState state) {
     case 5:
       if (!col) gfxPrint(sourceValueX, 9, stretchLabels[sample->stretchMode <= 6 ? sample->stretchMode : 0]);
       break;
-    case 6: if(!col) { static const char* m[]={"Off","Loop","Ping"}; gfxPrint(sourceValueX,10,m[sample->loopMode<=2?sample->loopMode:0]); } break;
+    case 6: if(!col) { static const char* m[]={"Off","Loop","Ping","Loop X","Ping X"}; gfxPrint(sourceValueX,10,m[sample->loopMode<=4?sample->loopMode:0]); } break;
     case 7:
       if (!col) {
         // Speed is inert while Stretch drives the duration: dim it.
@@ -236,7 +236,7 @@ static int onEdit(int col, int row, CellEditAction action) {
       }
       return handled;
     }
-    case 6: handled=!col?edit8noLast(action,&sample->loopMode,1,0,2):0; break;
+    case 6: handled=!col?edit8noLast(action,&sample->loopMode,1,0,4):0; break;
     case 7:
       // Speed is inert while Stretch drives the duration.
       if (sample->stretchMode != 0) return 0;

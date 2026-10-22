@@ -2071,17 +2071,30 @@ static void updateSampleVoices(ChipNomadState* state) {
     if (track->note.fx[fxSRS].isOn) resonance = track->note.fx[fxSRS].fxValue;
     if (track->note.fx[fxSSP].isOn) speedPercent = track->note.fx[fxSSP].fxValue * 500 / 255;
     // SPL playback modes: 00 forward, 01 reverse, 02 loop, 03 ping-pong,
-    // 04 loop with X-fade, 05 ping-pong with X-fade. The X-fade flag comes
-    // from the SPL value itself, not the mod-routed loopMode: destination 6
-    // only shifts the wrap mode, it never turns the crossfade on.
+    // 04 loop with X-fade, 05 ping-pong with X-fade. Values 02-05 WRITE
+    // THROUGH to the instrument's loop mode: the instrument view parameter
+    // is the central source of truth for the looping behaviour, so the lane
+    // FX changes it while the tracker proceeds with the sequence (the view
+    // follows along). 00/01 keep the legacy local override - the sample
+    // settings preview relies on forcing SPL 00 for one-shot playback and
+    // must not clobber the instrument's loop mode.
     uint8_t forceReverse = 0;
     uint8_t xfade = 0;
     if (track->note.fx[fxSLP].isOn) {
       uint8_t playbackMode = track->note.fx[fxSLP].fxValue;
-      forceReverse = playbackMode == 1 ? 1 : 0;
-      loopMode = playbackMode == 3 || playbackMode == 5 ? 2
-        : (playbackMode == 2 || playbackMode == 4 ? 1 : 0);
-      xfade = playbackMode >= 4 ? 1 : 0;
+      if (playbackMode >= 2) {
+        // 02-05: write the mapped mode into the instrument. The X-fade flag
+        // comes from the SPL value itself, not the mod-routed loopMode:
+        // destination 6 only shifts the wrap mode, it never turns the
+        // crossfade on.
+        uint8_t mapped = playbackMode - 1;  // 02->1 Loop, 03->2 Ping,
+                                            // 04->3 Loop X, 05->4 Ping X
+        if (sample->loopMode != mapped) sample->loopMode = mapped;
+        loopMode = mapped;
+      } else {
+        forceReverse = playbackMode == 1 ? 1 : 0;
+        loopMode = 0;
+      }
     }
     // SLI plays the numbered slice regardless of the note pitch (sliced
     // instruments only; 00 keeps the normal note mapping).
@@ -2118,7 +2131,7 @@ static void updateSampleVoices(ChipNomadState* state) {
           speedPercent += playbackModScaleToRange(mod->outValue, 500);
           break;
         case 6:
-          loopMode += playbackModScaleToRange(mod->outValue, 2);
+          loopMode += playbackModScaleToRange(mod->outValue, 4);
           break;
         case 7:
           cutoff = playbackModulateCutoff(cutoff, mod);
@@ -2129,7 +2142,7 @@ static void updateSampleVoices(ChipNomadState* state) {
       }
     }
     speedPercent = clampInt(speedPercent, 0, 500);
-    loopMode = clampInt(loopMode, 0, 2);
+    loopMode = clampInt(loopMode, 0, 4);
     start = clampInt(start, 0, 255);
     end = clampInt(end, 0, 255);
     cutoff = clampInt(cutoff, FILTER_CUTOFF_MIN_HZ, FILTER_CUTOFF_MAX_HZ);
