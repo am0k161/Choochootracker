@@ -930,7 +930,7 @@ TEST_CASE("reverse playback interpolates without mirroring the fraction") {
 }
 
 // --- Loop X-fade (engine side; SPL 04/05 wiring is covered in PR3) -----------
-// The crossfade replaces the hard wrap: over the last 35% of the loop
+// The crossfade replaces the hard wrap: over the last 25% of the loop
 // window the outgoing pass (still reading toward the seam) mixes with the
 // incoming pass (already reading from the wrap target). The fixture ramp
 // (data[i] = i) is the worst case: the seam material jumps ~8000 LSB.
@@ -986,7 +986,7 @@ TEST_CASE("xfade forward loop removes the wrap discontinuity") {
   const double hardJump = maxJump(renderXfadeVoice(&sample, 1, 0, 30));
   CHECK(hardJump > 0.15);
 
-  // Crossfaded: the transition spreads over the 2312-frame window; the
+  // Crossfaded: the transition spreads over the 1651-frame window; the
   // worst single-sample jump is a small fraction of the hard cut.
   const double fadeJump = maxJump(renderXfadeVoice(&sample, 1, 1, 30));
   CHECK(fadeJump < 0.01);
@@ -1003,7 +1003,7 @@ TEST_CASE("xfade ping-pong removes the turn discontinuity") {
   sample.end = 255;
   sample.speedPercent = 100;
   sample.sustain = 255;
-  sample.loopMode = 2;
+  sample.loopMode = 3;
   sample.loopStart = 0x40;
   std::vector<int16_t> data(8820);
   for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
@@ -1013,7 +1013,7 @@ TEST_CASE("xfade ping-pong removes the turn discontinuity") {
   // mirrors at the turn), so the hard wrap barely jumps; the fade is a
   // safety mix for real-world material. Assert the fade stays small in
   // absolute terms on this worst-case uncorrelated fixture.
-  const double fadeJump = maxJump(renderXfadeVoice(&sample, 2, 1, 40));
+  const double fadeJump = maxJump(renderXfadeVoice(&sample, 3, 1, 40));
   CHECK(fadeJump < 0.01);
 }
 
@@ -1034,12 +1034,12 @@ TEST_CASE("xfade disabled path is bit-identical to the hard wrap") {
   sample.data = data.data();
 
   // The fade must only alter output inside the window: before the fade
-  // window opens (frame 6508 = 8820 - 2312) the xfade render is
+  // window opens (frame 7169 = 8820 - 1651) the xfade render is
   // bit-identical to the hard-wrap render; inside the window it differs.
   const std::vector<float> hard = renderXfadeVoice(&sample, 1, 0, 14);
   const std::vector<float> xfade = renderXfadeVoice(&sample, 1, 1, 14);
   REQUIRE(hard.size() == xfade.size());
-  const size_t windowStart = 6508 * 2;
+  const size_t windowStart = 7169 * 2;
   for (size_t i = 0; i < windowStart; ++i) CHECK(hard[i] == xfade[i]);
   int diffs = 0;
   for (size_t i = windowStart; i < hard.size(); ++i) {
@@ -1121,8 +1121,8 @@ TEST_CASE("xfade survives per-tick reconfigure") {
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
                   -1, -1, 0, 0, 0, 50.0f, 0, 0, sample.loopStart, 1);
   voice.noteOn();
-  // Play into the fade window (window = (8820-2213)*7/20 = 2312 frames, so
-  // it starts at frame ~6508 = tick 7.4), reconfigure every tick.
+  // Play into the fade window (window = (8820-2213)/4 = 1651 frames, so
+  // it starts at frame ~7169 = tick 7.4), reconfigure every tick.
   for (int t = 0; t < 30; ++t) {
     voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 1,
                     sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
@@ -1152,11 +1152,11 @@ TEST_CASE("xfade derives from loop modes 3/4 without the xfade parameter") {
   for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
   sample.data = data.data();
 
-  // Mode 3: the hard wrap jumps 0.2016 in one sample; the crossfade
-  // spreads it over the 2312-frame window.
-  sample.loopMode = 3;
-  const double fadeJump3 = maxJump(renderXfadeVoice(&sample, 3, 0, 30));
-  CHECK(fadeJump3 < 0.01);
+  // Mode 2: the hard wrap jumps 0.2016 in one sample; the crossfade
+  // spreads it over the 1651-frame window.
+  sample.loopMode = 2;
+  const double fadeJump2 = maxJump(renderXfadeVoice(&sample, 2, 0, 30));
+  CHECK(fadeJump2 < 0.01);
 
   // Mode 4: both turn points are faded; on the ramp the fold is naturally
   // continuous, so the fade stays small in absolute terms.
@@ -1165,11 +1165,11 @@ TEST_CASE("xfade derives from loop modes 3/4 without the xfade parameter") {
   CHECK(fadeJump4 < 0.01);
 }
 
-TEST_CASE("mode 3 descending hard-wraps like mode 1") {
+TEST_CASE("mode 2 descending hard-wraps like mode 1") {
   // Legacy Start > End windows reverse the playback direction. A descending
-  // forward loop (mode 1 or 3) must hard-wrap: the phase-aligned incoming
+  // forward loop (mode 1 or 2) must hard-wrap: the phase-aligned incoming
   // pass would read past the sample data (the wrap target sits at the
-  // region end). Only ping-pong (modes 2/4) arms a fade on the way down.
+  // region end). Only ping-pong (modes 3/4) arms a fade on the way down.
   InstrumentSample sample;
   std::memset(&sample, 0, sizeof(sample));
   sample.sampleRate = 44100;
@@ -1179,7 +1179,7 @@ TEST_CASE("mode 3 descending hard-wraps like mode 1") {
   sample.end = 40;
   sample.speedPercent = 100;
   sample.sustain = 255;
-  sample.loopMode = 3;
+  sample.loopMode = 2;
   sample.loopStart = 0x40;
   std::vector<int16_t> data(8820);
   for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
@@ -1190,7 +1190,7 @@ TEST_CASE("mode 3 descending hard-wraps like mode 1") {
   SampleVoice voice;
   float output[882 * 2];
   voice.init(44100.0f);
-  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 3,
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 2,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
                   -1, -1, 0, 0, 0, 50.0f, 0, 0, sample.loopStart, 0);
   voice.noteOn();

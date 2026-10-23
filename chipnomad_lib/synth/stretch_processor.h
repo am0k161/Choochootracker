@@ -26,9 +26,10 @@ class StretchProcessor {
   // 5 = 4 bars, 6 = 8 bars. tickRateHz is the project tick rate (BPM =
   // tickRateHz * 60 / 24). pitchSemitones is the voice's transposition in
   // semitones (applied by the stretcher so playback speed stays 1:1).
-  // loopMode is the EFFECTIVE playback mode (0 one-shot, 1 loop, 2 ping-pong)
-  // after SPL/motion overrides - passed in by the engine instead of being read
-  // from the sample so FX-driven modes apply while stretching. loopStart is
+  // loopMode is the EFFECTIVE playback mode (0 one-shot, 1 loop, 2 loop
+  // X-fade, 3 ping-pong, 4 ping-pong X-fade) after SPL/motion overrides -
+  // passed in by the engine instead of being read from the sample so
+  // FX-driven modes apply while stretching. loopStart is
   // likewise the EFFECTIVE loop start marker (instrument setting plus the LST
   // FX offset) - passed in for the same reason.
   void configure(const InstrumentSample* sample, uint8_t stretchMode,

@@ -387,12 +387,12 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
   step_ = (sample_->sampleRate / outputSampleRate_) * pow(2.0, pitchCents / 1200.0);
   timeStretch_ = speedPercent / 100.0f;
   granular_ = fabsf(timeStretch_ - 1.0f) > 0.001f;
-  // Instrument loop modes: 0 off, 1 loop, 2 ping-pong, 3 loop with X-fade,
+  // Instrument loop modes: 0 off, 1 loop, 2 loop with X-fade, 3 ping-pong,
   // 4 ping-pong with X-fade. The X-fade flag comes from the mode itself;
   // the explicit xfade parameter stays for the SPL lane FX path, which can
-  // turn the crossfade on for modes 1/2.
+  // turn the crossfade on for modes 1/3.
   loopMode_ = loopMode > 4 ? 0 : loopMode;
-  bool xfadeOn = xfade != 0 || loopMode_ >= 3;
+  bool xfadeOn = xfade != 0 || loopMode_ == 2 || loopMode_ == 4;
   // Loop wrap point: the LOOP START marker when a loop mode is active, clamped
   // inside the playback region (Region START <= LOOP START < Region END). With
   // no loop the marker is inert and startFrame_ keeps the old behavior
@@ -408,7 +408,7 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
   }
   grainSize_ = (uint32_t)(outputSampleRate_ * 0.040f);
   grainHop_ = grainSize_ / 2;
-  // X-fade window: 35% of the loop window (the wrap span), in source
+  // X-fade window: 25% of the loop window (the wrap span), in source
   // frames. SPL 04/05 turn the crossfade on; without them the engine stays
   // disabled and the plain path is bit-identical to the pre-X-fade build.
   // A window shorter than one frame cannot fade - the hard wrap stays.
@@ -418,7 +418,7 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
   uint32_t fadeLen = 0;
   if (xfadeOn && loopMode_ != 0) {
     const uint32_t loopLength = endFrame_ - loopStartFrame_;
-    fadeLen = loopLength * 7 / 20;
+    fadeLen = loopLength / 4;
     if (fadeLen < 1) fadeLen = 0;
   }
   if (fadeLen != xfade_.length()) xfade_.configure(fadeLen);
@@ -481,7 +481,7 @@ float SampleVoice::grainSampleAt(double position, int channel) const {
   const double first = loopMode_ != 0 ? loopStartFrame_ : startFrame_;
   const double length = loopMode_ != 0 ? endFrame_ - loopStartFrame_
                                        : endFrame_ - startFrame_;
-  if (loopMode_ == 1 || loopMode_ == 3) {
+  if (loopMode_ == 1 || loopMode_ == 2) {
     if (position >= startFrame_ && position < endFrame_) {
       // Inside the region: no fold, the first pass plays through.
     } else {
@@ -489,7 +489,7 @@ float SampleVoice::grainSampleAt(double position, int channel) const {
       if (position < 0.0) position += length;
       position += first;
     }
-  } else if (loopMode_ == 2 || loopMode_ == 4) {
+  } else if (loopMode_ == 3 || loopMode_ == 4) {
     if (position >= startFrame_ && position < endFrame_) {
       // Inside the region: no fold, the first pass plays through.
     } else {
@@ -520,7 +520,7 @@ double SampleVoice::seamDistance() const {
   // marker. The distance is in SOURCE frames (not step-scaled) so the fade
   // window covers the same stretch of material regardless of playback
   // speed.
-  if ((loopMode_ == 2 || loopMode_ == 4) && direction_ < 0) {
+  if ((loopMode_ == 3 || loopMode_ == 4) && direction_ < 0) {
     return position_ - loopStartFrame_;
   }
   if (direction_ < 0) return position_ - startFrame_;
@@ -531,7 +531,7 @@ void SampleVoice::wrap() {
   // The loop wraps between the LOOP START marker and the region end.
   double first = loopStartFrame_;
   double last = endFrame_ - 1.0;
-  if (loopMode_ == 1 || loopMode_ == 3) {
+  if (loopMode_ == 1 || loopMode_ == 2) {
     double length = endFrame_ - loopStartFrame_;
     while (position_ >= endFrame_) position_ -= length;
     while (position_ < loopStartFrame_) position_ += length;
@@ -550,7 +550,7 @@ bool SampleVoice::advancePosition() {
   // other path keeps the region bounds here and folds below. The first pass
   // still starts at the region start (see noteOn), so ascending playback may
   // travel the region below the marker before entering the loop window.
-  if ((loopMode_ == 2 || loopMode_ == 4) && direction_ < 0) {
+  if ((loopMode_ == 3 || loopMode_ == 4) && direction_ < 0) {
     if (position_ >= loopStartFrame_ && position_ < endFrame_) return true;
   } else if (position_ >= startFrame_ && position_ < endFrame_) {
     return true;
@@ -654,7 +654,7 @@ void SampleVoice::render(float* output, size_t frames) {
         xfade_.takeIncoming(&position_, &direction_);
       }
     } else if (xfade_.enabled() &&
-               (loopMode_ == 2 || loopMode_ == 4 || direction_ > 0) &&
+               (loopMode_ == 3 || loopMode_ == 4 || direction_ > 0) &&
                seamDistance() <= (double)xfade_.length()) {
       // Playhead entered the fade window: arm the crossfade. The outgoing
       // pass keeps its natural trajectory to the seam (it is NOT folded
@@ -680,7 +680,7 @@ void SampleVoice::render(float* output, size_t frames) {
       const double phase = fadeLen - remaining;
       double incomingPos;
       int incomingDir;
-      if (loopMode_ == 1 || loopMode_ == 3) {
+      if (loopMode_ == 1 || loopMode_ == 2) {
         // Forward wrap: incoming restarts at the loop start marker.
         incomingPos = loopStartFrame_ + phase;
         incomingDir = 1;
