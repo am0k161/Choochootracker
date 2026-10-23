@@ -66,7 +66,7 @@ static void exportSample(uint8_t* record, const Instrument* inst) {
   for (const char* c = s->path; *c; c++) if (*c == '/' || *c == '\\') base = c + 1;
   memset(record + M8S_SAMPLER_PATH, 0, M8S_SAMPLER_PATH_SIZE);
   snprintf((char*)record + M8S_SAMPLER_PATH, M8S_SAMPLER_PATH_SIZE, "/Samples/%s", base);
-  record[M8S_SAMPLER_PLAY_MODE] = s->loopMode == 1 || s->loopMode == 3 ? 2 : s->loopMode == 2 || s->loopMode == 4 ? 4 : 0;
+  record[M8S_SAMPLER_PLAY_MODE] = s->loopMode == 1 || s->loopMode == 2 ? 2 : s->loopMode == 3 || s->loopMode == 4 ? 4 : 0;
   record[M8S_SAMPLER_START] = s->start;
   record[M8S_SAMPLER_LENGTH] = (s->end == 255 || s->end <= s->start) ? 0xFF : (uint8_t)(s->end - s->start);
   record[M8S_SAMPLER_PAN] = inst->pan;

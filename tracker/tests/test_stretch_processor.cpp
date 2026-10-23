@@ -179,7 +179,7 @@ TEST_CASE("StretchProcessor loop mode 1 sustains indefinitely") {
 TEST_CASE("StretchProcessor ping-pong loop sustains and stays finite") {
   auto data = makeSine(440.0, 48000, 0.25);
   InstrumentSample sample = makeSample(data, 48000);
-  sample.loopMode = 2;
+  sample.loopMode = 3;
   StretchProcessor stretch;
   stretch.init(48000.0, false);
   stretch.configure(&sample, 3, 50.0f, 0.0f, 0, 255, sample.loopMode);
@@ -205,7 +205,7 @@ TEST_CASE("StretchProcessor ping-pong reverses across per-tick reconfigures") {
   // to the start - the note looped forward forever and never reversed.
   auto data = makeSine(440.0, 48000, 0.25);
   InstrumentSample sample = makeSample(data, 48000);
-  sample.loopMode = 2;
+  sample.loopMode = 3;
   StretchProcessor stretch;
   stretch.init(48000.0, false);
   // Speed mode 200% consumes the 0.25 s window quickly, so several direction
@@ -382,7 +382,7 @@ TEST_CASE("StretchProcessor loop wraps at the loop start marker") {
 TEST_CASE("StretchProcessor ping-pong bounces at the loop start marker") {
   auto data = makeSine(440.0, 48000, 1.0);
   InstrumentSample sample = makeSample(data, 48000);
-  sample.loopMode = 2;
+  sample.loopMode = 3;
   sample.loopStart = 0x40;
   StretchProcessor stretch;
   stretch.init(48000.0, false);
@@ -504,11 +504,11 @@ TEST_CASE("StretchProcessor unclamped seek keeps the primed start") {
   CHECK(stretch.sourcePosition() < 6000.0);
 }
 
-TEST_CASE("StretchProcessor modes 3/4 map to loop/ping-pong with xfade") {
-  // Modes 3 (Loop X) and 4 (Ping X) map to the plain wrap modes 1/2 with
+TEST_CASE("StretchProcessor modes 2/4 map to loop/ping-pong with xfade") {
+  // Modes 2 (Loop X) and 4 (Ping X) map to the plain wrap modes 1/3 with
   // the crossfade enabled: the note sustains and the output stays finite.
   auto data = makeSine(440.0, 48000, 0.25);
-  for (uint8_t mode : {3, 4}) {
+  for (uint8_t mode : {2, 4}) {
     InstrumentSample sample = makeSample(data, 48000);
     sample.loopMode = mode;
     StretchProcessor stretch;
@@ -531,14 +531,14 @@ TEST_CASE("StretchProcessor modes 3/4 map to loop/ping-pong with xfade") {
   }
 }
 
-TEST_CASE("StretchProcessor mode 3 descending hard-wraps like mode 1") {
+TEST_CASE("StretchProcessor mode 2 descending hard-wraps like mode 1") {
   // Legacy Start > End windows reverse the playback direction. A descending
-  // forward loop (mode 1 or 3) must hard-wrap: the phase-aligned incoming
-  // pass would read past the sample data. Only ping-pong (modes 2/4) arms
+  // forward loop (mode 1 or 2) must hard-wrap: the phase-aligned incoming
+  // pass would read past the sample data. Only ping-pong (modes 3/4) arms
   // a fade on the way down.
   auto data = makeSine(440.0, 48000, 0.25);
   InstrumentSample sample = makeSample(data, 48000);
-  sample.loopMode = 3;
+  sample.loopMode = 2;
   sample.start = 200; // descending window: start marker above end marker
   sample.end = 40;
   StretchProcessor stretch;

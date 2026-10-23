@@ -2087,8 +2087,8 @@ static void updateSampleVoices(ChipNomadState* state) {
         // comes from the SPL value itself, not the mod-routed loopMode:
         // destination 6 only shifts the wrap mode, it never turns the
         // crossfade on.
-        uint8_t mapped = playbackMode - 1;  // 02->1 Loop, 03->2 Ping,
-                                            // 04->3 Loop X, 05->4 Ping X
+        // 02->1 Loop, 03->3 Ping, 04->2 Loop X, 05->4 Ping X
+        uint8_t mapped = playbackMode == 3 ? 3 : playbackMode == 4 ? 2 : playbackMode - 1;
         if (sample->loopMode != mapped) sample->loopMode = mapped;
         loopMode = mapped;
       } else {

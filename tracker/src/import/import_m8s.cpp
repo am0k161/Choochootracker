@@ -135,7 +135,7 @@ static bool convertSampler(Instrument* inst, const uint8_t* src, const char* m8s
   // Play modes: 0 fwd, 1 rev, 2 fwd loop, 3 rev loop, 4 fwd ping-pong, 5 rev
   // ping-pong, 6-8 oscillator. Reverse playback does not exist here.
   uint8_t mode = src[M8S_SAMPLER_PLAY_MODE];
-  s->loopMode = (mode == 2 || mode == 3 || mode == 6 || mode == 7) ? 1 : (mode == 4 || mode == 5 || mode == 8) ? 2 : 0;
+  s->loopMode = (mode == 2 || mode == 3 || mode == 6 || mode == 7) ? 1 : (mode == 4 || mode == 5 || mode == 8) ? 3 : 0;
   int start = src[M8S_SAMPLER_START];
   int length = src[M8S_SAMPLER_LENGTH];
   s->start = (uint8_t)start;

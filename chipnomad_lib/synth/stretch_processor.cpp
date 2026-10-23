@@ -90,13 +90,13 @@ void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretch
   sampleChannels_ = sample->channels >= 2 ? 2 : 1;
   sampleRate_ = sample->sampleRate > 0 ? (double)sample->sampleRate : (double)outputSampleRate_;
   // Effective playback mode (instrument setting or SPL override): 0 one-shot,
-  // 1 loop, 2 ping-pong, 3 loop with X-fade, 4 ping-pong with X-fade. The
+  // 1 loop, 2 loop with X-fade, 3 ping-pong, 4 ping-pong with X-fade. The
   // X-fade variants wrap exactly like the plain modes; the crossfade is
   // applied to the material fed into the stretcher at the wrap (see the
   // input fill loop below).
   loopMode_ = loopMode > 4 ? 0 : loopMode;
-  bool xfadeOn = loopMode_ >= 3;
-  if (loopMode_ >= 3) loopMode_ -= 2;
+  bool xfadeOn = loopMode_ == 2 || loopMode_ == 4;
+  if (loopMode_ == 2 || loopMode_ == 4) loopMode_ -= 1;
 
   // Source window: same Start/End mapping as the plain playback path, with
   // the same reverse detection (Start > End plays the window backwards).
@@ -138,12 +138,12 @@ void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretch
   // X-fade window: a fraction of the loop span, clamped so the incoming and
   // outgoing windows never overlap (the incoming pass must finish fading in
   // before the outgoing pass reaches the seam). Mirrors SampleVoice's
-  // 7/20 rule. The window is recomputed on every configure() - the wrap
+  // quarter rule. The window is recomputed on every configure() - the wrap
   // branches below only consult it when the playhead approaches the seam.
   xfadeLength_ = 0;
   if (xfadeOn && loopMode_ != 0) {
     uint32_t loopLength = sourceEndFrame_ - loopStartFrame_;
-    uint32_t fadeLen = loopLength * 7 / 20;
+    uint32_t fadeLen = loopLength / 4;
     xfadeLength_ = fadeLen;
   }
 
@@ -355,7 +355,7 @@ bool StretchProcessor::process(float* out, size_t frames) {
             sourcePosition_ = (double)sourceEndFrame_ - 1.0 -
               std::fmod((double)loopStartFrame_ - sourcePosition_, length);
             if (sourcePosition_ >= (double)sourceEndFrame_) sourcePosition_ = (double)sourceEndFrame_ - 1.0;
-          } else if (loopMode_ == 2) {
+          } else if (loopMode_ == 3) {
             sourceDirection_ = 1.0;
             sourceReverse_ = false;
             // Reflect back into the window: the position may have stepped
@@ -372,7 +372,7 @@ bool StretchProcessor::process(float* out, size_t frames) {
           double length = (double)(sourceEndFrame_ - loopStartFrame_);
           sourcePosition_ = loopStartFrame_ +
             std::fmod(sourcePosition_ - (double)loopStartFrame_, length);
-        } else if (loopMode_ == 2) {
+        } else if (loopMode_ == 3) {
           sourceDirection_ = -1.0;
           sourceReverse_ = true;
           // Reflect back into the window: the position may have stepped past
@@ -395,12 +395,12 @@ bool StretchProcessor::process(float* out, size_t frames) {
       // still fold the outgoing pointer - the fade is computed from the
       // pre-wrap geometry, then the mixed read uses the folded position.
       // Descending forward loops (mode 1) hard-wrap like the plain path;
-      // only ping-pong (mode 2) arms a fade on the way down.
+      // only ping-pong (mode 3) arms a fade on the way down.
       bool inWindow = xfadeLength_ > 0 &&
         (xfadeActive_ ||
          (sourceDirection_ > 0.0
            ? (double)sourceEndFrame_ - sourcePosition_ <= (double)xfadeLength_
-           : loopMode_ == 2 && sourcePosition_ - (double)loopStartFrame_ <= (double)xfadeLength_));
+           : loopMode_ == 3 && sourcePosition_ - (double)loopStartFrame_ <= (double)xfadeLength_));
       if (inWindow) {
         double phase;
         if (!xfadeActive_) {
