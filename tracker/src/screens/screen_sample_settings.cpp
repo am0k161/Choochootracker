@@ -673,19 +673,27 @@ static int slicePreviewActive;
 // Smallest zoomed window in frames
 static constexpr uint32_t kMinViewSpan = 8;
 
-// Fixed zoom span for fine adjustments: one second of audio, clamped to
-// the sample length. Samples that fit inside the window keep the full 1:1
+// Fixed zoom span for fine adjustments: 5/7 of a second of audio (40%
+// more magnification than the previous one-second window), clamped to the
+// sample length. Samples that fit inside the window keep the full 1:1
 // view; longer ones always show the same time span, so the window stays
 // readable on short one-shots and long recordings alike.
 static uint32_t zoomSpan(const InstrumentSample* sample) {
   const uint32_t frameCount = sample->frameCount;
   uint32_t rate = sample->sampleRate;
   if (rate == 0) rate = 44100; // fresh samples: assume the default rate
-  const uint64_t window = (uint64_t)rate;
+  const uint64_t window = (uint64_t)rate * 5 / 7;
   if (frameCount <= window) return frameCount; // whole sample fits: 1:1
   uint32_t span = (uint32_t)window;
   if (span < kMinViewSpan) span = kMinViewSpan;
   return span;
+}
+
+// Frame step for fine adjustments, scaled with the zoom window: the
+// on-screen step distance stays constant while the absolute precision
+// improves with the 40% tighter window (20 frames -> 14, 10 -> 7).
+static uint32_t zoomFineStep(uint32_t baseStep) {
+  return baseStep * 5 / 7;
 }
 
 // Frame position of the view anchor: a playback marker (1 = Start, 2 = End,
@@ -722,8 +730,9 @@ static int frameToPixel(uint32_t frame, const SampleEditorView* view, int width,
   return x < width ? x : width - 1;
 }
 
-// Zooms to the fixed span (one second of audio) around markerFrame, keeping
-// the marker at its relative position inside the window (the first zoom from
+// Zooms to the fixed span (5/7 of a second of audio) around markerFrame,
+// keeping the marker at its relative position inside the window (the first
+// zoom from
 // the full view centers it). When the marker would sit at a window edge it
 // pans just enough to keep a small margin, so repeated fine steps follow
 // the marker without drift. The span never shrinks: every fine step shows
@@ -2000,8 +2009,8 @@ static int settingsSliceBrowseEdit(InstrumentSample* sample, CellEditAction acti
 }
 
 // Frame cell (col 2): EDIT+Left/Right nudges the current slice's start by
-// +-10 frames (zoomed fine steps of +-1 while EDIT is held); EDIT+Up/Down
-// moves by +-100.
+// a scaled fine step (10 * 5/7 = 7 frames, zoomed fine steps of +-1 while
+// EDIT is held); EDIT+Up/Down moves by +-100.
 static int settingsSliceFrameEdit(InstrumentSample* sample, CellEditAction action) {
   const SliceMode mode = sampleDecodeSliceMode(sample->slice);
   if (mode == sliceModeOff) return 0;
@@ -2009,7 +2018,7 @@ static int settingsSliceFrameEdit(InstrumentSample* sample, CellEditAction actio
       action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig) {
     const int fine = action == CellEditAction::increase || action == CellEditAction::decrease;
     const int up = action == CellEditAction::increase || action == CellEditAction::increaseBig;
-    const int32_t delta = (up ? 1 : -1) * (fine ? 10 : 100);
+    const int32_t delta = (up ? 1 : -1) * (fine ? (int32_t)zoomFineStep(10) : 100);
     const int32_t frame = sampleSliceNudge(sample, (uint8_t)currentSlice, delta);
     if (frame < 0) return 0;
     // Fine steps zoom onto the nudged marker so the waveform shows exactly
@@ -2261,8 +2270,9 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
       editorSelection.end = 0;
       handled = 1;
     } else {
-      // Fine steps move twenty frames; coarse steps jump frameCount/64 (min 16)
-      uint32_t step = 20;
+      // Fine steps move a scaled frame count (20 * 5/7 = 14); coarse steps
+      // jump frameCount/64 (min 16)
+      uint32_t step = zoomFineStep(20);
       if (action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig) {
         step = frameCount / 64;
         if (step < 16) step = 16;
