@@ -18,6 +18,7 @@ It follows the classic LSDj workflow and navigation system, with several sound d
 ### ArkOS / PortMaster
 
 Install `choochootracker.zip` through PortMaster, or copy the extracted package to the console's `ports` directory. Start **ChooChooTracker** from the Ports menu.
+On the RG353V with ArkOS, use the console's **+ / -** buttons to adjust output volume during playback.
 
 ### Miyoo Mini / Mini Plus (Onion OS)
 

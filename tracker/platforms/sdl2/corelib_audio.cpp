@@ -111,7 +111,16 @@ int audioSetup(AudioCallback* audioCallback, int sampleRate, int bufferSize) {
   spec.callback = sdlAudioCallback;
   spec.userdata = (void *)audioCallback;
 
-  if (SDL_OpenAudio(&spec, NULL) < 0) {
+  int opened = SDL_OpenAudio(&spec, NULL);
+#ifdef PORTMASTER_BUILD
+  const char* fallback = SDL_getenv("CCT_AUDIODEV_FALLBACK");
+  if (opened < 0 && fallback && *fallback) {
+    fprintf(stderr, "Default audio unavailable (%s); retrying %s\n", SDL_GetError(), fallback);
+    if (SDL_setenv("AUDIODEV", fallback, 1) == 0)
+      opened = SDL_OpenAudio(&spec, NULL);
+  }
+#endif
+  if (opened < 0) {
     fprintf(stderr, "Failed to open audio: %s\n", SDL_GetError());
     return 1;
   }
