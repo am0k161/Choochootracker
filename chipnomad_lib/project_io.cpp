@@ -9,6 +9,9 @@
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <io.h>
+#elif !defined(WEB_BUILD)
+#include <unistd.h>
 #endif
 #include "project.h"
 #include "opll_presets.h"
@@ -1710,9 +1713,20 @@ static int projectSaveInternal(FILE* file, Project* project) {
   return 0;
 }
 
-static int closeProjectOutput(FILE* file, int result) {
+int fileCloseSynced(FILE* file, int result) {
   if (!file) return 1;
   if (result == 0 && fflush(file) != 0) result = 1;
+#ifndef WEB_BUILD
+  // Ask the system to put the data on the storage device before the caller
+  // renames the file into place. Otherwise a handheld switched off (or an SD
+  // card removed) soon after a save can keep the new name with only part of
+  // the data. Best effort: a failure here does not fail the save.
+#ifdef _WIN32
+  if (result == 0) _commit(_fileno(file));
+#else
+  if (result == 0) fsync(fileno(file));
+#endif
+#endif
   if (ferror(file)) result = 1;
   if (fclose(file) != 0) result = 1;
   return result;
@@ -1782,7 +1796,7 @@ static int projectSaveDirect(Project* p, const char* path) {
       return 1;
     }
     int result = cctWriteZip(file, entries);
-    result = closeProjectOutput(file, result);
+    result = fileCloseSynced(file, result);
     if (result != 0 && projectFileError[0] == 0) {
       snprintf(projectFileError, 40, "Can't write save file");
     }
@@ -1796,7 +1810,7 @@ static int projectSaveDirect(Project* p, const char* path) {
   }
 
   int result = projectSaveInternal(file, p);
-  result = closeProjectOutput(file, result);
+  result = fileCloseSynced(file, result);
   if (result != 0 && projectFileError[0] == 0) {
     snprintf(projectFileError, 40, "Can't write save file");
   }
@@ -1804,7 +1818,7 @@ static int projectSaveDirect(Project* p, const char* path) {
 }
 
 #ifndef WEB_BUILD
-static int replaceProjectFile(const char* tempPath, const char* path) {
+int fileReplace(const char* tempPath, const char* path) {
 #ifdef _WIN32
   return MoveFileExA(tempPath, path, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) ? 0 : 1;
 #else
@@ -1830,7 +1844,7 @@ int projectSave(Project* p, const char* path) {
     return result;
   }
 
-  if (replaceProjectFile(tempPath.c_str(), path) != 0) {
+  if (fileReplace(tempPath.c_str(), path) != 0) {
     remove(tempPath.c_str());
     snprintf(projectFileError, 40, "Can't replace save file");
     return 1;
