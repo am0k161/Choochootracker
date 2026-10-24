@@ -922,11 +922,16 @@ TEST_CASE("reverse playback interpolates without mirroring the fraction") {
   }
   // 0.5 ramp-LSB = 0.0078 normalized; the bug jumps 0.023.
   CHECK(maxJump < 0.015);
-  // output[2*i] is output frame i; the cursor sits at 63 - 0.5*i.
-  CHECK(std::fabs(output[0] - 63.0f / 64.0f) < 0.001f);
-  CHECK(std::fabs(output[2] - 62.5f / 64.0f) < 0.001f);
-  CHECK(std::fabs(output[4] - 62.0f / 64.0f) < 0.001f);
-  CHECK(std::fabs(output[8] - 61.0f / 64.0f) < 0.001f);
+  // output[2*i] is output frame i; the cursor sits at 63 - 0.5*i. The
+  // always-on 2 ms de-click ramp scales the first 96 output frames (frame i
+  // gets weight (i+1)/96), so compare against the ramped ideal.
+  auto rampWeight = [](int frame) {
+    return frame < 96 ? (float)(frame + 1) / 96.0f : 1.0f;
+  };
+  CHECK(std::fabs(output[0] - 63.0f / 64.0f * rampWeight(0)) < 0.001f);
+  CHECK(std::fabs(output[2] - 62.5f / 64.0f * rampWeight(1)) < 0.001f);
+  CHECK(std::fabs(output[4] - 62.0f / 64.0f * 3.0f / 96.0f) < 0.001f);
+  CHECK(std::fabs(output[8] - 61.0f / 64.0f * 5.0f / 96.0f) < 0.001f);
 }
 
 // --- Loop X-fade (engine side; SPL 04/05 wiring is covered in PR3) -----------
