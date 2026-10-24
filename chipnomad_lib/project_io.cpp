@@ -1941,7 +1941,7 @@ static int instrumentLoadStream(Project* project, FILE* file, int instrumentIdx)
   if (!file) return 1;
   int result;
   const char* header = peekLine(file);
-  if (header && (strncmp(header, "# ChipNomad Instrument 6.0", 25) == 0 || strncmp(header, "# ChipNomad Instrument 7.0", 25) == 0 || strncmp(header, "# ChipNomad Instrument 8.0",25)==0 || strncmp(header,"# ChipNomad Instrument 9.0",25)==0)) {
+  if (header && (strncmp(header, "# ChipNomad Instrument 6.0", 25) == 0 || strncmp(header, "# ChipNomad Instrument 7.0", 25) == 0 || strncmp(header, "# ChipNomad Instrument 8.0",25)==0 || strncmp(header,"# ChipNomad Instrument 9.0",25)==0 || strncmp(header,"# ChipNomad Instrument 10.0",27)==0)) {
     auto temporary = std::make_unique<Project>();
     projectInit(temporary.get());
     result = instrumentLoadInternal(file, temporary.get(), instrumentIdx);
