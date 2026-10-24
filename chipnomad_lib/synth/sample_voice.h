@@ -57,9 +57,14 @@ class SampleVoice {
   StretchProcessor stretch_;
   bool useStretch_;
   bool advancePosition();
+  void finishFrame(float* stereo);
   float sampleAt(double position, int channel) const;
   float grainSampleAt(double position, int channel) const;
   VoicePostProcessor<> post_;
+  float lastOutput_[2] = {0.0f, 0.0f};
+  float rampFrom_[2] = {0.0f, 0.0f};
+  uint32_t rampRemaining_ = 0;
+  uint32_t rampFrames_ = 1;
 };
 
 uint8_t sampleNormalizeSlice(uint8_t slice);

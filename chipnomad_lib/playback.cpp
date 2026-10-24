@@ -1587,7 +1587,7 @@ float playbackVolumeGain(const PlaybackState* state, const PlaybackTrackState* t
   for (const PlaybackTableState* table : tables) {
     if (table->tableIdx == EMPTY_VALUE_8) continue;
     uint8_t volume = state->p->tables[table->tableIdx].rows[table->rows[0]].volume;
-    if (volume != EMPTY_VALUE_8) gain *= volume / 15.0f;
+    if (volume != EMPTY_VALUE_8) gain *= volume / (float)PHRASE_VOLUME_MAX;
   }
   return gain;
 }

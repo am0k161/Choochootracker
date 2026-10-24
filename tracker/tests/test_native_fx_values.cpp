@@ -122,10 +122,10 @@ TEST_CASE("Native songs use the same direct volume scale as upstream format 6") 
   auto path=std::filesystem::temp_directory_path()/"cct-native-volume-migration.cct";
   REQUIRE(projectSave(p.get(),path.string().c_str())==0);
   std::ifstream input(path);std::stringstream buffer;buffer<<input.rdbuf();input.close();auto original=buffer.str();
-  REQUIRE(original.find("Module 9.0")!=std::string::npos);
+  REQUIRE(original.find("Module 11.0")!=std::string::npos);
   auto q=std::make_unique<Project>();projectInit(q.get());
   for(char version:{'6','7','8','9'}) {
-    auto text=original;text[text.find("Module ")+7]=version;
+    auto text=original;text.replace(text.find("Module 11.0"),std::strlen("Module 11.0"),std::string("Module ")+version+".0");
     std::ofstream(path)<<text;
     REQUIRE(projectLoad(q.get(),path.string().c_str())==0);
     CHECK(q->phrases[0].rows[0].volume==15);
@@ -137,7 +137,7 @@ TEST_CASE("Native songs use the same direct volume scale as upstream format 6") 
   getInstrumentFunctions(InstrumentType::AY1).init(&p->instruments[0]);
   REQUIRE(projectSave(p.get(),path.string().c_str())==0);
   REQUIRE(projectLoad(q.get(),path.string().c_str())==0);
-  CHECK(projectFileVersion==7); /* merged: this fork writes plain projects as 7.0 (SLP redefinition + 6-field Scale) */
+  CHECK(projectFileVersion==11);
   CHECK(q->phrases[0].rows[0].volume==15);
   CHECK(q->phrases[0].rows[3].volume==75);CHECK(q->phrases[0].rows[4].volume==EMPTY_VALUE_16);
   projectFree(p.get());projectFree(q.get());std::filesystem::remove(path);

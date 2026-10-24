@@ -11,7 +11,7 @@ static int tableIdx = 0;
 static TableRow *tableRows = NULL;
 static int backToPhrase = 0;
 static uint8_t lastPitchValue = 0;
-static uint8_t lastVolume = 15;
+static uint8_t lastVolume = PHRASE_VOLUME_MAX;
 static FXCell lastFX = {FX_ID_EMPTY, 0};
 static int isFxEdit = 0;
 
@@ -78,7 +78,7 @@ static int tableVisibleRows() { return screenVisibleRows() - (screen.topRow == 0
 
 static void init(void) {
   lastPitchValue = 0;
-  lastVolume = 15;
+  lastVolume = PHRASE_VOLUME_MAX;
   lastFX = {FX_ID_EMPTY, 0};
   screen.cursorRow = 1;
   screen.cursorCol = 0;
@@ -267,7 +267,7 @@ static void draw(void) {
 
 static int editCell(int col, int row, enum CellEditAction action) {
   int handled = 0;
-  uint8_t maxVolume = 15;
+  uint8_t maxVolume = PHRASE_VOLUME_MAX;
 
   if (row == 0) {
     uint8_t mode = (uint8_t)chipnomadState->project.tables[tableIdx].retriggerMode;

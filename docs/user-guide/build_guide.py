@@ -40,7 +40,7 @@ page('sample-editor','Sample editor','Sound','Sampler → EDIT beside the sample
 'Processing changes the sample in memory. Save writes the WAV; save the project too to retain the instrument and arrangement settings.')
 page('table','Table','Sound','Instrument → SELECT + RIGHT',
 'A table is a short sequence that changes a sound while notes play. Use it for pitch movement, rhythmic volume changes, and effect automation. Its timing is measured in ticks rather than phrase steps.',
-[('Pitch','Relative pitch (~) or an absolute note (=).'),('Volume','A 00–0F multiplier applied on top of the instrument envelope.'),('FX lanes','Four command lanes, each able to run at its own tick speed.'),('Retrigger','Choose whether the table restarts with the instrument, phrase, chain, or runs freely.')],
+[('Pitch','Relative pitch (~) or an absolute note (=).'),('Volume','A 00–7F multiplier applied on top of the instrument envelope.'),('FX lanes','Four command lanes, each able to run at its own tick speed.'),('Retrigger','Choose whether the table restarts with the instrument, phrase, chain, or runs freely.')],
 [('EDIT + direction','Adjust the selected pitch, volume, command, or value.'),('EDIT + UP / DOWN on an FX name','Open the effect chooser.'),('SELECT + OPT','Select table cells for shared editing or copying.'),('SELECT + LEFT','Return to Instrument.'),('SELECT + DOWN','Open AY Wavetable.')],
 'Each instrument has a default table with the same number. A TIC command on the last row can set an individual FX lane’s speed.')
 page('groove','Groove','Arrange','Phrase → SELECT + UP',

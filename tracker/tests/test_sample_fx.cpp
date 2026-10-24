@@ -5,6 +5,8 @@
 #include "../../chipnomad_lib/synth/sample_voice.h"
 #include "../../src/project_utils.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -161,6 +163,56 @@ TEST_CASE("SLI value wraps past the last slice") {
 }
 
 // --- SPL: playback modes -----------------------------------------------------
+
+TEST_CASE("long silent looping sample stays silent through RET and phrase wrap") {
+  EngineSample es;
+  es.init(44100 * 4);
+  std::fill(es.data.begin(), es.data.end(), 0);
+  es.s.loopMode = 1;
+  LazyEngine engine(es.s, 0);
+  PhraseRow row = makeRow(48);
+  row.fx[0][0] = fxRET;
+  row.fx[0][1] = 1;
+  for (Project* project : {&engine.state->project, &engine.state->audioProject}) {
+    project->song[0][0] = 0;
+    project->chains[0].rows[0].phrase = 0;
+    project->phrases[0].rows[0] = row;
+  }
+  chipnomadQueuePlaybackStartPhrase(engine.state, 0, 0, 0, 1);
+
+  std::vector<float> output(44100 * 2 * 2);
+  REQUIRE(chipnomadRender(engine.state, output.data(), 44100 * 2) == 44100 * 2);
+  float peak = 0.0f;
+  for (float value : output) peak = std::max(peak, std::fabs(value));
+  CHECK(peak < 1e-5f);
+}
+
+TEST_CASE("phrase loop crossfades a long sample at its retrigger") {
+  EngineSample es;
+  es.init(44100 * 4);
+  std::fill(es.data.begin(), es.data.end(), -16000);
+  std::fill(es.data.begin(), es.data.begin() + 1000, 16000);
+  es.s.loopMode = 1;
+  es.s.filterEnabled = 0;
+  LazyEngine engine(es.s, 0);
+  PhraseRow row = makeRow(48);
+  for (Project* project : {&engine.state->project, &engine.state->audioProject}) {
+    project->song[0][0] = 0;
+    project->chains[0].rows[0].phrase = 0;
+    project->phrases[0].rows[0] = row;
+  }
+  chipnomadQueuePlaybackStartPhrase(engine.state, 0, 0, 0, 1);
+
+  std::vector<float> output(44100 * 2 * 2);
+  REQUIRE(chipnomadRender(engine.state, output.data(), 44100 * 2) == 44100 * 2);
+  REQUIRE(engine.voice()->active());
+  CHECK(engine.voice()->playbackFrame() < 10000);
+  float largestStep = 0.0f;
+  for (int frame = 84000; frame < 85000; ++frame)
+    largestStep = std::max(largestStep, std::fabs(output[frame * 2] - output[(frame - 1) * 2]));
+  CHECK(largestStep < 0.03f);
+}
+
 // Non-sliced sample, root note: step 1.0, window 0..8820. After one tick
 // (882 frames) the cursor has moved 882 frames from its start.
 

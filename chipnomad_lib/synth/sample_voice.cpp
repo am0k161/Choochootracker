@@ -46,6 +46,10 @@ void SampleVoice::init(float outputSampleRate) {
   startFrame_ = 0;
   endFrame_ = 0;
   active_ = false;
+  lastOutput_[0] = lastOutput_[1] = 0.0f;
+  rampFrom_[0] = rampFrom_[1] = 0.0f;
+  rampRemaining_ = 0;
+  rampFrames_ = outputSampleRate > 500.0f ? (uint32_t)(outputSampleRate * 0.002f) : 1;
   useStretch_ = false;
 #if defined(PORTMASTER_BUILD) || defined(ANDROID_BUILD) || defined(WEB_BUILD)
   stretch_.init(outputSampleRate_, true);
@@ -396,6 +400,10 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
 
 void SampleVoice::noteOn() {
   if (!sample_ || !sample_->data || endFrame_ <= startFrame_) return;
+  for (int channel = 0; channel < 2; ++channel)
+    rampFrom_[channel] = active_ ? lastOutput_[channel] : 0.0f;
+  rampRemaining_ = rampFrames_;
+  post_.kill(); // Restart sample attack; the output ramp bridges the previous waveform.
   if (useStretch_) {
     // A new note always restarts the stretched playback from the top of the
     // source window: tracks are monophonic, so a retrigger must kill the
@@ -481,8 +489,21 @@ void SampleVoice::noteOff() {
 
 void SampleVoice::kill() {
   active_ = false;
+  lastOutput_[0] = lastOutput_[1] = 0.0f;
+  rampRemaining_ = 0;
   stretch_.reset();
   post_.kill();
+}
+
+void SampleVoice::finishFrame(float* stereo) {
+  if (rampRemaining_) {
+    float blend = (float)(rampFrames_ - rampRemaining_ + 1) / rampFrames_;
+    for (int channel = 0; channel < 2; ++channel)
+      stereo[channel] = rampFrom_[channel] + (stereo[channel] - rampFrom_[channel]) * blend;
+    --rampRemaining_;
+  }
+  lastOutput_[0] = stereo[0];
+  lastOutput_[1] = stereo[1];
 }
 
 void SampleVoice::render(float* output, size_t frames) {
@@ -498,9 +519,8 @@ void SampleVoice::render(float* output, size_t frames) {
     if (!stretch_.active()) { kill(); return; }
     for (size_t i = 0; i < frames; i++) {
       if (!post_.envelopeActive()) { kill(); break; }
-      for (int channel = 0; channel < 2; channel++) {
-        output[i * 2 + channel] = post_.process(output[i * 2 + channel], channel);
-      }
+      post_.processStereo(output + i * 2);
+      finishFrame(output + i * 2);
     }
     if (!post_.envelopeActive()) kill();
     return;
@@ -526,8 +546,10 @@ void SampleVoice::render(float* output, size_t frames) {
           float window = sinf(3.14159265f * phase);
           value += grainSampleAt(grainPosition_[grain] + direction_ * step_ * grainAge_[grain], channel) * window * window;
         }
-        output[i * 2 + channel] = post_.process(value, channel);
+        output[i * 2 + channel] = value;
       }
+      post_.processStereo(output + i * 2);
+      finishFrame(output + i * 2);
       grainAge_[0]++;
       grainAge_[1]++;
       double head0 = grainPosition_[0] + direction_ * step_ * grainAge_[0];
@@ -536,9 +558,10 @@ void SampleVoice::render(float* output, size_t frames) {
           (reverse_ ? head0 <= startFrame_ && head1 <= startFrame_
                     : head0 >= endFrame_ && head1 >= endFrame_)) { kill(); break; }
     } else {
-      for (int channel = 0; channel < 2; channel++) {
-        output[i * 2 + channel] = post_.process(sampleAt(position_, channel), channel);
-      }
+      output[i * 2] = sampleAt(position_, 0);
+      output[i * 2 + 1] = sampleAt(position_, 1);
+      post_.processStereo(output + i * 2);
+      finishFrame(output + i * 2);
       if (!advancePosition()) { kill(); break; }
     }
     if (!post_.envelopeActive()) { kill(); break; }

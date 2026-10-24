@@ -2281,11 +2281,11 @@ failed write keeps the dirty marker and shows the error.</li>
  <h2 id="table-title">Table</h2><p class="route">Instrument → SELECT + RIGHT</p>
  <div class="screen-summary"><figure><a class="screen-link" href="assets/table.png" aria-label="Open full-size Table screenshot"><img src="assets/table.png" width="640" height="480" alt="Choo Choo Table page" loading="lazy"></a><figcaption>Table</figcaption></figure>
  <div class="screen-copy"><p class="description">A table is a short sequence that changes a sound while notes play. Use it for pitch movement, rhythmic volume changes, and effect automation. Its timing is measured in ticks rather than phrase steps.</p>
- <h3>On this screen</h3><dl class="fields"><div><dt>Pitch</dt><dd>Relative pitch (~) or an absolute note (=).</dd></div><div><dt>Volume</dt><dd>A 00–0F multiplier applied on top of the instrument envelope.</dd></div><div><dt>FX lanes</dt><dd>Four command lanes, each able to run at its own tick speed.</dd></div><div><dt>Retrigger</dt><dd>Choose whether the table restarts with the instrument, phrase, chain, or runs freely.</dd></div></dl></div></div>
+ <h3>On this screen</h3><dl class="fields"><div><dt>Pitch</dt><dd>Relative pitch (~) or an absolute note (=).</dd></div><div><dt>Volume</dt><dd>A 00–7F multiplier applied on top of the instrument envelope.</dd></div><div><dt>FX lanes</dt><dd>Four command lanes, each able to run at its own tick speed.</dd></div><div><dt>Retrigger</dt><dd>Choose whether the table restarts with the instrument, phrase, chain, or runs freely.</dd></div></dl></div></div>
  <table><caption>Controls</caption><thead><tr><th scope="col">Control</th><th scope="col">What it does</th></tr></thead><tbody><tr><th scope="row"><button type="button" class="control-example" data-example="table-05" aria-haspopup="dialog" aria-describedby="tip-table-05">EDIT + direction<span class="example-tooltip" role="tooltip" id="tip-table-05">Click to view example</span></button></th><td>Adjust the selected pitch, volume, command, or value.</td></tr><tr><th scope="row"><button type="button" class="control-example" data-example="table-06" aria-haspopup="dialog" aria-describedby="tip-table-06">EDIT + UP / DOWN on an FX name<span class="example-tooltip" role="tooltip" id="tip-table-06">Click to view example</span></button></th><td>Open the effect chooser.</td></tr><tr><th scope="row"><button type="button" class="control-example" data-example="table-07" aria-haspopup="dialog" aria-describedby="tip-table-07">SELECT + LEFT<span class="example-tooltip" role="tooltip" id="tip-table-07">Click to view example</span></button></th><td>Return to Instrument.</td></tr><tr><th scope="row"><button type="button" class="control-example" data-example="table-08" aria-haspopup="dialog" aria-describedby="tip-table-08">SELECT + DOWN<span class="example-tooltip" role="tooltip" id="tip-table-08">Click to view example</span></button></th><td>Open AY Wavetable.</td></tr><tr><th scope="row"><button type="button" class="control-example" data-example="table-01" aria-haspopup="dialog" aria-describedby="tip-table-01">SELECT + OPT<span class="example-tooltip" role="tooltip" id="tip-table-01">Click to view example</span></button></th><td>Hold SELECT, then press OPT to enter selection mode. Release both; use directions to extend the range. Repeat SELECT + OPT to cycle selection ranges.</td></tr><tr><th scope="row"><button type="button" class="control-example" data-example="table-02" aria-haspopup="dialog" aria-describedby="tip-table-02">OPT, with a selection<span class="example-tooltip" role="tooltip" id="tip-table-02">Click to view example</span></button></th><td>Tap and release OPT to copy selected cells and leave selection mode.</td></tr><tr><th scope="row"><button type="button" class="control-example" data-example="table-03" aria-haspopup="dialog" aria-describedby="tip-table-03">OPT + EDIT, with a selection<span class="example-tooltip" role="tooltip" id="tip-table-03">Click to view example</span></button></th><td>Cut selected cells and leave selection mode.</td></tr><tr><th scope="row"><button type="button" class="control-example" data-example="table-04" aria-haspopup="dialog" aria-describedby="tip-table-04">SELECT + EDIT, outside selection<span class="example-tooltip" role="tooltip" id="tip-table-04">Click to view example</span></button></th><td>Hold SELECT, then press EDIT to paste copied cells at the cursor.</td></tr><tr><th scope="row"><button type="button" class="control-example" data-example="table-ref-01" aria-haspopup="dialog" aria-describedby="tip-table-ref-01">EDIT + direction on Retrig<span class="example-tooltip" role="tooltip" id="tip-table-ref-01">Click to view example</span></button></th><td>Retrig cycles through Phrase, Chain and Free.</td></tr><tr><th scope="row"><button type="button" class="control-example" data-example="table-ref-02" aria-haspopup="dialog" aria-describedby="tip-table-ref-02">Paste FX copied from Phrase<span class="example-tooltip" role="tooltip" id="tip-table-ref-02">Click to view example</span></button></th><td>The copied ARP command and value appear in Table FX1.</td></tr></tbody></table>
  <p class="note">Each instrument has a default table with the same number. A TIC command on the last row can set an individual FX lane’s speed. Start selection on a data row, below the timing header.</p>
  <div class="reference"><h3>In depth</h3><p class="reference-intro">Open a topic for detailed controls, values and workflows.</p><details class="reference-topic" id="table-ref-table-timing-loops-and-auxiliary-tables"><summary>Table timing, loops and auxiliary tables</summary><div class="reference-body"><p>Tables are a core sound design tool in trackers. In Vortex Tracker terms, they combine instruments and ornaments, but they can do much more. If you know LSDj or NerdSEQ, the idea should already feel familiar.</p>
-<p>The Pitch column accepts relative (<code>~</code>) or absolute (<code>=</code>) pitch values in semitones. The Volume column is <code>00</code>-<code>0F</code>, applies to every engine on top of its envelope, and can be used for a gate: alternate <code>0F</code> and <code>00</code> then loop with <code>HOP 00</code>. The 4 FX lanes mostly match the lanes in a phrase, although a few FX behave differently in tables.</p>
+<p>The Pitch column accepts relative (<code>~</code>) or absolute (<code>=</code>) pitch values in semitones. The Volume column is <code>00</code>-<code>7F</code>, applies to every engine on top of its envelope, and can be used for a gate: alternate <code>7F</code> and <code>00</code> then loop with <code>HOP 00</code>. The 4 FX lanes mostly match the lanes in a phrase, although a few FX behave differently in tables.</p>
 <p>Putting a <code>TIC</code> FX on the last table row sets the speed of that column and overrides the instrument's default table speed. Each FX column can run at a different tick speed. The Pitch and Volume columns follow the speed of the 1st FX column.</p>
 <p>A 16-row table may look short next to a long Vortex Tracker instrument, but the <code>HOP</code> FX can create conditional loops such as "repeat these rows 5 times", as well as nested loops. With loops and independent FX column speeds, those 16 rows can go a surprisingly long way.</p>
 </div></details><details class="reference-topic" id="table-ref-retrigger-mode"><summary>Retrigger mode</summary><div class="reference-body"><p>The <code>Retrig</code> field at the top of the Table screen selects when an already active table restarts. <code>Inst</code> is the default and compatible mode: a phrase row containing an instrument selects that instrument's default table and starts it at row <code>00</code>. <code>Phrase</code> restarts an active table when playback enters a phrase, <code>Chain</code> when it enters a chain, and <code>Free</code> leaves it running until the track stops or an explicit command replaces it.</p>
@@ -3488,101 +3488,6 @@ DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
 FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 
-ShareTechMono-OFL.txt
-Copyright (c) 2012, Carrois Type Design, Ralph du Carrois (post@carrois.com www.carrois.com), with Reserved Font Name 'Share'
-
-This Font Software is licensed under the SIL Open Font License, Version 1.1.
-This license is copied below, and is also available with a FAQ at:
-http://scripts.sil.org/OFL
-
-
------------------------------------------------------------
-SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
------------------------------------------------------------
-
-PREAMBLE
-The goals of the Open Font License (OFL) are to stimulate worldwide
-development of collaborative font projects, to support the font creation
-efforts of academic and linguistic communities, and to provide a free and
-open framework in which fonts may be shared and improved in partnership
-with others.
-
-The OFL allows the licensed fonts to be used, studied, modified and
-redistributed freely as long as they are not sold by themselves. The
-fonts, including any derivative works, can be bundled, embedded,
-redistributed and/or sold with any software provided that any reserved
-names are not used by derivative works. The fonts and derivatives,
-however, cannot be released under any other type of license. The
-requirement for fonts to remain under this license does not apply
-to any document created using the fonts or their derivatives.
-
-DEFINITIONS
-"Font Software" refers to the set of files released by the Copyright
-Holder(s) under this license and clearly marked as such. This may
-include source files, build scripts and documentation.
-
-"Reserved Font Name" refers to any names specified as such after the
-copyright statement(s).
-
-"Original Version" refers to the collection of Font Software components as
-distributed by the Copyright Holder(s).
-
-"Modified Version" refers to any derivative made by adding to, deleting,
-or substituting -- in part or in whole -- any of the components of the
-Original Version, by changing formats or by porting the Font Software to a
-new environment.
-
-"Author" refers to any designer, engineer, programmer, technical
-writer or other person who contributed to the Font Software.
-
-PERMISSION & CONDITIONS
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of the Font Software, to use, study, copy, merge, embed, modify,
-redistribute, and sell modified and unmodified copies of the Font
-Software, subject to the following conditions:
-
-1) Neither the Font Software nor any of its individual components,
-in Original or Modified Versions, may be sold by itself.
-
-2) Original or Modified Versions of the Font Software may be bundled,
-redistributed and/or sold with any software, provided that each copy
-contains the above copyright notice and this license. These can be
-included either as stand-alone text files, human-readable headers or
-in the appropriate machine-readable metadata fields within text or
-binary files as long as those fields can be easily viewed by the user.
-
-3) No Modified Version of the Font Software may use the Reserved Font
-Name(s) unless explicit written permission is granted by the corresponding
-Copyright Holder. This restriction only applies to the primary font name as
-presented to the users.
-
-4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
-Software shall not be used to promote, endorse or advertise any
-Modified Version, except to acknowledge the contribution(s) of the
-Copyright Holder(s) and the Author(s) or with their explicit written
-permission.
-
-5) The Font Software, modified or unmodified, in part or in whole,
-must be distributed entirely under this license, and must not be
-distributed under any other license. The requirement for fonts to
-remain under this license does not apply to any document created
-using the Font Software.
-
-TERMINATION
-This license becomes null and void if any of the above conditions are
-not met.
-
-DISCLAIMER
-THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
-OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
-COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
-DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
-OTHER DEALINGS IN THE FONT SOFTWARE.
-
 orbitron-OFL.txt
 Copyright 2018 The Orbitron Project Authors (https://github.com/theleagueof/orbitron), with Reserved Font Name: "Orbitron"
 
@@ -3684,6 +3589,101 @@ Copyright 2019 The Oxanium Project Authors (https://github.com/sevmeyer/oxanium)
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
 https://scripts.sil.org/OFL
+
+
+-----------------------------------------------------------
+SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
+-----------------------------------------------------------
+
+PREAMBLE
+The goals of the Open Font License (OFL) are to stimulate worldwide
+development of collaborative font projects, to support the font creation
+efforts of academic and linguistic communities, and to provide a free and
+open framework in which fonts may be shared and improved in partnership
+with others.
+
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The
+fonts, including any derivative works, can be bundled, embedded,
+redistributed and/or sold with any software provided that any reserved
+names are not used by derivative works. The fonts and derivatives,
+however, cannot be released under any other type of license. The
+requirement for fonts to remain under this license does not apply
+to any document created using the fonts or their derivatives.
+
+DEFINITIONS
+"Font Software" refers to the set of files released by the Copyright
+Holder(s) under this license and clearly marked as such. This may
+include source files, build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the
+copyright statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting,
+or substituting -- in part or in whole -- any of the components of the
+Original Version, by changing formats or by porting the Font Software to a
+new environment.
+
+"Author" refers to any designer, engineer, programmer, technical
+writer or other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of the Font Software, to use, study, copy, merge, embed, modify,
+redistribute, and sell modified and unmodified copies of the Font
+Software, subject to the following conditions:
+
+1) Neither the Font Software nor any of its individual components,
+in Original or Modified Versions, may be sold by itself.
+
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy
+contains the above copyright notice and this license. These can be
+included either as stand-alone text files, human-readable headers or
+in the appropriate machine-readable metadata fields within text or
+binary files as long as those fields can be easily viewed by the user.
+
+3) No Modified Version of the Font Software may use the Reserved Font
+Name(s) unless explicit written permission is granted by the corresponding
+Copyright Holder. This restriction only applies to the primary font name as
+presented to the users.
+
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
+Software shall not be used to promote, endorse or advertise any
+Modified Version, except to acknowledge the contribution(s) of the
+Copyright Holder(s) and the Author(s) or with their explicit written
+permission.
+
+5) The Font Software, modified or unmodified, in part or in whole,
+must be distributed entirely under this license, and must not be
+distributed under any other license. The requirement for fonts to
+remain under this license does not apply to any document created
+using the Font Software.
+
+TERMINATION
+This license becomes null and void if any of the above conditions are
+not met.
+
+DISCLAIMER
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
+OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
+DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
+OTHER DEALINGS IN THE FONT SOFTWARE.
+
+ShareTechMono-OFL.txt
+Copyright (c) 2012, Carrois Type Design, Ralph du Carrois (post@carrois.com www.carrois.com), with Reserved Font Name 'Share'
+
+This Font Software is licensed under the SIL Open Font License, Version 1.1.
+This license is copied below, and is also available with a FAQ at:
+http://scripts.sil.org/OFL
 
 
 -----------------------------------------------------------

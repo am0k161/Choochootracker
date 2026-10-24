@@ -61,6 +61,47 @@ TEST_CASE("SampleVoice renders PCM16 with envelope and every filter mode") {
   }
 }
 
+TEST_CASE("SampleVoice smooths the first trigger and retrigger without shifting stereo envelopes") {
+  int16_t pcm[512];
+  for (int i = 0; i < 512; ++i) pcm[i] = i < 256 ? 16000 : -16000;
+  InstrumentSample sample{};
+  sample.sampleRate = 48000;
+  sample.frameCount = 512;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255;
+  sample.sustain = 255;
+
+  SampleVoice voice;
+  voice.init(48000.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, 0, 255, 1, 20000, 0);
+  voice.noteOn();
+  float output[300 * 2];
+  voice.render(output, 300);
+  CHECK(std::fabs(output[0]) < 0.01f);
+  CHECK(output[2 * 95] == doctest::Approx(16000.0f / 32768.0f));
+  CHECK(output[2 * 299] == doctest::Approx(-16000.0f / 32768.0f));
+
+  voice.noteOn();
+  voice.render(output, 96);
+  CHECK(std::fabs(output[0] + 16000.0f / 32768.0f) < 0.02f);
+  CHECK(output[2 * 95] == doctest::Approx(16000.0f / 32768.0f));
+  for (int i = 0; i < 96; ++i) CHECK(output[2 * i] == doctest::Approx(output[2 * i + 1]));
+
+  sample.attack = 64;
+  voice.kill();
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, 0, 255, 1, 20000, 0);
+  voice.noteOn();
+  voice.render(output, 96);
+  CHECK(output[2 * 95] > 0.0f);
+  CHECK(output[2 * 95] < 0.1f);
+  for (int i = 0; i < 96; ++i) CHECK(output[2 * i] == doctest::Approx(output[2 * i + 1]));
+  const float firstAttackEnd = output[2 * 95];
+  voice.noteOn();
+  voice.render(output, 96);
+  CHECK(output[2 * 95] == doctest::Approx(firstAttackEnd).epsilon(0.05));
+}
+
 TEST_CASE("SampleVoice start and end delimit playback") {
   int16_t pcm[64];
   for (int i = 0; i < 64; ++i) pcm[i] = 12000;
@@ -178,34 +219,34 @@ TEST_CASE("SampleVoice Off uses Start/End and sliced notes use even windows") {
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == (uint32_t)sample.start * 31 / 255);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[(uint32_t)sample.start * 31 / 255] / 32768.0f) < 0.01f);
 
   // Slices divide the Start/End loop region (frames [7,16) here), not the
   // whole sample: 9 frames / 4 slices -> windows [7,9) [9,11) [11,13) [13,16).
   voice.configure(&sample, 1200.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 4, 1);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 9);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[9] / 32768.0f) < 0.01f);
 
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 4, 0);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 7);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[7] / 32768.0f) < 0.01f);
 
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 4, 3);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 13);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[13] / 32768.0f) < 0.01f);
 
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 4, 9);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 13);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[13] / 32768.0f) < 0.01f);
 }
 
 TEST_CASE("Sample loader accepts unsigned PCM8 WAV") {
@@ -795,16 +836,16 @@ TEST_CASE("SampleVoice plays stored slice bounds and legacy fallback identically
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 4, 1);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 8);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[8] / 32768.0f) < 0.01f);
 
   // A nudged bound moves the playback window: slice 1 now starts at 11.
   CHECK(sampleSliceNudge(&sample, 1, 3) == 11);
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 4, 1);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 11);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[11] / 32768.0f) < 0.01f);
 
   // Legacy fallback: sentinel 8 with empty bounds divides the loop evenly
   // (slice 1 of 8 over 32 frames starts at frame 4).
@@ -816,8 +857,8 @@ TEST_CASE("SampleVoice plays stored slice bounds and legacy fallback identically
   voice.configure(&legacy, 0.0f, 1.0f, 100.0f, legacy.start, legacy.end, 0,
                   legacy.filterCutoffHz, legacy.filterResonance, -1, -1, -1, -1, -1, 8, 1);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 4);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[4] / 32768.0f) < 0.01f);
 
   // LAZY slices map chromatically like EQUAL/AUTO: with bounds present the
   // caller passes the decoded count and the voice plays the selected window.

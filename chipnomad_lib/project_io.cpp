@@ -26,7 +26,7 @@
 
 // Shared state
 char projectFileError[41];
-int projectFileVersion = 7;  // Default to current version
+int projectFileVersion = 11;  // Default to current version
 static char chipNames[][16] = { "AY8910" };
 
 // Peek/consume implementation - single global buffer (ChipNomad is single-threaded)
@@ -583,6 +583,11 @@ static int loadTable(FILE* file, Table* table, Project* p) {
     table->rows[d].pitchOffset = scanByteOrEmpty(line + 2);
     // Volume
     table->rows[d].volume = scanByteOrEmpty(line + 5);
+    if (table->rows[d].volume != EMPTY_VALUE_8) {
+      if (projectFileVersion < 11) table->rows[d].volume =
+        (std::min(int(table->rows[d].volume), 15) * PHRASE_VOLUME_MAX + 7) / 15;
+      else if (table->rows[d].volume > PHRASE_VOLUME_MAX) table->rows[d].volume = PHRASE_VOLUME_MAX;
+    }
     // FX
     for (int e = 0; e < 4; e++) {
       table->rows[d].fx[e][0] = scanFX(line + 8 + e * 7, p);
@@ -730,7 +735,9 @@ static int projectLoadInternal(FILE* file, Project* project) {
 
   // Detect version
   if (strlen(version) > 0) {
-    if (strncmp(version, " 10.0", 5) == 0) {
+    if (strncmp(version, " 11.0", 5) == 0) {
+      projectFileVersion = 11;
+    } else if (strncmp(version, " 10.0", 5) == 0) {
       projectFileVersion = 10;
     } else if (strncmp(version, " 9.0", 4) == 0) {
       projectFileVersion = 9;
@@ -1602,20 +1609,8 @@ static int projectSaveAYWavetables(FILE* file, Project* project) {
 }
 
 static int projectSaveInternal(FILE* file, Project* project) {
-  bool nativeChips = false;
-  for (const auto& instrument : project->instruments) nativeChips |= (instrument.type==InstrumentType::Monk || instrument.type==InstrumentType::SID || instrument.type==InstrumentType::DX7 || isOPLL(instrument.type) || (isOPL(instrument.type) || isFourOp(instrument.type)) || isSimpleChip(instrument.type));
-  for (const auto& phrase : project->phrases) for (const auto& row : phrase.rows) for (const auto& fx : row.fx) nativeChips |= fx.command >= fxFBR && fx.command < fxTotalCount;
-  for (const auto& table : project->tables) for (const auto& row : table.rows) for (const auto& fx : row.fx) nativeChips |= fx.command >= fxFBR && fx.command < fxTotalCount;
-  bool sourcePrograms=false;
-  for(const auto& i:project->instruments)sourcePrograms |= i.type==InstrumentType::SID?bool(i.chip.sid.program.format):isSimpleChip(i.type)?bool(i.chip.simpleChip.program.format):false;
-  // Native formats 6-8 predate upstream's expanded phrase volume. Format 9
-  // distinguishes new 00-7F songs while retaining their native patches and FX.
-  // Plain projects stay at 7.0: this fork's 7.0 carries the redefined SLP
-  // playback values (0=fwd/1=rev/2=loop/3=ping-pong) and the 6-field Scale
-  // line, so writing 6.0 would re-trigger the <7 SLP value migration on
-  // reload and corrupt loop modes. Upstream never wrote 7.0 files, so the
-  // number stays unambiguous. Native-chip projects use upstream's 9/10.
-  fprintf(file, "# ChooChooTracker Module %d.0\n\n", sourcePrograms ? 10 : nativeChips ? 9 : 7);
+  // Format 11 marks table volumes as 00-7F. Older files use 00-0F.
+  fprintf(file, "# ChooChooTracker Module 11.0\n\n");
 
   fprintf(file, "- Title: %s\n", project->title);
   fprintf(file, "- Author: %s\n", project->author);
@@ -1866,13 +1861,7 @@ int instrumentSave(Project* project, const char* path, int instrumentIdx) {
     return 1;
   }
 
-  bool nativeFormat = (project->instruments[instrumentIdx].type==InstrumentType::Monk || project->instruments[instrumentIdx].type==InstrumentType::SID || project->instruments[instrumentIdx].type==InstrumentType::DX7 || isOPLL(project->instruments[instrumentIdx].type) || (isOPL(project->instruments[instrumentIdx].type) || isFourOp(project->instruments[instrumentIdx].type)) || isSimpleChip(project->instruments[instrumentIdx].type));
-  for (const auto& row : project->tables[instrumentIdx].rows) for (const auto& fx : row.fx) nativeFormat |= fx.command >= fxFBR && fx.command < fxTotalCount;
-  bool absoluteLevels=false;
-  for(const auto& row:project->tables[instrumentIdx].rows)for(const auto& fx:row.fx)absoluteLevels |= fx.command>=fxOL1&&fx.command<=fxFBK;
-  const auto& inst=project->instruments[instrumentIdx];
-  bool sourceProgram=inst.type==InstrumentType::SID?bool(inst.chip.sid.program.format):isSimpleChip(inst.type)?bool(inst.chip.simpleChip.program.format):false;
-  fprintf(file, "# ChipNomad Instrument %d.0\n\n", sourceProgram ? 9 : absoluteLevels ? 8 : nativeFormat ? 7 : 5);
+  fprintf(file, "# ChipNomad Instrument 10.0\n\n");
   instrumentSaveData(file, 0, &project->instruments[instrumentIdx]);
   saveTable(file, 0, &project->tables[instrumentIdx]);
 
@@ -1890,7 +1879,9 @@ static int instrumentLoadInternal(FILE* file, Project* project, int instrumentId
 
   // Detect version
   if (strlen(line) > 22) {
-    if (strncmp(line + 22, " 9.0", 4) == 0) {
+    if (strncmp(line + 22, " 10.0", 5) == 0) {
+      projectFileVersion = 11;
+    } else if (strncmp(line + 22, " 9.0", 4) == 0) {
       projectFileVersion = 9;
     } else if (strncmp(line + 22, " 8.0", 4) == 0) {
       projectFileVersion = 8;
