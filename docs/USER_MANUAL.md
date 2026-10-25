@@ -60,6 +60,8 @@ preserved. Input polling and app timers keep their usual cadence.
 
 The current project is autosaved every minute and on exit as `autosave.cct` next to the app. If the autosave cannot be loaded at startup, the title screen says so and the demo project opens instead. The unreadable file is kept as `autosave.cct.unreadable` (then `-2`, `-3`, ...) so later autosaves never overwrite it, and the work in it can still be recovered.
 
+Project saves and autosaves include loaded or recorded sample audio.
+
 If a manual save or autosave fails while the app is open, an error appears on screen. Keep the project open and retry after checking the working folder and free storage.
 
 ## 2. Controls
@@ -676,7 +678,7 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
 - Tap **Sample** to load an uncompressed `8-bit`, `16-bit` or `24-bit` PCM WAV. Press **PLAY** in the browser to audition the highlighted file.
 - When a sample is loaded, **EDIT** appears next to its name. Tap it to open the Sample Edit screen. **OPT** or **SELECT + [LEFT]** returns to the instrument.
 - The Sample Edit screen shows the filename (with a `*` marker when the sample in RAM differs from the file on disk), a format readout (sample rate, channels), a tall waveform, and the **Region**, **Select**, **Loop**, **Slice**, **Process** and **File** fields.
-- Edits live in RAM only until a save flow writes them: the project stores the sample's file path and reloads the WAV from disk on the next project load, so leaving the tracker without **Save**/**Save As** discards process operations (the `*` marker is the warning). Loading a different sample into the instrument also discards unsaved edits and resets the Region to the full sample (Start `00`, End `FF`).
+- Processing edits start in RAM. Project saves and autosaves embed the current sample audio in the `.cct`; **Save**/**Save As** in Sample Edit writes the separate WAV. The `*` marker means the sample in RAM differs from that WAV. Loading another sample replaces the current audio in RAM and resets the Region to the full sample (Start `00`, End `FF`).
 - **Region** sets the playback Start/End markers, also available on the Sampler instrument screen. They set normalised playback boundaries (`00-FF`); if Start is after End, the sample plays in reverse. **EDIT + [LEFT/RIGHT]** fine-adjusts the marker in steps of one (`01`) and zooms the waveform around it while **EDIT** is held; **EDIT + [UP/DOWN]** coarse-adjusts (step 16) and returns the view to the full sample. **EDIT + OPT** resets the marker to its default (Start `00`, End `FF`).
 - The waveform view zooms to a fixed window of 5/7 of a second of audio (40% more magnification than a full second) around the edited marker and pans to keep it visible; samples that fit inside the window stay at the full 1:1 view. The zoom is transient: it lasts while **EDIT** is held, and releasing **EDIT** returns to the full 1:1 view, as do coarse steps. Entering the screen always resets the view to the full sample.
 - **Loop** is a row with two cells: **START** (loop start) and **SPD ALGO**

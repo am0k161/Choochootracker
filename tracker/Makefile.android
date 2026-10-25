@@ -40,7 +40,8 @@ XTRA_CFLAGS = -DANDROID_BUILD -DMOBILE_BUILD -DMOBILE_LIFECYCLE -DTOUCH_INPUT -D
 	-DLINK_PLATFORM_LINUX=1 -DASIO_STANDALONE=1 -DASIO_NO_TYPEID=1 -DASIO_VERSION_NAMESPACE=link_asio_1_38_2 -Wno-multichar
 # The picked-folder (SAF) workspace is served by platforms/android/saf_storage.cpp,
 # which intercepts these libc calls for paths under /ChooChooTracker.
-SAF_WRAP = $(addprefix -Wl$(comma)--wrap=,fopen open stat lstat access mkdir remove unlinkat rename chdir getcwd realpath opendir readdir closedir)
+# tmpfile is also wrapped because Android 13 and older ignore TMPDIR.
+SAF_WRAP = $(addprefix -Wl$(comma)--wrap=,fopen open stat lstat access mkdir remove unlinkat rename chdir getcwd realpath opendir readdir closedir tmpfile)
 comma := ,
 XTRA_LIBS = -static-libstdc++ -L$(SDL2_LIB)/$(ARCH) -lSDL2 -lm -llog -landroid -latomic $(SAF_WRAP)
 
