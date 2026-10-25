@@ -240,6 +240,9 @@ enum FX : FXId {
   fxRNS, // Sample FX: random slice selection
   fxRNN, // Sequencer FX: random note
 
+  // Sample loop start (relative). Appended to preserve project FX IDs.
+  fxLST, // Sample FX: loop start offset (relative)
+
   // Total count - must be last
   fxTotalCount
 };

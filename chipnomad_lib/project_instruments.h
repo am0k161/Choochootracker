@@ -353,7 +353,12 @@ struct InstrumentSample : InstrumentVoicePostSettings {
   uint16_t speedPercent;
   uint8_t start;
   uint8_t end;
-  uint8_t loopMode; // 0: off, 1: loop, 2: ping-pong
+  uint8_t loopMode; // 0: off, 1: loop, 2: loop X-fade, 3: ping-pong, 4: ping-pong X-fade
+  // Loop start marker, 0-255 normalized like start/end. Where the loop wraps
+  // back to when a loop mode is active (instrument loopMode != 0 or SPL >= 02).
+  // Inert otherwise; 0 means the loop wraps to the Region START, which keeps
+  // old projects bit-identical.
+  uint8_t loopStart;
   // Slice sentinel (see sample_voice.h): 0 off, 1..64 EQUAL, 65..128 AUTO,
   // 129..192 LAZY (value - 64/128 is the slice count).
   uint8_t slice;

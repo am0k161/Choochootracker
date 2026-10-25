@@ -2074,12 +2074,31 @@ static void updateSampleVoices(ChipNomadState* state) {
     if (track->note.fx[fxSCF].isOn) cutoff = instrumentFXCutoff(track->note.fx[fxSCF].fxValue);
     if (track->note.fx[fxSRS].isOn) resonance = track->note.fx[fxSRS].fxValue;
     if (track->note.fx[fxSSP].isOn) speedPercent = track->note.fx[fxSSP].fxValue * 500 / 255;
-    // SPL playback modes: 00 forward, 01 reverse, 02 loop, 03 ping-pong.
+    // SPL playback modes: 00 forward, 01 reverse, 02 loop, 03 ping-pong,
+    // 04 loop with X-fade, 05 ping-pong with X-fade. Values 02-05 WRITE
+    // THROUGH to the instrument's loop mode: the instrument view parameter
+    // is the central source of truth for the looping behaviour, so the lane
+    // FX changes it while the tracker proceeds with the sequence (the view
+    // follows along). 00/01 keep the legacy local override - the sample
+    // settings preview relies on forcing SPL 00 for one-shot playback and
+    // must not clobber the instrument's loop mode.
     uint8_t forceReverse = 0;
+    uint8_t xfade = 0;
     if (track->note.fx[fxSLP].isOn) {
       uint8_t playbackMode = track->note.fx[fxSLP].fxValue;
-      forceReverse = playbackMode == 1 ? 1 : 0;
-      loopMode = playbackMode == 3 ? 2 : (playbackMode == 2 ? 1 : 0);
+      if (playbackMode >= 2) {
+        // 02-05: write the mapped mode into the instrument. The X-fade flag
+        // comes from the SPL value itself, not the mod-routed loopMode:
+        // destination 6 only shifts the wrap mode, it never turns the
+        // crossfade on.
+        // 02->1 Loop, 03->3 Ping, 04->2 Loop X, 05->4 Ping X
+        uint8_t mapped = playbackMode == 3 ? 3 : playbackMode == 4 ? 2 : playbackMode - 1;
+        if (sample->loopMode != mapped) sample->loopMode = mapped;
+        loopMode = mapped;
+      } else {
+        forceReverse = playbackMode == 1 ? 1 : 0;
+        loopMode = 0;
+      }
     }
     // SLI plays the numbered slice regardless of the note pitch (sliced
     // instruments only; 00 keeps the normal note mapping).
@@ -2116,7 +2135,7 @@ static void updateSampleVoices(ChipNomadState* state) {
           speedPercent += playbackModScaleToRange(mod->outValue, 500);
           break;
         case 6:
-          loopMode += playbackModScaleToRange(mod->outValue, 2);
+          loopMode += playbackModScaleToRange(mod->outValue, 4);
           break;
         case 7:
           cutoff = playbackModulateCutoff(cutoff, mod);
@@ -2127,7 +2146,7 @@ static void updateSampleVoices(ChipNomadState* state) {
       }
     }
     speedPercent = clampInt(speedPercent, 0, 500);
-    loopMode = clampInt(loopMode, 0, 2);
+    loopMode = clampInt(loopMode, 0, 4);
     start = clampInt(start, 0, 255);
     end = clampInt(end, 0, 255);
     cutoff = clampInt(cutoff, FILTER_CUTOFF_MIN_HZ, FILTER_CUTOFF_MAX_HZ);
@@ -2137,6 +2156,13 @@ static void updateSampleVoices(ChipNomadState* state) {
     if (track->note.fx[fxESU].isOn) sustain = track->note.fx[fxESU].fxValue;
     if (track->note.fx[fxERL].isOn) release = track->note.fx[fxERL].fxValue;
     if (track->note.fx[fxESH].isOn) shape = track->note.fx[fxESH].fxValue;
+    // LST shifts the loop start marker relative to its current position;
+    // the accumulated signed offset persists until the next note trigger.
+    // Without an active loop the marker is ignored by the voice anyway.
+    uint8_t effectiveLoopStart = sample->loopStart;
+    if (track->note.fx[fxLST].isOn) {
+      effectiveLoopStart = (uint8_t)clampInt((int)sample->loopStart + track->note.fx[fxLST].acc, 0, 255);
+    }
     applyVoicePostModulations(track, InstrumentType::Sample, &attack, &decay, &sustain, &release,
                               &shape, &triggerDecay, &triggerColor);
     for (int slot = 0; slot < track->chordVoiceCount; ++slot) {
@@ -2161,7 +2187,7 @@ static void updateSampleVoices(ChipNomadState* state) {
       voices[slot]->configure(sample, (float)voicePitchCents, gain / track->chordVoiceCount, (float)speedPercent, start, end, (uint8_t)loopMode,
                               (uint16_t)cutoff, (uint8_t)resonance, attack, decay, sustain, release, shape,
                               sliceCount, voiceSliceIndex, sample->stretchMode, project->tickRate,
-                              sample->speedAlgorithm, forceReverse);
+                              sample->speedAlgorithm, forceReverse, effectiveLoopStart, xfade);
     }
   }
 }

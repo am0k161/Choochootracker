@@ -231,9 +231,13 @@ uint8_t sampleSliceInitAuto(InstrumentSample* sample, uint8_t count) {
     loopEnd = swap + 1;
   }
   if (loopEnd <= loopStart) loopEnd = sample->frameCount;
+  // The region before the first onset is a real slice: bounds[0] is the
+  // region start and each detected onset opens the next slice, so the
+  // detection budget is one bound less than the requested slice count.
   uint32_t frames[PROJECT_SAMPLE_MAX_SLICES];
   uint8_t detected = 0;
-  const int result = sampleDetectTransients(sample, loopStart, loopEnd, count,
+  const int result = sampleDetectTransients(sample, loopStart, loopEnd,
+                                            (uint8_t)(count > 1 ? count - 1 : 0),
                                             sample->autoSensitivity, frames, &detected);
   if (result != 0 || detected == 0) {
     // No usable onsets (silence, tiny region): fall back to the even
@@ -246,10 +250,14 @@ uint8_t sampleSliceInitAuto(InstrumentSample* sample, uint8_t count) {
     if ((uint32_t)effective > cap) effective = (uint8_t)cap;
     return sampleSliceInitEven(sample, sliceModeAuto, effective);
   }
+  // Detection caps at count - 1 onsets, so the region-start bound keeps
+  // the total at the requested slice count.
   memset(sample->sliceBounds, 0, sizeof(sample->sliceBounds));
+  sample->sliceBounds[0] = loopStart;
   for (uint8_t i = 0; i < detected; ++i) {
-    sample->sliceBounds[i] = frames[i];
+    sample->sliceBounds[i + 1] = frames[i];
   }
-  sample->slice = sampleEncodeSlice(sliceModeAuto, detected);
-  return detected;
+  const uint8_t total = (uint8_t)(detected + 1);
+  sample->slice = sampleEncodeSlice(sliceModeAuto, total);
+  return total;
 }

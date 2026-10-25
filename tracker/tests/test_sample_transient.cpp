@@ -208,12 +208,15 @@ TEST_CASE("sampleSliceInitAuto stores detected bounds and sentinel") {
   sample.autoSensitivity = 50;
 
   const uint8_t count = sampleSliceInitAuto(&sample, 8);
-  CHECK(count == 4);
+  // The region before the first onset is slice 1: bounds[0] is the region
+  // start and each onset opens the next slice, so 4 onsets yield 5 slices.
+  CHECK(count == 5);
   CHECK(sampleDecodeSliceMode(sample.slice) == sliceModeAuto);
-  CHECK(sampleDecodeSliceCount(sample.slice) == 4);
+  CHECK(sampleDecodeSliceCount(sample.slice) == 5);
+  CHECK(sample.sliceBounds[0] == 0);
   for (int i = 0; i < 4; ++i) {
-    CHECK(sample.sliceBounds[i] >= onsets[i] - 512);
-    CHECK(sample.sliceBounds[i] <= onsets[i] + 512);
+    CHECK(sample.sliceBounds[i + 1] >= onsets[i] - 512);
+    CHECK(sample.sliceBounds[i + 1] <= onsets[i] + 512);
   }
 }
 
@@ -244,6 +247,8 @@ TEST_CASE("sampleSliceInitAuto caps count at 16-frame minimum slices") {
   const uint8_t count = sampleSliceInitAuto(&sample, 64);
   CHECK(count <= 40);
   CHECK(sampleDecodeSliceCount(sample.slice) == count);
+  // The region-start bound is always present in the detection path.
+  CHECK(sample.sliceBounds[0] == 0);
 }
 
 TEST_CASE("Undo restores slice state after detection") {
@@ -281,7 +286,7 @@ TEST_CASE("Undo restores slice state after detection") {
   REQUIRE(sampleOpPrepareUndo(&sample, &undo) == sampleOpOk);
   const uint8_t before = sample.slice;
   const uint8_t detected = sampleSliceInitAuto(&sample, 8);
-  REQUIRE(detected == 4);
+  REQUIRE(detected == 5);
   CHECK(sample.slice != before);
   REQUIRE(sampleOpApplyUndo(&sample, &undo) == sampleOpOk);
   // The pre-detection sentinel (off) and bounds come back.

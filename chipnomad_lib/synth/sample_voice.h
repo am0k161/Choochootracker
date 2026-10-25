@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include "voice_post_processor.h"
 #include "stretch_processor.h"
+#include "loop_xfade.h"
 
 struct InstrumentSample;
 
@@ -17,7 +18,8 @@ class SampleVoice {
                  uint8_t resonance, int attack = -1, int decay = -1, int sustain = -1,
                  int release = -1, int envelopeShape = -1, uint8_t sliceCount = 0,
                  uint8_t sliceIndex = 0, uint8_t stretchMode = 0, float tickRateHz = 50.0f,
-                 uint8_t speedAlgorithm = 0, uint8_t forceReverse = 0);
+                 uint8_t speedAlgorithm = 0, uint8_t forceReverse = 0, uint8_t loopStart = 0,
+                 uint8_t xfade = 0);
   void noteOn();
   void noteOff();
   void kill();
@@ -33,6 +35,9 @@ class SampleVoice {
   double playbackFrame() const {
     if (useStretch_) return stretch_.sourcePosition();
     if (granular_) return grainPosition_[0] + direction_ * step_ * grainAge_[0];
+    // During a fade the outgoing pass owns the cursor; position_ is frozen
+    // at the arm point until the handover.
+    if (xfade_.active()) return xfade_.outgoingPosition();
     return position_;
   }
 
@@ -54,11 +59,25 @@ class SampleVoice {
   uint32_t grainHop_;
   uint32_t startFrame_;
   uint32_t endFrame_;
+  // Loop wrap point: the LOOP START marker when a loop mode is active,
+  // startFrame_ otherwise (inert path stays bit-identical).
+  uint32_t loopStartFrame_;
   bool active_;
   StretchProcessor stretch_;
   bool useStretch_;
+  // Seamless loop crossfade. Armed when the playhead enters the fade window
+  // (25% of the loop window, in source frames) before a wrap;
+  // the fade mixes the outgoing pass (still reading toward the seam) with
+  // the incoming pass (already reading from the wrap target).
+  LoopXfade xfade_;
   bool advancePosition();
   void finishFrame(float* stereo);
+  // Split wrap logic: wrap() performs the existing fold math (used by
+  // advancePosition for the non-crossfaded path); seamDistance() reports the
+  // source-frame distance to the next seam so the render loop can arm the
+  // crossfade when the playhead enters the fade window.
+  double seamDistance() const;
+  void wrap();
   void renderTailFrame(float* frame);
   float sampleAt(double position, int channel) const;
   float grainSampleAt(double position, int channel) const;

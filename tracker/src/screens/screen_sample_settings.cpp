@@ -38,6 +38,14 @@ static constexpr int selValX = 15;
 static constexpr int selValWidth = 6;
 static constexpr int endLabelX = 22;     // "END"
 static constexpr int selEndValX = 26;
+// row with the speed algorithm selector (swapped with the Slice row, which
+// needs the full width for its four cells).
+static constexpr int loopStartLabelX = 9;   // "START"
+static constexpr int loopStartValX = 15;
+static constexpr int loopStartValWidth = 6;
+static constexpr int spdAlgoLabelX = 22;    // "SPD ALGO"
+static constexpr int spdAlgoValX = 26;
+static constexpr int spdAlgoValWidth = 6;
 // A blank row separates the preview from the field block; the File row
 // stays above the message line (screen row 19). The two recording rows
 // (Input at y=2, REC at y=3) squeeze the preview to seven rows.
@@ -46,8 +54,15 @@ static constexpr int previewWidth = 32;
 static constexpr int previewHeight = 7;
 static constexpr int fieldRow0 = 12;
 // Logical rows 0/1 are the recording rows (y=2/3); the editor field rows
-// start at logical row 2 and draw downward from fieldRow0.
-static inline int fieldY(int row) { return fieldRow0 + row - 2; }
+// start at logical row 2 and draw downward from fieldRow0. Logical rows 4
+// (Slice) and 5 (Loop start / Spd algo) are swapped on screen: the Slice
+// row needs the full width for its four cells, so it takes the lower line
+// while the two-cell loop start row sits above it.
+static inline int fieldY(int row) {
+  if (row == 4) return fieldRow0 + 3; // Slice draws below Loop start
+  if (row == 5) return fieldRow0 + 2; // Loop start draws above Slice
+  return fieldRow0 + row - 2;
+}
 static const char* speedAlgorithmLabels[] = {"Dirty", "Clean"};
 
 // Slice row: one row hosting four value cells - Mode / Count / Slice /
@@ -105,6 +120,7 @@ static Bitmap* samplePreviewBitmap;
 static Bitmap* sampleSliceMarkerBitmap;
 static Bitmap* sampleStartMarkerBitmap;
 static Bitmap* sampleEndMarkerBitmap;
+static Bitmap* sampleLoopStartMarkerBitmap;
 static Bitmap* sampleSelectionBitmap;
 static Bitmap* sampleSliceBandBitmap;
 static Bitmap* samplePlaybackMarkerBitmap;
@@ -140,6 +156,26 @@ static void sampleBasenameSansExt(const char* path, char* out, size_t outSize) {
 
 static InstrumentSample* currentSample(void) {
   return &chipnomadState->project.instruments[cInstrument].chip.sample;
+}
+
+// The frame the LOOP START marker plays at: the normalized value mapped
+// through the sample length and clamped into the playback region exactly
+// like SampleVoice::configure clamps it. Used for the cell readout and the
+// waveform marker.
+static uint32_t loopStartDisplayFrame(const InstrumentSample* sample) {
+  uint32_t startFrame = sampleMarkerToStartFrame(sample->frameCount, sample->start);
+  uint32_t endFrame = sampleMarkerToEndFrame(sample->frameCount, sample->end);
+  if (startFrame > endFrame) {
+    uint32_t swap = startFrame;
+    startFrame = endFrame;
+    endFrame = swap;
+  }
+  if (endFrame <= startFrame) endFrame = startFrame + 1;
+  if (endFrame > sample->frameCount) endFrame = sample->frameCount;
+  uint32_t frame = sampleMarkerToStartFrame(sample->frameCount, sample->loopStart);
+  if (frame < startFrame) frame = startFrame;
+  if (frame >= endFrame && endFrame > startFrame) frame = endFrame - 1;
+  return frame;
 }
 
 // ---------------------------------------------------------------------------
@@ -548,6 +584,12 @@ static void settingsUpdateHint(int row, int col, int ownsBar) {
   } else if (row == 4 && col == 3) {
     // Slice frame cell: single static hint.
     issued = "Adjust slice start";
+  } else if (row == 5 && col == 0) {
+    // Loop start cell: single static hint.
+    issued = "Set the loop wrap point";
+  } else if (row == 5 && col == 1) {
+    // Speed algorithm cell: single static hint.
+    issued = "Pick the stretch algorithm";
   }
   if (issued) {
     if (!ownsBar || changed || strcmp(issued, hintOwnedText) != 0) {
@@ -574,13 +616,14 @@ static Bitmap* ensurePreviewBitmap(Bitmap** bitmap) {
 }
 
 // Which marker the view window follows: 0 none, 1 Start, 2 End,
-// 3/4 the selection handles.
+// 3/4 the selection handles, 5 the loop start marker.
 enum {
   kViewAnchorNone = 0,
   kViewAnchorStart = 1,
   kViewAnchorEnd = 2,
   kViewAnchorSelStart = 3,
   kViewAnchorSelEnd = 4,
+  kViewAnchorLoopStart = 5,
 };
 
 // View window into the sample: viewStart is the first visible frame,
@@ -630,24 +673,33 @@ static int slicePreviewActive;
 // Smallest zoomed window in frames
 static constexpr uint32_t kMinViewSpan = 8;
 
-// Fixed zoom span for fine adjustments: one second of audio, clamped to
-// the sample length. Samples that fit inside the window keep the full 1:1
+// Fixed zoom span for fine adjustments: 5/7 of a second of audio (40%
+// more magnification than the previous one-second window), clamped to the
+// sample length. Samples that fit inside the window keep the full 1:1
 // view; longer ones always show the same time span, so the window stays
 // readable on short one-shots and long recordings alike.
 static uint32_t zoomSpan(const InstrumentSample* sample) {
   const uint32_t frameCount = sample->frameCount;
   uint32_t rate = sample->sampleRate;
   if (rate == 0) rate = 44100; // fresh samples: assume the default rate
-  const uint64_t window = (uint64_t)rate;
+  const uint64_t window = (uint64_t)rate * 5 / 7;
   if (frameCount <= window) return frameCount; // whole sample fits: 1:1
   uint32_t span = (uint32_t)window;
   if (span < kMinViewSpan) span = kMinViewSpan;
   return span;
 }
 
+// Frame step for fine adjustments, scaled with the zoom window: the
+// on-screen step distance stays constant while the absolute precision
+// improves with the 40% tighter window (20 frames -> 14, 10 -> 7).
+static uint32_t zoomFineStep(uint32_t baseStep) {
+  return baseStep * 5 / 7;
+}
+
 // Frame position of the view anchor: a playback marker (1 = Start, 2 = End,
 // before the reverse-order swap - the zoom anchor follows the marker itself,
-// not the active region) or a selection handle (3/4).
+// not the active region), a selection handle (3/4) or the loop start
+// marker (5).
 static uint32_t anchorFrame(const InstrumentSample* sample,
                             const SampleEditorSelection* selection, int anchor) {
   switch (anchor) {
@@ -655,6 +707,7 @@ static uint32_t anchorFrame(const InstrumentSample* sample,
     case kViewAnchorEnd: return sampleMarkerToEndFrame(sample->frameCount, sample->end);
     case kViewAnchorSelStart: return selection->start;
     case kViewAnchorSelEnd: return selection->end;
+    case kViewAnchorLoopStart: return sampleMarkerToStartFrame(sample->frameCount, sample->loopStart);
     default: return 0;
   }
 }
@@ -677,8 +730,9 @@ static int frameToPixel(uint32_t frame, const SampleEditorView* view, int width,
   return x < width ? x : width - 1;
 }
 
-// Zooms to the fixed span (one second of audio) around markerFrame, keeping
-// the marker at its relative position inside the window (the first zoom from
+// Zooms to the fixed span (5/7 of a second of audio) around markerFrame,
+// keeping the marker at its relative position inside the window (the first
+// zoom from
 // the full view centers it). When the marker would sit at a window edge it
 // pans just enough to keep a small margin, so repeated fine steps follow
 // the marker without drift. The span never shrinks: every fine step shows
@@ -729,9 +783,11 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
   Bitmap* markers = ensurePreviewBitmap(&sampleSliceMarkerBitmap);
   Bitmap* startMarker = ensurePreviewBitmap(&sampleStartMarkerBitmap);
   Bitmap* endMarker = ensurePreviewBitmap(&sampleEndMarkerBitmap);
+  Bitmap* loopStartMarker = ensurePreviewBitmap(&sampleLoopStartMarkerBitmap);
   Bitmap* selectionBand = ensurePreviewBitmap(&sampleSelectionBitmap);
   Bitmap* sliceBand = ensurePreviewBitmap(&sampleSliceBandBitmap);
-  if (!waveform || !markers || !startMarker || !endMarker || !selectionBand || !sliceBand) return;
+  if (!waveform || !markers || !startMarker || !endMarker || !loopStartMarker ||
+      !selectionBand || !sliceBand) return;
 
   // Calculate actual start/end positions in frames
   uint32_t frameCount = sample->frameCount;
@@ -768,6 +824,20 @@ static void updateSamplePreview(const InstrumentSample* sample, const SampleEdit
     if (endX >= 0) {
       for (int y = 0; y < height; y++) {
         endMarker->data[y * width + endX] = 255;
+      }
+    }
+  }
+  // Create the loop start marker (single vertical line): the loop wrap
+  // point, drawn whenever the marker is not at 0 - regardless of whether
+  // looping is enabled in the instrument view or overridden by SPL, and
+  // regardless of the stretch mode. The frame is clamped into the region
+  // exactly like the voice clamps it.
+  gfxBitmapClear(loopStartMarker);
+  if (sample->loopStart != 0) {
+    const int loopX = frameToPixel(loopStartDisplayFrame(sample), view, width, 0);
+    if (loopX >= 0) {
+      for (int y = 0; y < height; y++) {
+        loopStartMarker->data[y * width + loopX] = 255;
       }
     }
   }
@@ -914,6 +984,12 @@ static void drawSamplePreview(void) {
     gfxSetFgColor(0xFFA500); // Orange
     gfxDrawBitmap(sampleEndMarkerBitmap, 0, previewRow);
   }
+  // Draw the loop start marker (red) - only populated when a loop is
+  // active; the bitmap is empty (nothing drawn) otherwise.
+  if (sampleLoopStartMarkerBitmap) {
+    gfxSetFgColor(0xFF0000); // Red
+    gfxDrawBitmap(sampleLoopStartMarkerBitmap, 0, previewRow);
+  }
   // Draw the slice markers on top (dark orange, 2px wide)
   if (sampleSliceMarkerBitmap) {
     gfxSetFgColor(0xFF8C00); // Dark orange
@@ -923,12 +999,14 @@ static void drawSamplePreview(void) {
 
 static int settingsColumnCount(int row) {
   // Input row: source + meter + MON; Record row: button + CLEAR;
-  // Region/Select rows: START + END; Slice row: Mode + Count + Slice +
-  // Frame; Process row: op + GO + UNDO; File row: action + GO
+  // Region/Select rows: START + END; Loop row: loop start + speed
+  // algorithm; Slice row: Mode + Count + Slice + Frame; Process row: op +
+  // GO + UNDO; File row: action + GO
   if (row == 0) return 3;
   if (row == 1) return recordState == RecordState::complete ? 2 : 1;
   if (row == 2 || row == 3) return 2;
   if (row == 4) return 4;
+  if (row == 5) return 2;
   if (row == 6) return 3;
   if (row == 7) return 2;
   return 1;
@@ -971,8 +1049,10 @@ static void settingsDrawStatic(void) {
   gfxPrint(0, fieldY(3), "Select");
   gfxPrint(markerLabelX, fieldY(3), "START");
   gfxPrint(endLabelX, fieldY(3), "END");
+  gfxPrint(0, fieldY(5), "Loop");
+  gfxPrint(loopStartLabelX, fieldY(5), "START");
+  gfxPrint(spdAlgoLabelX, fieldY(5), "SPD ALGO");
   gfxPrint(0, fieldY(4), "Slice");
-  gfxPrint(0, fieldY(5), "Spd algo");
   gfxPrint(0, fieldY(6), "Process");
   gfxPrint(0, fieldY(7), "File");
 }
@@ -993,6 +1073,10 @@ static void settingsDrawCursor(int col, int row) {
     const int w = col == 0 ? sliceModeW : col == 1 ? sliceNumW :
                   col == 2 ? sliceBrowseW : sliceFrameW;
     gfxCursor(x, fieldY(row), w);
+  } else if (row == 5) {
+    // Loop row: LST value + speed algorithm
+    gfxCursor(col == 0 ? loopStartValX : spdAlgoValX, fieldY(row),
+              col == 0 ? loopStartValWidth : spdAlgoValWidth);
   } else if (row == 6) {
     gfxCursor(col == 0 ? valueX : col == 1 ? goX : undoX, fieldY(row),
               col == 0 ? opWidth : col == 1 ? goWidth : undoWidth);
@@ -1084,9 +1168,23 @@ static void settingsDrawField(int col, int row, CellState state) {
     return;
   }
   if (row == 5) {
-    gfxClearRect(valueX, fieldY(row), sliceWidth, 1);
-    gfxPrint(valueX, fieldY(row),
-             speedAlgorithmLabels[sample->speedAlgorithm <= 1 ? sample->speedAlgorithm : 0]);
+    // Loop row: the LOOP START marker readout (hex frame, always
+    // adjustable - it is ignored in playback while no loop is active)
+    // and the speed algorithm selector.
+    if (col == 0) {
+      gfxClearRect(loopStartValX, fieldY(row), loopStartValWidth, 1);
+      if (!sample->data || sample->frameCount == 0) {
+        gfxPrint(loopStartValX, fieldY(row), "------");
+      } else {
+        char text[16];
+        snprintf(text, sizeof(text), "%06X", (unsigned)loopStartDisplayFrame(sample));
+        gfxPrint(loopStartValX, fieldY(row), text);
+      }
+    } else {
+      gfxClearRect(spdAlgoValX, fieldY(row), spdAlgoValWidth, 1);
+      gfxPrint(spdAlgoValX, fieldY(row),
+               speedAlgorithmLabels[sample->speedAlgorithm <= 1 ? sample->speedAlgorithm : 0]);
+    }
     return;
   }
   if (row == 2 || row == 3) {
@@ -1190,7 +1288,11 @@ static void sampleEditorNormalizeState(const InstrumentSample* sample,
       // Drop the anchor when its marker no longer exists (empty selection,
       // or a playback marker that fell outside the sample)
       uint32_t frame = anchorFrame(sample, selection, view->anchor);
-      if (view->anchor >= kViewAnchorSelStart && !selection->active) {
+      // Selection-handle anchors die with the selection; the loop start
+      // anchor is a playback marker and only dies when its frame leaves
+      // the view (checked below).
+      if ((view->anchor == kViewAnchorSelStart || view->anchor == kViewAnchorSelEnd) &&
+          !selection->active) {
         view->anchor = kViewAnchorNone;
       } else if (frame < view->viewStart || frame > view->viewEnd) {
         view->anchor = kViewAnchorNone;
@@ -1212,6 +1314,7 @@ static void settingsRepaintAfterOp(void) {
     }
   }
   settingsDrawField(0, 5, CellState::normal);
+  settingsDrawField(1, 5, CellState::normal);
   settingsDrawField(0, 6, CellState::normal);
   settingsDrawField(1, 6, CellState::normal);
   settingsDrawField(2, 6, CellState::normal);
@@ -1512,9 +1615,11 @@ static void recordStop(void) {
   }
   Instrument* instrument = &chipnomadState->project.instruments[recordInstrument];
   // A fresh recording starts with the full playback region, and an empty
-  // instrument name picks up the file name (same as a file load).
+  // instrument name picks up the file name (same as a file load). The loop
+  // wrap marker belongs to the old audio, so it resets too.
   sample->start = 0;
   sample->end = 255;
+  sample->loopStart = 0;
   if (!instrument->name[0]) {
     const char* separator = strrchr(recordFilePath, PATH_SEPARATOR);
     const char* filename = separator ? separator + 1 : recordFilePath;
@@ -1908,8 +2013,8 @@ static int settingsSliceBrowseEdit(InstrumentSample* sample, CellEditAction acti
 }
 
 // Frame cell (col 2): EDIT+Left/Right nudges the current slice's start by
-// +-10 frames (zoomed fine steps of +-1 while EDIT is held); EDIT+Up/Down
-// moves by +-100.
+// a scaled fine step (10 * 5/7 = 7 frames, zoomed fine steps of +-1 while
+// EDIT is held); EDIT+Up/Down moves by +-100.
 static int settingsSliceFrameEdit(InstrumentSample* sample, CellEditAction action) {
   const SliceMode mode = sampleDecodeSliceMode(sample->slice);
   if (mode == sliceModeOff) return 0;
@@ -1917,7 +2022,7 @@ static int settingsSliceFrameEdit(InstrumentSample* sample, CellEditAction actio
       action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig) {
     const int fine = action == CellEditAction::increase || action == CellEditAction::decrease;
     const int up = action == CellEditAction::increase || action == CellEditAction::increaseBig;
-    const int32_t delta = (up ? 1 : -1) * (fine ? 10 : 100);
+    const int32_t delta = (up ? 1 : -1) * (fine ? (int32_t)zoomFineStep(10) : 100);
     const int32_t frame = sampleSliceNudge(sample, (uint8_t)currentSlice, delta);
     if (frame < 0) return 0;
     // Fine steps zoom onto the nudged marker so the waveform shows exactly
@@ -2013,13 +2118,55 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
     return 1;
   }
   if (row == 5) {
-    if (col) return 0;
+    if (col == 0) {
+      // LOOP START: always adjustable (it is ignored in playback while
+      // no loop is active). Fine steps move one normalized unit and
+      // zoom onto the marker; coarse steps move 16 and return to the full
+      // view - the same convention as the Region row. EDIT+OPT snaps the
+      // marker back to the Region START (value 0).
+      action = convertMultiAction(action);
+      if (action == CellEditAction::clear) {
+        if (sample->loopStart != 0) handled = 1;
+        sample->loopStart = 0;
+      } else if (action == CellEditAction::increase || action == CellEditAction::decrease ||
+                 action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig) {
+        const int fine = action == CellEditAction::increase || action == CellEditAction::decrease;
+        const int up = action == CellEditAction::increase || action == CellEditAction::increaseBig;
+        const uint8_t step = fine ? 1 : 16;
+        uint8_t next;
+        if (up) next = sample->loopStart > 255 - step ? 255 : (uint8_t)(sample->loopStart + step);
+        else next = sample->loopStart < step ? 0 : (uint8_t)(sample->loopStart - step);
+        if (next != sample->loopStart) {
+          sample->loopStart = next;
+          handled = 1;
+        }
+      }
+      if (handled) {
+        projectModified = 1;
+        settingsDrawField(0, 5, CellState::focus);
+        // Same zoom-hold pattern as the Region markers: fine steps zoom
+        // onto the marker while EDIT stays down, coarse steps and clear
+        // return to the full-sample view.
+        if (action == CellEditAction::increase || action == CellEditAction::decrease) {
+          editorView.anchor = kViewAnchorLoopStart;
+          zoomToMarker(sample, &editorView, loopStartDisplayFrame(sample));
+          zoomHoldActive = 1;
+        } else {
+          zoomOutFull(sample, &editorView);
+          zoomHoldActive = 0;
+        }
+        sampleEditorNormalizeState(sample, &editorSelection, &editorView);
+        drawSamplePreview();
+      }
+      return handled;
+    }
+    // col 1: speed algorithm (unchanged behavior, new position)
     uint8_t algorithm = sample->speedAlgorithm <= 1 ? sample->speedAlgorithm : 0;
     handled = edit8noLast(action, &algorithm, 1, 0, 1);
     if (handled) {
       sample->speedAlgorithm = algorithm;
       projectModified = 1;
-      settingsDrawField(0, 5, CellState::focus);
+      settingsDrawField(1, 5, CellState::focus);
     }
     return handled;
   }
@@ -2093,6 +2240,19 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
       }
     }
     marker = col == 0 ? kViewAnchorStart : kViewAnchorEnd;
+    // Keep the loop start marker inside the playback region: when a Region
+    // edit moves the markers past it, snap the marker to the Region START
+    // (the same predictable behavior as the markers themselves when the
+    // region shrinks past them).
+    if (handled) {
+      const uint32_t regionStart = sampleMarkerToStartFrame(sample->frameCount, sample->start);
+      const uint32_t regionEnd = sampleMarkerToEndFrame(sample->frameCount, sample->end);
+      const uint32_t loopFrame = sampleMarkerToStartFrame(sample->frameCount, sample->loopStart);
+      if (loopFrame < regionStart || loopFrame >= regionEnd) {
+        sample->loopStart = sample->start;
+        settingsDrawField(0, 5, CellState::normal);
+      }
+    }
   } else if (row == 3) {
     // Select row: processing-selection handles. Fine steps move twenty
     // frames and zoom onto the handle; coarse steps jump frameCount/64 (min 16)
@@ -2114,8 +2274,9 @@ static int settingsOnEdit(int col, int row, CellEditAction action) {
       editorSelection.end = 0;
       handled = 1;
     } else {
-      // Fine steps move twenty frames; coarse steps jump frameCount/64 (min 16)
-      uint32_t step = 20;
+      // Fine steps move a scaled frame count (20 * 5/7 = 14); coarse steps
+      // jump frameCount/64 (min 16)
+      uint32_t step = zoomFineStep(20);
       if (action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig) {
         step = frameCount / 64;
         if (step < 16) step = 16;
@@ -2518,29 +2679,76 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
   }
   // LAZY: the Count box is display-only (hand-placed slices have no
   // division to recalculate), so the cursor skips it: horizontal moves
-  // step over col 1 and a vertical entry from the Select row lands on
-  // the Slice browser. The intercept runs before the framework
-  // navigation - its dead-cell recovery moves up a row instead of aside -
-  // and repaints the affected cells itself (row/col headers are no-ops).
+  // step over col 1. The intercept runs before the framework navigation -
+  // its dead-cell recovery moves up a row instead of aside - and repaints
+  // the affected cells itself (row/col headers are no-ops). Vertical moves
+  // are handled by the visual-order intercept below.
   if (isKeyDown && sampleDecodeSliceMode(sample->slice) == sliceModeLazy) {
     const int fromRow = screenSampleSettingsData.cursorRow;
     const int fromCol = screenSampleSettingsData.cursorCol;
-    int toRow = fromRow;
     int toCol = -1;
     if (fromRow == 4 && fromCol == 0 && keys == keyRight) {
       toCol = 2;
     } else if (fromRow == 4 && fromCol == 2 && keys == keyLeft) {
       toCol = 0;
-    } else if (fromRow == 3 && fromCol == 1 && keys == keyDown) {
-      toRow = 4;
-      toCol = 2;
     }
     if (toCol >= 0) {
-      screenSampleSettingsData.cursorRow = toRow;
+      screenSampleSettingsData.cursorRow = fromRow;
       screenSampleSettingsData.cursorCol = toCol;
       settingsDrawField(fromCol, fromRow, CellState::normal);
-      settingsDrawField(toCol, toRow, CellState::focus);
-      settingsDrawCursor(toCol, toRow);
+      settingsDrawField(toCol, fromRow, CellState::focus);
+      settingsDrawCursor(toCol, fromRow);
+      return 1;
+    }
+  }
+  // Vertical navigation follows the VISUAL row order, not the logical row
+  // order: the Loop row (logical 5) draws between Select (3) and Slice
+  // (4), so plain up/down must visit rows in the order they appear on
+  // screen (0,1,2,3,5,4,6,7). Columns map 1:1 (Select and Loop share x
+  // positions). The intercept mirrors the framework's conventions: clamp
+  // the column to the target row's width, skip dead cells by continuing
+  // the visual scan, and stay put when nothing valid remains. Runs before
+  // the framework navigation so the logical-order walk never fires.
+  if (isKeyDown && (keys == keyUp || keys == keyDown)) {
+    // Visual order: logical rows 5 and 4 are swapped on screen.
+    static const int visualOrder[8] = {0, 1, 2, 3, 5, 4, 6, 7};
+    int visIndex = -1;
+    for (int i = 0; i < 8; ++i) {
+      if (visualOrder[i] == screenSampleSettingsData.cursorRow) {
+        visIndex = i;
+        break;
+      }
+    }
+    if (visIndex >= 0) {
+      const int step = keys == keyDown ? 1 : -1;
+      const int fromRow = screenSampleSettingsData.cursorRow;
+      const int fromCol = screenSampleSettingsData.cursorCol;
+      int target = -1;
+      for (int i = visIndex + step; i >= 0 && i < 8; i += step) {
+        const int row = visualOrder[i];
+        int col = fromCol;
+        const int columns = settingsColumnCount(row);
+        if (col >= columns) col = columns - 1;
+        if (settingsIsCellValid(col, row)) {
+          target = i;
+          break;
+        }
+      }
+      if (target >= 0) {
+        const int toRow = visualOrder[target];
+        int toCol = fromCol;
+        const int columns = settingsColumnCount(toRow);
+        if (toCol >= columns) toCol = columns - 1;
+        if (toRow != fromRow || toCol != fromCol) {
+          screenSampleSettingsData.cursorRow = toRow;
+          screenSampleSettingsData.cursorCol = toCol;
+          settingsDrawField(fromCol, fromRow, CellState::normal);
+          settingsDrawField(toCol, toRow, CellState::focus);
+          settingsDrawCursor(toCol, toRow);
+        }
+        return 1;
+      }
+      // Nothing valid in the scan direction: stay put (framework parity).
       return 1;
     }
   }
