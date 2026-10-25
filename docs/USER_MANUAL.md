@@ -94,6 +94,7 @@ direct APK starts with a shared folder on Android 11 and later, but you can
 change it from that setting; on Android 10 it asks you to choose a folder.
 Use the Android file picker to import `.cct` projects
 and `.wav` samples, and to choose where WAV exports are saved.
+If an Android import or export fails, a message appears with the storage checks to try.
 
 ### Navigation
 

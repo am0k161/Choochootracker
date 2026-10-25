@@ -1048,9 +1048,13 @@ public final class ChooChooTrackerActivity extends SDLActivity {
         if (requestCode == CREATE_DOCUMENT) {
             try (InputStream input = openWorkspaceFile(exportPath);
                  java.io.OutputStream output = getContentResolver().openOutputStream(data.getData())) {
+                if (output == null) throw new IOException("Cannot open export destination");
                 byte[] buffer = new byte[32768];
-                for (int read; output != null && (read = input.read(buffer)) != -1;) output.write(buffer, 0, read);
-            } catch (Exception ignored) { }
+                for (int read; (read = input.read(buffer)) != -1;) output.write(buffer, 0, read);
+            } catch (Exception error) {
+                android.widget.Toast.makeText(this, "Export failed. Check folder access and free space.",
+                    android.widget.Toast.LENGTH_LONG).show();
+            }
             return;
         }
         if (requestCode != OPEN_DOCUMENT) return;
@@ -1070,9 +1074,13 @@ public final class ChooChooTrackerActivity extends SDLActivity {
         }
         try (InputStream input = getContentResolver().openInputStream(uri);
              java.io.OutputStream output = createWorkspaceFile(importDirectory, name)) {
+            if (input == null) throw new IOException("Cannot open import source");
             byte[] buffer = new byte[32768];
-            for (int read; input != null && (read = input.read(buffer)) != -1;) output.write(buffer, 0, read);
-        } catch (Exception ignored) { }
+            for (int read; (read = input.read(buffer)) != -1;) output.write(buffer, 0, read);
+        } catch (Exception error) {
+            android.widget.Toast.makeText(this, "Import failed. Check file access and free space.",
+                android.widget.Toast.LENGTH_LONG).show();
+        }
     }
 
     // Audio input recording (opt-in): SDL2's capture backend needs the
