@@ -1696,6 +1696,9 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples) {
       for (int t = 0; t < PROJECT_MAX_TRACKS; ++t)
         for (int v = 0; v < CHORD_MAX_VOICES; ++v)
           if (state->soundbankVoices[t][v]) state->soundbankVoices[t][v]->stopImmediately();
+      for (int t = 0; t < PROJECT_MAX_TRACKS; ++t)
+        for (int v = 0; v < CHORD_MAX_VOICES; ++v)
+          if (state->sampleVoices[t][v]) state->sampleVoices[t][v]->stopImmediately();
       auto& transition = state->stopTransition;
       if (!transition.pending && !transition.remaining &&
           (transition.last[0] != 0 || transition.last[1] != 0) &&
@@ -1725,7 +1728,8 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples) {
     renderMonoVoiceTracks(state, state->braidsVoices, output, frames);
     // Removed chord slots may still have a short de-click tail after KILL.
     renderStereoVoiceTracks(state, state->soundbankVoices, output, frames, true);
-    renderStereoVoiceTracks(state, state->sampleVoices, output, frames);
+    // Sample voices keep the same short de-click tail after KILL/retrigger.
+    renderStereoVoiceTracks(state, state->sampleVoices, output, frames, true);
     renderStereoVoiceTracks(state, state->scwfVoices, output, frames);
     renderMonoVoiceTracks(state, state->plaitsVoices, output, frames);
     renderMonoVoiceTracks(state, state->plaitsAltVoices, output, frames);
