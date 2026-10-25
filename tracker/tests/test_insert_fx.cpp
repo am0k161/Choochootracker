@@ -394,20 +394,20 @@ TEST_SUITE("track inserts") {
         CHECK(std::string(text) == "16 bit");
         insertDescribe(text, sizeof(text), insertBitcrusher, 1, 31);
         CHECK(std::string(text) == "32x");
-        insertDescribe(text, sizeof(text), insertDestruction, 4, 255);
+        insertDescribe(text, sizeof(text), insertDestruction, 1, 255);
         CHECK(std::string(text) == "128x");
   }
   TEST_CASE("Destruction chains four stages with a normal and experimental range") {
     CHECK(insertDescriptor(insertDestruction).count == 8);
-    for (int parameter = 0; parameter < 4; ++parameter) {
+    for (int parameter : {0, 2, 3, 4}) {
       CHECK(insertMap(insertDestruction, parameter, 0) == doctest::Approx(0));
       CHECK(insertMap(insertDestruction, parameter, 127) == doctest::Approx(1));
       CHECK(insertMap(insertDestruction, parameter, 128) > 1);
       CHECK(insertMap(insertDestruction, parameter, 255) == doctest::Approx(2));
     }
-    CHECK(insertMap(insertDestruction, 4, 0) == doctest::Approx(1));
-    CHECK(insertMap(insertDestruction, 4, 127) == doctest::Approx(16));
-    CHECK(insertMap(insertDestruction, 4, 255) == doctest::Approx(128));
+    CHECK(insertMap(insertDestruction, 1, 0) == doctest::Approx(1));
+    CHECK(insertMap(insertDestruction, 1, 127) == doctest::Approx(16));
+    CHECK(insertMap(insertDestruction, 1, 255) == doctest::Approx(128));
     CHECK(insertMap(insertDestruction, 7, 0) == doctest::Approx(0));
     CHECK(insertMap(insertDestruction, 7, 127) == doctest::Approx(12));
     CHECK(insertMap(insertDestruction, 7, 255) == doctest::Approx(36));

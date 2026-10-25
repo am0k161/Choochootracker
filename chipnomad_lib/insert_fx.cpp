@@ -95,11 +95,11 @@ static const InsertDescriptor descriptors[] = {
       {"Mix", "Mix", "%", 0, 1, 192, M::linear}}},
     {"Destruction",
      8,
-     {{"Fold", "Fold", "%", 0, 2, 0x18, M::linear},
-      {"Crush", "Crush", "%", 0, 2, 0, M::linear},
+     {{"Crush", "Crush", "%", 0, 2, 0, M::linear},
+      {"Rate", "Rate reduction", "x", 1, 128, 0, M::linear},
+      {"Fold", "Fold", "%", 0, 2, 0x18, M::linear},
       {"Distort", "Distort", "%", 0, 2, 0x24, M::linear},
       {"Saturate", "Saturate", "%", 0, 2, 0, M::linear},
-      {"Rate", "Rate reduction", "x", 1, 128, 0, M::linear},
       {"Tone", "Tone", "Hz", 500, 18000, 255, M::exponential},
       {"Mix", "Mix", "%", 0, 1, 255, M::linear},
       {"Input", "Input", "dB", 0, 36, 0, M::linear}}},
@@ -163,9 +163,9 @@ float insertMap(int m, int p, int v) {
   if (p < 0 || p >= d.count) return 0;
   const auto& a = d.parameters[p];
   v = insertClamp(m, p, v);
-  if (m == insertDestruction && p < 4)
+  if (m == insertDestruction && (p == 0 || (p >= 2 && p <= 4)))
     return v <= 127 ? v / 127.0f : 1.0f + (v - 127) / 128.0f;
-  if (m == insertDestruction && p == 4)
+  if (m == insertDestruction && p == 1)
     return v <= 127 ? 1.0f + 15.0f * v / 127.0f
                     : 16.0f + 112.0f * (v - 127) / 128.0f;
   if (m == insertDestruction && p == 7)
@@ -231,7 +231,7 @@ void insertDescribe(char* text, size_t size, int m, int p, int value) {
     snprintf(text, size, "%dx", (int)v + 1);
   } else if (m == insertPhaser && p == 4) {
     snprintf(text, size, "%d stages", (int)v + 4);
-  } else if (m == insertDestruction && p == 4) {
+  } else if (m == insertDestruction && p == 1) {
     snprintf(text, size, "%dx", (int)roundf(v));
   } else if (m == insertCompressor && p == 4) {
     static const float n[] = {1.5f, 2, 3, 4, 6, 8, 16, 20};
@@ -746,12 +746,12 @@ struct InsertChain::Impl {
           const auto drive = [](float amount) {
             return amount <= 1.0f ? 1.0f + 7.0f * amount : 8.0f + 24.0f * (amount - 1.0f);
           };
-          const float foldDrive = drive(p[0]), distortDrive = drive(p[2]);
-          const float saturateDrive = drive(p[3]);
-          const int bits = std::max(1, (int)roundf(p[1] <= 1.0f
-              ? 16.0f - 12.0f * p[1] : 4.0f - 3.0f * (p[1] - 1.0f)));
+          const float foldDrive = drive(p[2]), distortDrive = drive(p[3]);
+          const float saturateDrive = drive(p[4]);
+          const int bits = std::max(1, (int)roundf(p[0] <= 1.0f
+              ? 16.0f - 12.0f * p[0] : 4.0f - 3.0f * (p[0] - 1.0f)));
           const float levels = (float)((1 << (bits - 1)) - 1);
-          const int hold = (int)roundf(p[4]);
+          const int hold = (int)roundf(p[1]);
           const float inputGain = powf(10.0f, p[7] / 20.0f);
           const float dcPole = expf(-6.28318530718f * 20.0f / rate);
           const float meter = coefficient(3.2f, rate);       // ~50 ms RMS window
@@ -762,11 +762,11 @@ struct InsertChain::Impl {
             float wet[2];
             wet[0] = dry[0] * inputGain;
             wet[1] = dry[1] * inputGain;
-            if (values[1] || values[4]) {
+            if (values[0] || values[1]) {
               if (s.holdCounter == 0) {
                 for (int ch = 0; ch < 2; ++ch) {
                   float x = std::clamp(wet[ch], -1.0f, 1.0f);
-                  s.held[ch] = !values[1] ? x : bits == 1
+                  s.held[ch] = !values[0] ? x : bits == 1
                       ? (x > 0 ? 1.0f : x < 0 ? -1.0f : 0.0f)
                       : roundf(x * levels) / levels;
                 }
@@ -777,15 +777,15 @@ struct InsertChain::Impl {
             } else s.holdCounter = 0;
             for (int ch = 0; ch < 2; ++ch) {
               float x = wet[ch];
-              if (values[0]) {
+              if (values[2]) {
                 float wrapped = fmodf(x * foldDrive + 1.0f, 4.0f);
                 if (wrapped < 0) wrapped += 4.0f;
                 x = 0.95f * (1.0f - fabsf(wrapped - 2.0f))
                     + 0.05f * std::clamp(x, -1.0f, 1.0f);
               }
-              if (values[2]) {
-                float ceiling = 1.0f - 0.45f * std::min(p[2], 1.0f)
-                                      - 0.35f * std::max(p[2] - 1.0f, 0.0f);
+              if (values[3]) {
+                float ceiling = 1.0f - 0.45f * std::min(p[3], 1.0f)
+                                      - 0.35f * std::max(p[3] - 1.0f, 0.0f);
                 x = std::clamp(x * distortDrive, -1.0f, ceiling);
                 float dc = x - s.destructionDcInput[ch] + dcPole * s.destructionDcOutput[ch];
                 s.destructionDcInput[ch] = x;
@@ -795,7 +795,7 @@ struct InsertChain::Impl {
                 s.destructionDcInput[ch] = x;
                 s.destructionDcOutput[ch] = x;
               }
-              if (values[3]) x = std::clamp(x * saturateDrive, -1.0f, 1.0f);
+              if (values[4]) x = std::clamp(x * saturateDrive, -1.0f, 1.0f);
               if (values[5] == 255) s.filter[ch] = x;
               wet[ch] = values[5] == 255 ? x : lowpass(s, ch, x);
             }
