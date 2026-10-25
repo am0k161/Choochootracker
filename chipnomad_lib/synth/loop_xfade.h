@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <cmath>
 
 // Seamless loop crossfade for sample voices.
 //
@@ -19,7 +20,7 @@
 //
 // Real-time safety: all state is member-resident, no allocation, no locks,
 // no transcendentals on the audio thread. The equal-power curve is a
-// compile-time 256-entry table.
+// 256-entry table initialized before playback.
 class LoopXfade {
  public:
   LoopXfade() = default;
@@ -138,14 +139,11 @@ class LoopXfade {
   // Current fade phase in frames (for tests and diagnostics).
   double phase() const { return phase_; }
 
-  // Equal-power gain tables, computed at compile time. Defined after the
-  // class: a constexpr constructor cannot run in a constant expression
-  // until its class is fully defined, so the instance cannot be a static
-  // member initialized inside the class body.
+  // Equal-power gain tables, initialized once before playback.
   struct Tables {
     float out[256] = {};
     float in[256] = {};
-    constexpr Tables();
+    Tables();
   };
   float gainOut(int index) const;
   float gainIn(int index) const;
@@ -168,27 +166,19 @@ class LoopXfade {
 namespace loopxfade {
 constexpr int kTableBits = 15;
 constexpr int32_t kTableScale = 1 << kTableBits;
-constexpr int32_t quantizeCos(int i) {
-  // 32768 * cos(i * pi / 2 / 255), rounded. The angle step is pi/510:
-  // i runs 0..255 across a quarter period. Evaluated by the compiler;
-  // no runtime trig.
-  const double angle = (double)i * 3.14159265358979323846 / 510.0;
-  return (int32_t)(kTableScale * __builtin_cos(angle) + 0.5);
-}
-constexpr int32_t quantizeSin(int i) {
-  const double angle = (double)i * 3.14159265358979323846 / 510.0;
-  return (int32_t)(kTableScale * __builtin_sin(angle) + 0.5);
-}
 }  // namespace loopxfade
 
-inline constexpr LoopXfade::Tables::Tables() {
+inline LoopXfade::Tables::Tables() {
   for (int i = 0; i < 256; ++i) {
-    out[i] = (float)loopxfade::quantizeCos(i) / (float)loopxfade::kTableScale;
-    in[i] = (float)loopxfade::quantizeSin(i) / (float)loopxfade::kTableScale;
+    const double angle = (double)i * 3.14159265358979323846 / 510.0;
+    out[i] = (float)(int32_t)(loopxfade::kTableScale * std::cos(angle) + 0.5) /
+             (float)loopxfade::kTableScale;
+    in[i] = (float)(int32_t)(loopxfade::kTableScale * std::sin(angle) + 0.5) /
+            (float)loopxfade::kTableScale;
   }
 }
 
-inline constexpr LoopXfade::Tables kLoopXfadeTables{};
+inline const LoopXfade::Tables kLoopXfadeTables{};
 
 inline float LoopXfade::gainOut(int index) const { return kLoopXfadeTables.out[index]; }
 inline float LoopXfade::gainIn(int index) const { return kLoopXfadeTables.in[index]; }
