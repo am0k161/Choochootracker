@@ -1405,7 +1405,7 @@ the current screen.
 | Rotary | Speed, Depth, Drive, Mix |
 | Saturation | Drive, Tone, Level, Mix |
 | Bitcrusher | Bit depth, Rate reduction, Tone, Mix |
-| Destruction | Mode, Amount, Tone, Mix |
+| Destruction | Fold, Crush, Distort, Saturate, Rate, Tone, Mix, Input |
 | FORMANT | Mode, Vowel, First formant, Second formant, Resonance, Mix |
 
 Continuous controls use 00–FF, except FORMANT VOW (00–7F). Bipolar
@@ -1424,7 +1424,20 @@ control over slow LFO movement. New Rotary inserts default to **8F**, about
 and F11/F21 speed automation need retuning to the new scale (old Slow/Fast/Hyper/
 Chaos correspond approximately to **8F/CB/E7/FF**). Other parameters are unchanged.
 Bitcrusher bit depth ranges from 4 to 16 bits and
-rate reduction from 1x to 32x. Destruction modes are Fold, Clip and Crush.
+rate reduction from 1x to 32x. Destruction processes Crush (including Rate),
+then Fold, asymmetric Distort and hard-clip Saturate. The control order keeps
+Fold at F11 and Crush at F12; the audio chain starts with Crush so later stages
+reshape its digital grain. Each stage is off at `00`. Values
+`00-7F` cover the normal range and `80-FF` extend it: Fold, Distort and Saturate
+reach about 8x drive at `7F` and 32x at `FF`; Crush reaches 4 bits then 1 bit.
+Rate reduces the sample rate from 1x through 16x at `7F` to 128x at `FF`, and
+can be used independently of Crush's bit reduction. Input adds up to 12 dB at
+`7F` and 36 dB at `FF`. Tone is a post-effect low-pass filter, bypassed at
+`FF`. A shared stereo auto-level stage smooths level changes and limits its
+correction to -36/+18 dB; very quiet or strongly cancelled signals can still
+change in perceived loudness. Existing projects retain their Destruction bytes
+without conversion. Its old parameters are reinterpreted, so an old project
+can sound different or dry until Mix and the stages are edited.
 Saturation and distortion include output level or mix controls for balancing them
 against the unprocessed signal.
 

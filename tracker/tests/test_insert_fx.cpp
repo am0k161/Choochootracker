@@ -267,7 +267,7 @@ TEST_SUITE("track inserts") {
     CHECK(fxF11 > fxATY);
     CHECK(fxF28 < 255);
     CHECK(genericModFirstInsert == 29);
-    const int counts[] = {0, 8, 4, 2, 6, 6, 5, 4, 5, 4, 4, 4, 4, 6, 8, 8, 6};
+    const int counts[] = {0, 8, 4, 2, 6, 6, 5, 4, 5, 4, 4, 4, 8, 6, 8, 8, 6};
     static_assert(sizeof(counts) / sizeof(counts[0]) == insertModuleCount, "Test covers every module");
     for (int m = 0; m < insertModuleCount; ++m) {
       CHECK(insertDescriptor(m).count == counts[m]);
@@ -365,7 +365,8 @@ TEST_SUITE("track inserts") {
           InsertAutomation automation{};
           InsertChain chain(48000);
           REQUIRE(chain.ready());
-          insertEdit(&c[0], 3, 0);
+          int mixParameter = module == insertDestruction ? 6 : 3;
+          insertEdit(&c[0], mixParameter, 0);
           chain.sync(c, &automation);
           uint8_t v[2][8];
           values(c, v);
@@ -374,7 +375,7 @@ TEST_SUITE("track inserts") {
           chain.process(out.data(), 4096, v);
           CHECK(out == dry);
 
-          insertEdit(&c[0], 3, 255);
+          insertEdit(&c[0], mixParameter, 255);
           chain.sync(c, &automation);
           values(c, v);
           out = dry;
@@ -393,8 +394,95 @@ TEST_SUITE("track inserts") {
         CHECK(std::string(text) == "16 bit");
         insertDescribe(text, sizeof(text), insertBitcrusher, 1, 31);
         CHECK(std::string(text) == "32x");
-        insertDescribe(text, sizeof(text), insertDestruction, 0, 2);
-        CHECK(std::string(text) == "Crush");
+        insertDescribe(text, sizeof(text), insertDestruction, 4, 255);
+        CHECK(std::string(text) == "128x");
+  }
+  TEST_CASE("Destruction chains four stages with a normal and experimental range") {
+    CHECK(insertDescriptor(insertDestruction).count == 8);
+    for (int parameter = 0; parameter < 4; ++parameter) {
+      CHECK(insertMap(insertDestruction, parameter, 0) == doctest::Approx(0));
+      CHECK(insertMap(insertDestruction, parameter, 127) == doctest::Approx(1));
+      CHECK(insertMap(insertDestruction, parameter, 128) > 1);
+      CHECK(insertMap(insertDestruction, parameter, 255) == doctest::Approx(2));
+    }
+    CHECK(insertMap(insertDestruction, 4, 0) == doctest::Approx(1));
+    CHECK(insertMap(insertDestruction, 4, 127) == doctest::Approx(16));
+    CHECK(insertMap(insertDestruction, 4, 255) == doctest::Approx(128));
+    CHECK(insertMap(insertDestruction, 7, 0) == doctest::Approx(0));
+    CHECK(insertMap(insertDestruction, 7, 127) == doctest::Approx(12));
+    CHECK(insertMap(insertDestruction, 7, 255) == doctest::Approx(36));
+
+    const int neutral[8] = {0, 0, 0, 0, 0, 255, 255, 0};
+    auto render = [&](int parameter, int value) {
+      InsertConfig c[2]{};
+      insertSelect(&c[0], insertDestruction);
+      for (int p = 0; p < 8; ++p) insertEdit(&c[0], p, neutral[p]);
+      if (parameter >= 0) insertEdit(&c[0], parameter, value);
+      InsertAutomation automation{};
+      InsertChain chain(48000);
+      REQUIRE(chain.ready());
+      chain.sync(c, &automation);
+      uint8_t effective[2][8];
+      values(c, effective);
+      auto audio = signal(48000);
+      chain.process(audio.data(), 48000, effective);
+      return audio;
+    };
+    auto dry = signal(48000);
+    CHECK(render(-1, 0) == dry);
+    auto rms = [](const std::vector<float>& audio) {
+      double power = 0;
+      for (size_t i = audio.size() / 2; i < audio.size(); ++i)
+        power += audio[i] * audio[i];
+      return sqrt(power / (audio.size() / 2));
+    };
+    const double dryRms = rms(dry);
+    for (int stage = 0; stage < 5; ++stage) {
+      for (int value : {127, 255}) {
+        CAPTURE(stage); CAPTURE(value);
+        auto wet = render(stage, value);
+        CHECK(wet != dry);
+        CHECK(rms(wet) > dryRms * 0.70);
+        CHECK(rms(wet) < dryRms * 1.42);
+        for (float sample : wet) CHECK(std::isfinite(sample));
+      }
+    }
+    auto extreme = render(7, 255);
+    CHECK(rms(extreme) > dryRms * 0.70);
+    CHECK(rms(extreme) < dryRms * 1.42);
+  }
+  TEST_CASE("Destruction auto level settles after a jump into the experimental range") {
+    InsertConfig config[2]{};
+    insertSelect(&config[0], insertDestruction);
+    const int neutral[8] = {0, 0, 0, 0, 0, 255, 255, 0};
+    for (int parameter = 0; parameter < 8; ++parameter)
+      insertEdit(&config[0], parameter, neutral[parameter]);
+    InsertAutomation automation{};
+    InsertChain chain(48000);
+    REQUIRE(chain.ready());
+    chain.sync(config, &automation);
+    uint8_t effective[2][8];
+    values(config, effective);
+    auto dry = signal(48000), before = dry, after = dry;
+    chain.process(before.data(), 48000, effective);
+    CHECK(before == dry);
+    for (int parameter : {0, 1, 2, 3, 4, 7}) insertEdit(&config[0], parameter, 255);
+    chain.sync(config, &automation);
+    values(config, effective);
+    chain.process(after.data(), 48000, effective);
+    auto rms = [](const std::vector<float>& audio, size_t first, size_t count) {
+      double power = 0;
+      for (size_t i = first; i < first + count; ++i) power += audio[i] * audio[i];
+      return sqrt(power / count);
+    };
+    CHECK(rms(after, 0, 960) < rms(dry, 0, 960) * 2.0);
+    CHECK(rms(after, 48000, 48000) > rms(dry, 48000, 48000) * 0.70);
+    CHECK(rms(after, 48000, 48000) < rms(dry, 48000, 48000) * 1.42);
+    for (float sample : after) CHECK(std::isfinite(sample));
+    std::vector<float> silence(9600 * 2, 0);
+    chain.process(silence.data(), 9600, effective);
+    for (size_t i = silence.size() / 2; i < silence.size(); ++i)
+      CHECK(fabsf(silence[i]) < .001f);
   }
   TEST_CASE("chorus and phaser extend from subtle to extreme modulation") {
     for (int module : {insertChorus, insertPhaser}) {
