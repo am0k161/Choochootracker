@@ -23,8 +23,9 @@ class SampleVoice {
   void noteOn();
   void noteOff();
   void kill();
+  void stopImmediately(); // Transport output owns the final fade after rendering ends.
   void render(float* output, size_t frames);
-  bool active() const { return active_; }
+  bool active() const { return active_ || transitionPending_ || transitionFrames_ > 0; }
   float envelopeLevel() const { return post_.envelopeLevel(); }
   // Current playback position in source sample frames, whichever render
   // path is active: the stretch processor's read cursor, the granular
@@ -77,6 +78,7 @@ class SampleVoice {
   // crossfade when the playhead enters the fade window.
   double seamDistance() const;
   void wrap();
+  void renderTailFrame(float* frame);
   float sampleAt(double position, int channel) const;
   float grainSampleAt(double position, int channel) const;
   VoicePostProcessor<> post_;
@@ -84,6 +86,12 @@ class SampleVoice {
   float rampFrom_[2] = {0.0f, 0.0f};
   uint32_t rampRemaining_ = 0;
   uint32_t rampFrames_ = 1;
+  // De-click tail: after kill() the voice keeps rendering a short linear
+  // fade from the output captured at the cut down to silence.
+  float tailFrom_[2] = {0.0f, 0.0f};
+  uint32_t transitionFrames_ = 0;
+  uint32_t transitionLength_ = 144;
+  bool transitionPending_ = false;
 };
 
 uint8_t sampleNormalizeSlice(uint8_t slice);

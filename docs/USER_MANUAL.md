@@ -60,6 +60,8 @@ preserved. Input polling and app timers keep their usual cadence.
 
 The current project is autosaved every minute and on exit as `autosave.cct` next to the app. If the autosave cannot be loaded at startup, the title screen says so and the demo project opens instead. The unreadable file is kept as `autosave.cct.unreadable` (then `-2`, `-3`, ...) so later autosaves never overwrite it, and the work in it can still be recovered.
 
+If a manual save or autosave fails while the app is open, an error appears on screen. Keep the project open and retry after checking the working folder and free storage.
+
 ## 2. Controls
 
 ChooChooTracker works best with a gamepad that has a D-pad, 2 analogue sticks and 7 buttons.
@@ -92,6 +94,7 @@ direct APK starts with a shared folder on Android 11 and later, but you can
 change it from that setting; on Android 10 it asks you to choose a folder.
 Use the Android file picker to import `.cct` projects
 and `.wav` samples, and to choose where WAV exports are saved.
+If an Android import or export fails, a message appears with the storage checks to try.
 
 ### Navigation
 
@@ -1357,10 +1360,12 @@ In Link mode the session owns the tempo: the row shows no BPM field, and the ses
 - **MIDI** opens the [MIDI](#14-midi) submenu: device selection and the MIDI In channel-to-instrument mapping.
 - **Synths** contains **AY Quality**, **Sample dithering**, and global **Braids BITS / DRFT / SIGN** settings.
 - **Mixer** contains **Mix volume** and the per-project `250-4000 Hz` **Tilt pivot** (default `1 kHz`) used by all Mixer Tilt controls.
-- **Graphics** contains **Edit color theme**, **Load font**, **Persistent waveform**, **Track visuals**, **Waveform FPS**, and the active renderer (`GPU` or `Software`). **Waveform FPS** sets the refresh rate of the instrument scope and mixer visualizers from `01` to `60`. Track visuals selects **Detailed** (the synth waveform and its overlays) or **Audio waveform** (the actual summed output of that track) independently for every track; audio waveform clears any prior ADSR overlay immediately when playback starts. ChipNomad fonts and themes should work.
+- **Graphics** contains **Edit color theme**, **Load font**, **Persistent waveform**, **Track visuals**, **Waveform FPS**, **Boot screen**, and the playback counter settings. **Waveform FPS** sets the refresh rate of the instrument scope and mixer visualizers from `01` to `60`. Track visuals selects **Detailed** (the synth waveform and its overlays) or **Audio waveform** (the actual summed output of that track) independently for every track; audio waveform clears any prior ADSR overlay immediately when playback starts. ChipNomad fonts and themes should work.
 - **Key mapping** customises the controls.
 - **Support report** writes a small diagnostic text file with the app version, platform, audio settings and CPU load, playback/overflow state, and a compact project summary. It does not include sample data or project title/author text. On Android and Web it opens the normal export/download flow; desktop and handheld builds save `support-report.txt` in the app's writable folder.
 - **Quit ChooChooTracker** exits cleanly.
+
+The playback counter sits above the track list on the right. **Playback counter** selects **Bars** (`B00000`, the default) or **Time** (`00:00`). **Rows per bar** defaults to `16` and **Ticks per row** to `6`, so a bar is 96 elapsed playback ticks regardless of the project's groove. Both values can be changed in Graphics. The count continues across song loops, keeps its last value after stopping, and resets when playback starts again. Time uses the audio clock, including changes in tempo.
 
 ## 13. Performance and troubleshooting
 
@@ -1423,7 +1428,7 @@ the current screen.
 | Rotary | Speed, Depth, Drive, Mix |
 | Saturation | Drive, Tone, Level, Mix |
 | Bitcrusher | Bit depth, Rate reduction, Tone, Mix |
-| Destruction | Mode, Amount, Tone, Mix |
+| Destruction | Crush, Rate, Fold, Distort, Saturate, Tone, Mix, Input |
 | FORMANT | Mode, Vowel, First formant, Second formant, Resonance, Mix |
 
 Continuous controls use 00–FF, except FORMANT VOW (00–7F). Bipolar
@@ -1442,7 +1447,20 @@ control over slow LFO movement. New Rotary inserts default to **8F**, about
 and F11/F21 speed automation need retuning to the new scale (old Slow/Fast/Hyper/
 Chaos correspond approximately to **8F/CB/E7/FF**). Other parameters are unchanged.
 Bitcrusher bit depth ranges from 4 to 16 bits and
-rate reduction from 1x to 32x. Destruction modes are Fold, Clip and Crush.
+rate reduction from 1x to 32x. Destruction processes Crush and Rate first,
+then Fold, asymmetric Distort and hard-clip Saturate. The controls follow the
+audio chain: F11/F12 set Crush/Rate, so later stages reshape their digital
+grain. Each stage is off at `00`. Values
+`00-7F` cover the normal range and `80-FF` extend it: Fold, Distort and Saturate
+reach about 8x drive at `7F` and 32x at `FF`; Crush reaches 4 bits then 1 bit.
+Rate reduces the sample rate from 1x through 16x at `7F` to 128x at `FF`, and
+can be used independently of Crush's bit reduction. Input adds up to 12 dB at
+`7F` and 36 dB at `FF`. Tone is a post-effect low-pass filter, bypassed at
+`FF`. A shared stereo auto-level stage smooths level changes and limits its
+correction to -36/+18 dB; very quiet or strongly cancelled signals can still
+change in perceived loudness. Existing projects retain their Destruction bytes
+without conversion. Its old parameters are reinterpreted, so an old project
+can sound different or dry until Mix and the stages are edited.
 Saturation and distortion include output level or mix controls for balancing them
 against the unprocessed signal.
 

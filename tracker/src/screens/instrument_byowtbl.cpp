@@ -51,6 +51,7 @@ static void loaded(const char* path) {
     projectModified = 1;
     screenMessage(MESSAGE_TIME, "%u x %u frames", table->tableFrames[loadSlot], table->frameSize[loadSlot]);
   }
+  chipnomadQueueProjectRefresh(chipnomadState);
   audioManager.resume();
   screenSetup(&screenInstrument, cInstrument);
 }

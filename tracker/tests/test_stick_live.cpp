@@ -4,6 +4,7 @@
 #include "app_ui_mock.h"
 #include "chipnomad_lib_live_stick.h"
 #include "corelib_file.h"
+#include "corelib_gfx.h"
 #include "project_utils.h"
 
 #include <chrono>
@@ -377,8 +378,19 @@ TEST_CASE_FIXTURE(StickLiveFixture, "Settings menus and audio controls align") {
   screenControlsSettings.fullRedraw();
   screen = mockScreenData;
   CHECK(screen->rows == 4);
+  gfxClear();
+  screen->drawStatic();
+  for (int row = 0; row < screen->rows; ++row) screen->drawField(0, row, CellState::normal);
+  CHECK(std::string(mockGfxCells[2], 11) == "Keys repeat");
+  CHECK(std::string(mockGfxCells[3], 15) == " - Repeat delay");
+  CHECK(std::string(mockGfxCells[4], 15) == " - Repeat speed");
+  CHECK(std::string(mockGfxCells[5], 31) == std::string(31, ' '));
+  CHECK(std::string(mockGfxCells[7], 31) == std::string(31, ' '));
+  CHECK(std::string(mockGfxCells[8], 11) == "Key mapping");
+  screen->drawCursor(0, 2);
+  CHECK(mockCursorY == 6);
   screen->drawField(0, 2, CellState::focus);
-  CHECK(std::string(mockGfxCells[4], 15) == "Stick live mode");
+  CHECK(std::string(mockGfxCells[6], 15) == "Stick live mode");
   REQUIRE(screen->onEdit(0, 2, CellEditAction::increase) == 1);
   CHECK(appSettings.stickLiveMode == StickLiveMode::toggle);
 
@@ -597,9 +609,9 @@ TEST_CASE_FIXTURE(StickLiveFixture, "Persistent waveform is opt-in and its Setti
   REQUIRE(mockScreenData != nullptr);
   auto* screen = mockScreenData;
   int modified = projectModified;
-  CHECK(screen->rows == 7);
+  CHECK(screen->rows == 10);
   screen->drawField(0, 2, CellState::focus);
-  CHECK(std::string(mockGfxCells[4] + 23, 3) == "OFF");
+  CHECK(std::string(mockGfxCells[5] + 23, 3) == "OFF");
   REQUIRE(screen->onEdit(0, 2, CellEditAction::tap) == 1);
   CHECK(appSettings.persistentWaveform == 1);
   REQUIRE(settingsLoad() == 0);

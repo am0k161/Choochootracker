@@ -124,6 +124,8 @@ TEST_CASE("SampleVoice start and end delimit playback") {
                   sample.filterCutoffHz, sample.filterResonance);
   voice.noteOn();
   voice.render(output, 128);
+  // The exhaustion kill arms a short de-click tail; render until it drains.
+  for (int i = 0; i < 8 && voice.active(); ++i) voice.render(output, 128);
   CHECK_FALSE(voice.active());
 }
 
@@ -325,9 +327,11 @@ TEST_CASE("SampleVoice stretch mode 0 keeps plain playback behavior") {
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 0, 0, 0, 50.0f);
   voice.noteOn();
   voice.render(output, 128);
-  // One-shot: 64 source frames at 1:1 rate, so the voice must stop.
-  CHECK_FALSE(voice.active());
   CHECK(std::fabs(output[0] - pcm[0] / 32768.0f) < 0.01f);
+  // One-shot: 64 source frames at 1:1 rate, so the voice must stop. The
+  // exhaustion kill arms a short de-click tail; render until it drains.
+  for (int i = 0; i < 8 && voice.active(); ++i) voice.render(output, 128);
+  CHECK_FALSE(voice.active());
 }
 
 TEST_CASE("SampleVoice stretch renders for the musical division duration") {
@@ -454,10 +458,17 @@ TEST_CASE("SampleVoice stretch kill stops output") {
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 1,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 0, 0, 3, 50.0f);
   voice.noteOn();
-  voice.render(output.data(), 256);
+  // The stretcher primes silently for its first blocks (cold start fades in
+  // naturally); render until the note is clearly audible before killing so
+  // the de-click tail has a non-zero last output to fade from.
+  for (int i = 0; i < 40; ++i) voice.render(output.data(), 256);
   CHECK(voice.active());
 
+  // kill() arms a short de-click tail instead of hard-cutting: the tail
+  // renders and drains before the voice goes inactive.
   voice.kill();
+  CHECK(voice.active());
+  voice.render(output.data(), 256);
   CHECK_FALSE(voice.active());
   voice.render(output.data(), 256);
   for (float value : output) CHECK(value == 0.0f);
@@ -862,6 +873,9 @@ TEST_CASE("SampleVoice plays stored slice bounds and legacy fallback identically
 
   // LAZY slices map chromatically like EQUAL/AUTO: with bounds present the
   // caller passes the decoded count and the voice plays the selected window.
+  // Drain the previous note (its exhaustion kill arms a short de-click
+  // tail) so this retrigger starts fresh from silence.
+  for (int i = 0; i < 64 && voice.active(); ++i) voice.render(output, 4);
   InstrumentSample lazy = makeSliceSample(32, 0, 255);
   lazy.data = pcm;
   lazy.sustain = 255;
@@ -961,6 +975,9 @@ static std::vector<float> renderXfadeVoice(InstrumentSample* sample,
   return all;
 }
 
+// Largest absolute difference between consecutive stereo samples (same
+// channel, adjacent frames) across a whole capture - the click detector the
+// de-click tests assert against.
 static double maxJump(const std::vector<float>& all) {
   double jump = 0.0;
   for (size_t i = 2; i < all.size(); i += 2) {
@@ -1139,6 +1156,36 @@ TEST_CASE("xfade survives per-tick reconfigure") {
   CHECK(voice.active());
 }
 
+TEST_CASE("retrigger after a loop crossfade starts from the last output") {
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopMode = 2; // Loop X
+  sample.loopStart = 0x40;
+  std::vector<int16_t> data(8820);
+  for (int i = 0; i < 8820; ++i) data[i] = (int16_t)i;
+  sample.data = data.data();
+
+  SampleVoice voice;
+  float output[882 * 2];
+  voice.init(44100.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 2,
+                  sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
+                  -1, -1, 0, 0, 0, 50.0f, 0, 0, sample.loopStart);
+  voice.noteOn();
+  for (int t = 0; t < 10; ++t) voice.render(output, 882);
+  const float beforeRetrigger = output[2 * 881];
+
+  voice.noteOn();
+  voice.render(output, 1);
+  CHECK(std::fabs(output[0] - beforeRetrigger) < 0.01f);
+}
+
 TEST_CASE("xfade derives from loop modes 3/4 without the xfade parameter") {
   // Modes 3 (Loop X) and 4 (Ping X) turn the crossfade on themselves: the
   // explicit xfade parameter stays 0. The wrap geometry matches the plain
@@ -1204,4 +1251,157 @@ TEST_CASE("mode 2 descending hard-wraps like mode 1") {
   const double frame = voice.playbackFrame();
   CHECK(frame >= 0.0);
   CHECK(frame < 8820.0);
+}
+
+TEST_CASE("De-click: initial trigger with a nonzero first sample ramps in") {
+  // A fresh note whose first sample is far from zero must not click: the
+  // 2 ms output ramp scales the first rendered frame down to ~1/96 of its
+  // full level instead of jumping straight to full scale.
+  int16_t pcm[512];
+  for (int i = 0; i < 512; ++i) pcm[i] = 16000;
+
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 48000;
+  sample.frameCount = 512;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255;
+  sample.sustain = 255;
+
+  SampleVoice voice;
+  std::vector<float> output(96 * 2);
+  voice.init(48000.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
+                  sample.filterCutoffHz, sample.filterResonance);
+  voice.noteOn();
+  voice.render(output.data(), 96);
+
+  const float fullScale = pcm[0] / 32768.0f;
+  // First frame: ramp blend 1/96 of the way from silence to the sample.
+  CHECK(std::fabs(output[0] - fullScale / 96.0f) < 0.005f);
+  // Last frame of the ramp window: essentially full scale.
+  CHECK(std::fabs(output[2 * 95] - fullScale) < 0.02f);
+  // No consecutive-sample jump anywhere in the capture may exceed the
+  // full-scale step the ramp is smoothing.
+  CHECK(maxJump(output) < fullScale);
+}
+
+TEST_CASE("De-click: retrigger mid-sound bridges from the previous output") {
+  // A retrigger while the voice is sounding must not jump from the old
+  // waveform to the new one at full level: the ramp starts from the last
+  // rendered output, so the boundary frame stays continuous.
+  int16_t pcm[512];
+  for (int i = 0; i < 512; ++i) {
+    pcm[i] = (int16_t)(std::sin(2.0 * M_PI * 440.0 * i / 48000.0) * 24000.0);
+  }
+
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 48000;
+  sample.frameCount = 512;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255;
+  sample.sustain = 255;
+
+  SampleVoice voice;
+  std::vector<float> output(96 * 2);
+  voice.init(48000.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
+                  sample.filterCutoffHz, sample.filterResonance);
+  voice.noteOn();
+  voice.render(output.data(), 96);
+  const float lastValue = output[2 * 95];
+
+  voice.noteOn();
+  voice.render(output.data(), 96);
+  // Ramp frame 0 blends 1/96 toward the new sample from the old output:
+  // it stays within one full-scale step of the pre-retrigger output.
+  CHECK(std::fabs(output[0] - lastValue) < 0.02f);
+  // A 440 Hz sine at 48 kHz moves at most ~0.014 per frame naturally; any
+  // unbridged retrigger would jump by up to the full waveform span.
+  CHECK(maxJump(output) < 0.05f);
+}
+
+TEST_CASE("De-click: kill mid-render-block fades linearly to silence") {
+  // kill() inside a render block must not leave a discontinuity or a zero
+  // gap: the same buffer continues with a linear fade from the output
+  // captured at the cut, decaying to silence within the 3 ms tail.
+  int16_t pcm[64];
+  for (int i = 0; i < 64; ++i) pcm[i] = 12000;
+
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 48000;
+  sample.frameCount = 64;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255;
+  sample.sustain = 255;
+
+  SampleVoice voice;
+  std::vector<float> output(256 * 2);
+  voice.init(48000.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
+                  sample.filterCutoffHz, sample.filterResonance);
+  voice.noteOn();
+  voice.render(output.data(), 256);
+
+  // One-shot exhaustion kills at frame 64: the tail loop starts AT the cut
+  // frame with weight 1.0 (a no-op rewrite of the already-rendered frame),
+  // so the first visible decayed frame is index 64 with weight 142/143.
+  CHECK_FALSE(voice.active());
+  const float cut = output[2 * 63];
+  CHECK(std::fabs(output[2 * 64] - cut * 142.0f / 143.0f) < 0.001f);
+  for (int k = 0; k < 143; ++k) {
+    const float expected = cut * (142.0f - (float)k) / 143.0f;
+    CHECK(std::fabs(output[2 * (64 + k)] - expected) < 0.002f);
+  }
+  // The tail is 144 frames: everything after frame 207 is silence.
+  for (int i = 208; i < 256; ++i) CHECK(output[2 * i] == 0.0f);
+}
+
+TEST_CASE("De-click: stretch kill mid-render-block fades linearly to silence") {
+  // The stretch path must not erase its de-click tail with the trailing
+  // memset: the tail renders from the kill frame and the zeroing starts
+  // only after the fade ends.
+  int16_t pcm[48000];
+  for (int i = 0; i < 48000; ++i) {
+    pcm[i] = (int16_t)(std::sin(2.0 * M_PI * 440.0 * i / 48000.0) * 24000.0);
+  }
+
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 48000;
+  sample.frameCount = 48000;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255;
+  sample.sustain = 255;
+
+  SampleVoice voice;
+  std::vector<float> output(256 * 2);
+  voice.init(48000.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 1,
+                  sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 0, 0, 3, 50.0f);
+  voice.noteOn();
+  // The stretcher primes silently for its first blocks; render until the
+  // note is clearly audible before killing.
+  for (int i = 0; i < 40; ++i) voice.render(output.data(), 256);
+  CHECK(voice.active());
+
+  voice.kill();
+  voice.render(output.data(), 256);
+  // The tail starts at frame 0 of this buffer, continuous with the last
+  // frame of the previous buffer (weight 1.0), then decays linearly.
+  const float cut = output[0];
+  CHECK(cut != 0.0f);
+  for (int k = 1; k < 144; ++k) {
+    const float expected = cut * (143.0f - (float)k) / 143.0f;
+    CHECK(std::fabs(output[2 * k] - expected) < 0.002f);
+  }
+  // The tail is 144 frames: everything after it is silence.
+  for (int i = 144; i < 256; ++i) CHECK(output[2 * i] == 0.0f);
+  CHECK_FALSE(voice.active());
 }

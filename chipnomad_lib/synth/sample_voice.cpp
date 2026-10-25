@@ -50,6 +50,13 @@ void SampleVoice::init(float outputSampleRate) {
   rampFrom_[0] = rampFrom_[1] = 0.0f;
   rampRemaining_ = 0;
   rampFrames_ = outputSampleRate > 500.0f ? (uint32_t)(outputSampleRate * 0.002f) : 1;
+  tailFrom_[0] = tailFrom_[1] = 0.0f;
+  transitionFrames_ = 0;
+  transitionPending_ = false;
+  // 3 ms de-click tail, at least 2 frames so the linear weight never
+  // divides by zero.
+  transitionLength_ = outputSampleRate > 500.0f ? (uint32_t)(outputSampleRate * 0.003f) : 2;
+  if (transitionLength_ < 2) transitionLength_ = 2;
   useStretch_ = false;
 #if defined(PORTMASTER_BUILD) || defined(ANDROID_BUILD) || defined(WEB_BUILD)
   stretch_.init(outputSampleRate_, true);
@@ -434,8 +441,13 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
 void SampleVoice::noteOn() {
   if (!sample_ || !sample_->data || endFrame_ <= startFrame_) return;
   for (int channel = 0; channel < 2; ++channel)
-    rampFrom_[channel] = active_ ? lastOutput_[channel] : 0.0f;
+    rampFrom_[channel] =
+        (active_ || transitionFrames_ || transitionPending_) ? lastOutput_[channel] : 0.0f;
   rampRemaining_ = rampFrames_;
+  // A new note must not resume a fade armed for the previous one: the
+  // output ramp above already bridges from the last rendered output.
+  transitionPending_ = false;
+  transitionFrames_ = 0;
   post_.kill(); // Restart sample attack; the output ramp bridges the previous waveform.
   if (useStretch_) {
     // A new note always restarts the stretched playback from the top of the
@@ -565,11 +577,22 @@ void SampleVoice::noteOff() {
 }
 
 void SampleVoice::kill() {
+  // Hard cuts click: arm the same short fade the retrigger uses, so the
+  // voice keeps rendering a decaying tail from its last output. The
+  // transition state is intentionally NOT cleared here - stopImmediately()
+  // does that when the transport needs an immediate stop.
+  if (active_ && (lastOutput_[0] != 0.0f || lastOutput_[1] != 0.0f)) transitionPending_ = true;
   active_ = false;
-  lastOutput_[0] = lastOutput_[1] = 0.0f;
   rampRemaining_ = 0;
   stretch_.reset();
   post_.kill();
+}
+
+void SampleVoice::stopImmediately() {
+  kill();
+  lastOutput_[0] = lastOutput_[1] = 0.0f;
+  transitionPending_ = false;
+  transitionFrames_ = 0;
 }
 
 void SampleVoice::finishFrame(float* stereo) {
@@ -583,9 +606,40 @@ void SampleVoice::finishFrame(float* stereo) {
   lastOutput_[1] = stereo[1];
 }
 
+void SampleVoice::renderTailFrame(float* frame) {
+  // Linear fade from the output captured at the cut: the first tail frame
+  // repeats the cut output (weight 1.0, continuous with lastOutput_) and
+  // the last one is silence.
+  const float weight = float(transitionFrames_ - 1) / float(transitionLength_ - 1);
+  frame[0] = tailFrom_[0] * weight;
+  frame[1] = tailFrom_[1] * weight;
+  lastOutput_[0] = frame[0];
+  lastOutput_[1] = frame[1];
+  --transitionFrames_;
+}
+
 void SampleVoice::render(float* output, size_t frames) {
   memset(output, 0, frames * 2 * sizeof(float));
-  if (!active_ || !sample_ || !sample_->data) return;
+  if (!sample_ || !sample_->data) return;
+
+  // Tail-only path: the voice was killed (or stopped) but a de-click fade
+  // is still pending. Convert the pending arm into a fade from the last
+  // rendered output down to silence - no sample reads, no envelope.
+  if (!active_) {
+    if (!transitionPending_ && !transitionFrames_) return;
+    if (transitionPending_) {
+      tailFrom_[0] = lastOutput_[0];
+      tailFrom_[1] = lastOutput_[1];
+      transitionFrames_ = (tailFrom_[0] != 0.0f || tailFrom_[1] != 0.0f)
+                              ? transitionLength_
+                              : 0;
+      transitionPending_ = false;
+    }
+    for (size_t i = 0; i < frames && transitionFrames_; i++) {
+      renderTailFrame(output + i * 2);
+    }
+    return;
+  }
 
   if (useStretch_) {
     // The stretch processor owns the read pointer and applies its own
@@ -595,17 +649,43 @@ void SampleVoice::render(float* output, size_t frames) {
     if (!stretch_.process(output, frames)) { kill(); return; }
     // One-shot material: when the stretcher has drained its tail the note is
     // over, matching the plain path's behavior on source exhaustion.
-    if (!stretch_.active()) { kill(); return; }
+    const bool stretchDone = !stretch_.active();
+    size_t rendered = frames;
     for (size_t i = 0; i < frames; i++) {
-      if (!post_.envelopeActive()) { kill(); break; }
+      if (!post_.envelopeActive()) { kill(); rendered = i; break; }
       post_.processStereo(output + i * 2);
       finishFrame(output + i * 2);
+    }
+    // The stretcher filled the whole buffer with raw audio before the
+    // envelope pass; zero whatever the envelope pass did not reach so a
+    // mid-buffer kill cannot leak un-enveloped material. A kill here arms
+    // the de-click tail, which continues in the buffer from the kill frame
+    // BEFORE the memset - the tail must not be erased by the zeroing.
+    if (rendered < frames) {
+      size_t tailEnd = rendered;
+      if (transitionPending_) {
+        tailFrom_[0] = lastOutput_[0];
+        tailFrom_[1] = lastOutput_[1];
+        transitionFrames_ = (tailFrom_[0] != 0.0f || tailFrom_[1] != 0.0f)
+                                ? transitionLength_
+                                : 0;
+        transitionPending_ = false;
+      }
+      for (size_t i = rendered; i < frames && transitionFrames_; i++) {
+        renderTailFrame(output + i * 2);
+        tailEnd = i + 1;
+      }
+      memset(output + tailEnd * 2, 0, (frames - tailEnd) * 2 * sizeof(float));
+    } else if (stretchDone) {
+      kill();
     }
     if (!post_.envelopeActive()) kill();
     return;
   }
 
+  size_t loopRendered = 0;
   for (size_t i = 0; i < frames; i++) {
+    loopRendered = i;
     if (!post_.envelopeActive()) { kill(); break; }
     if (granular_) {
       // The granular path windows its own grains; the loop X-fade is not
@@ -650,6 +730,7 @@ void SampleVoice::render(float* output, size_t frames) {
           xfade_.sample([this](double pos, int ch) { return sampleAt(pos, ch); }, channel),
           channel);
       }
+      finishFrame(output + i * 2);
       if (!xfade_.advance(step_)) {
         xfade_.takeIncoming(&position_, &direction_);
       }
@@ -701,6 +782,7 @@ void SampleVoice::render(float* output, size_t frames) {
           xfade_.sample([this](double pos, int ch) { return sampleAt(pos, ch); }, channel),
           channel);
       }
+      finishFrame(output + i * 2);
       if (!xfade_.advance(step_)) {
         xfade_.takeIncoming(&position_, &direction_);
       }
@@ -712,6 +794,21 @@ void SampleVoice::render(float* output, size_t frames) {
       if (!advancePosition()) { kill(); break; }
     }
     if (!post_.envelopeActive()) { kill(); break; }
+  }
+  // A kill inside the loop arms the de-click tail; continue it in this
+  // buffer so the fade starts at the cut instead of after a zero gap.
+  if (!active_ && (transitionPending_ || transitionFrames_)) {
+    if (transitionPending_) {
+      tailFrom_[0] = lastOutput_[0];
+      tailFrom_[1] = lastOutput_[1];
+      transitionFrames_ = (tailFrom_[0] != 0.0f || tailFrom_[1] != 0.0f)
+                              ? transitionLength_
+                              : 0;
+      transitionPending_ = false;
+    }
+    for (size_t i = loopRendered; i < frames && transitionFrames_; i++) {
+      renderTailFrame(output + i * 2);
+    }
   }
 }
 

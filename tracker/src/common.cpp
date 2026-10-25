@@ -73,6 +73,9 @@ void initDefaultAppSettings(void) {
 #else
   appSettings.waveformRefreshHz = 30;
 #endif
+  appSettings.playbackCounterMode = 0;
+  appSettings.playbackBarRows = 16;
+  appSettings.playbackBarTicks = 6;
   appSettings.stickLiveMode = StickLiveMode::hold;
   for (auto& visual : appSettings.trackVisuals)
     visual.mode = TrackVisualMode::detailed;
@@ -229,6 +232,9 @@ int settingsSave(void) {
   fprintf(file, "quickHelpReleaseSeen: %d\n", appSettings.quickHelpReleaseSeen);
   fprintf(file, "ayWavetableLfoView: %d\n", appSettings.ayWavetableLfoView);
   fprintf(file, "waveformRefreshHz: %d\n", appSettings.waveformRefreshHz);
+  fprintf(file, "playbackCounterMode: %d\n", appSettings.playbackCounterMode);
+  fprintf(file, "playbackBarRows: %d\n", appSettings.playbackBarRows);
+  fprintf(file, "playbackBarTicks: %d\n", appSettings.playbackBarTicks);
 
   const char* stickLiveMode = appSettings.stickLiveMode == StickLiveMode::free ? "FREE" :
     appSettings.stickLiveMode == StickLiveMode::toggle ? "TOGGLE" : "HOLD";
@@ -406,6 +412,18 @@ int settingsLoad(void) {
       sscanf(line + 20, "%d", &appSettings.ayWavetableLfoView);
     } else if (strncmp(line, "waveformRefreshHz: ", 19) == 0) {
       sscanf(line + 19, "%d", &appSettings.waveformRefreshHz);
+    } else if (strncmp(line, "playbackCounterMode: ", 21) == 0) {
+      int mode;
+      if (sscanf(line + 21, "%d", &mode) == 1 && mode >= 0 && mode <= 1)
+        appSettings.playbackCounterMode = (uint8_t)mode;
+    } else if (strncmp(line, "playbackBarRows: ", 17) == 0) {
+      int rows;
+      if (sscanf(line + 17, "%d", &rows) == 1 && rows >= 1 && rows <= 16)
+        appSettings.playbackBarRows = (uint8_t)rows;
+    } else if (strncmp(line, "playbackBarTicks: ", 18) == 0) {
+      int ticks;
+      if (sscanf(line + 18, "%d", &ticks) == 1 && ticks >= 1 && ticks <= 254)
+        appSettings.playbackBarTicks = (uint8_t)ticks;
     } else if (strncmp(line, "stickLiveMode: ", 15) == 0) {
       appSettings.stickLiveMode = strcmp(line + 15, "FREE") == 0 ? StickLiveMode::free :
         strcmp(line + 15, "TOGGLE") == 0 ? StickLiveMode::toggle : StickLiveMode::hold;

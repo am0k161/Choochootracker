@@ -1376,8 +1376,10 @@ int phraseKeyJazzHandleRawKey(InputCode input, int isDown) {
   if (inputIsCtrlHeld()) {
     if (inputIsSaveKey(input)) {
       if (isDown) {
-        projectSave(&chipnomadState->project, getAutosavePath());
-        screenMessage(MESSAGE_TIME, "KEY JAZZ: project saved");
+        if (projectSave(&chipnomadState->project, getAutosavePath()) == 0)
+          screenMessage(MESSAGE_TIME, "KEY JAZZ: project saved");
+        else
+          screenMessage(MESSAGE_TIME_ERROR, "%s", projectFileError);
       }
       return 1;
     }

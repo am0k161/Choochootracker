@@ -142,6 +142,8 @@ static void onProjectSaved(const char* folderPath) {
     // to match the name the project was just saved with
     exportSyncFolderWithProjectName();
     settingsSave();
+  } else {
+    screenMessage(MESSAGE_TIME_ERROR, "%s", projectFileError);
   }
   screenSetup(&screenProject, 0);
 }
