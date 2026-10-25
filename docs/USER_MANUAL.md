@@ -60,6 +60,8 @@ preserved. Input polling and app timers keep their usual cadence.
 
 The current project is autosaved every minute and on exit as `autosave.cct` next to the app. If the autosave cannot be loaded at startup, the title screen says so and the demo project opens instead. The unreadable file is kept as `autosave.cct.unreadable` (then `-2`, `-3`, ...) so later autosaves never overwrite it, and the work in it can still be recovered.
 
+If a manual save or autosave fails while the app is open, an error appears on screen. Keep the project open and retry after checking the working folder and free storage.
+
 ## 2. Controls
 
 ChooChooTracker works best with a gamepad that has a D-pad, 2 analogue sticks and 7 buttons.

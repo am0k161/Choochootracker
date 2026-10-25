@@ -240,6 +240,7 @@ public final class ChooChooTrackerActivity extends SDLActivity {
     }
 
     @Override protected String[] getArguments() {
+        nativeSetenv("TMPDIR", getCacheDir().getAbsolutePath());
         // OpenSL ES's fast output underruns on Pixel 7a even with a cheap sine
         // callback. Prefer SDL's buffered AAudio path; retain older-device fallback.
         nativeSetenv("SDL_AUDIODRIVER", "aaudio,openslES");

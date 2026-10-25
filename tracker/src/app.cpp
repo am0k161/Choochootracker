@@ -564,7 +564,8 @@ static int keepUnreadableAutosave(void) {
 
 static void autosaveProject(void) {
   if (autosaveKept < 0) return; // The unreadable autosave is still in place
-  projectSave(&chipnomadState->project, getAutosavePath());
+  if (projectSave(&chipnomadState->project, getAutosavePath()) != 0)
+    screenMessage(MESSAGE_TIME_ERROR, "%s", projectFileError);
 }
 
 /**

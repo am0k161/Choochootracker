@@ -1248,6 +1248,7 @@ static void settingsRunProcessOp(void) {
       case 6: result = sampleOpReverse(sample, selStart, selEnd); break;
     }
   }
+  chipnomadQueueProjectRefresh(chipnomadState);
   audioManager.resume();
 
   if (result != sampleOpOk) {
@@ -1282,6 +1283,7 @@ static void settingsRunUndo(void) {
   InstrumentSample* sample = currentSample();
   audioManager.pause();
   int result = sampleOpApplyUndo(sample, &editorUndo);
+  chipnomadQueueProjectRefresh(chipnomadState);
   audioManager.resume();
   if (result != sampleOpOk) {
     screenMessage(MESSAGE_TIME_ERROR, "Undo failed");
@@ -1500,6 +1502,7 @@ static void recordStop(void) {
   audioManager.pause();
   int result = sampleLoadWav16Cues(recordFilePath, sample, cueFrames, &cueCount,
                                    error, sizeof(error));
+  chipnomadQueueProjectRefresh(chipnomadState);
   audioManager.resume();
   if (result) {
     screenMessage(MESSAGE_TIME_ERROR, "%s", error);
@@ -1562,6 +1565,7 @@ static void recordClear(void) {
     sample->data = nullptr;
     sample->frameCount = 0;
     sample->path[0] = 0;
+    chipnomadQueueProjectRefresh(chipnomadState);
     audioManager.resume();
   }
   projectModified = 1;
