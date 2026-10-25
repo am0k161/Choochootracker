@@ -1,5 +1,6 @@
 #include "soundbank_library.h"
 #include <string.h>
+#include <stdio.h>
 #include "corelib_gfx.h"
 #include "corelib_font.h"
 #include "corelib_file.h"
@@ -65,6 +66,43 @@ static int audioProjectDirty;
 static MidiCCMapping midiCCApplied[PROJECT_MAX_MIDI_CC_MAPPINGS];
 static uint8_t midiCCAppliedValue[PROJECT_MAX_MIDI_CC_MAPPINGS];
 static uint8_t midiCCAppliedValid[PROJECT_MAX_MIDI_CC_MAPPINGS];
+static uint64_t playbackCounterTicks;
+static uint64_t playbackCounterMicros;
+static uint64_t playbackCounterStartMicros;
+static uint64_t playbackCounterPreviousTicks;
+static bool playbackCounterWasPlaying;
+
+static void drawPlaybackCounter(const PlaybackStatus* status) {
+  if (status->isPlaying) {
+    if (!playbackCounterWasPlaying || status->linkPhaseTicks < playbackCounterPreviousTicks) {
+      playbackCounterStartMicros = status->linkPhaseTickMicros;
+      playbackCounterMicros = 0;
+    }
+    playbackCounterTicks = status->linkPhaseTicks;
+    if (status->linkPhaseTickMicros >= playbackCounterStartMicros)
+      playbackCounterMicros = status->linkPhaseTickMicros - playbackCounterStartMicros;
+  } else if (playbackCounterWasPlaying && status->linkPhaseTickMicros >= playbackCounterStartMicros) {
+    playbackCounterMicros = status->linkPhaseTickMicros - playbackCounterStartMicros;
+  }
+  playbackCounterWasPlaying = status->isPlaying != 0;
+  playbackCounterPreviousTicks = status->linkPhaseTicks;
+
+  char label[7];
+  if (appSettings.playbackCounterMode == 0) {
+    uint64_t bars = playbackCounterTicks /
+      ((uint64_t)appSettings.playbackBarRows * appSettings.playbackBarTicks);
+    if (bars > 99999) bars = 99999;
+    snprintf(label, sizeof(label), "B%05llu", (unsigned long long)bars);
+  } else {
+    uint64_t seconds = playbackCounterMicros / 1000000;
+    if (seconds > 59999) seconds = 59999;
+    snprintf(label, sizeof(label), "%02llu:%02llu",
+      (unsigned long long)(seconds / 60), (unsigned long long)(seconds % 60));
+  }
+  gfxSetFgColor(appSettings.colorScheme.textTitles);
+  gfxClearRect(34, 2, 6, 1);
+  gfxPrint(34, 2, label);
+}
 
 static bool monitorNeeded(void) {
   return (currentScreen == &screenMixer && screenMixerGetPage() == 0) ||
@@ -533,6 +571,11 @@ static void autosaveProject(void) {
 * @brief Initialize the application: setup audio system, load auto-saved project, show the first screen
 */
 void appSetup(void) {
+  playbackCounterTicks = 0;
+  playbackCounterMicros = 0;
+  playbackCounterStartMicros = 0;
+  playbackCounterPreviousTicks = 0;
+  playbackCounterWasPlaying = false;
   // Registered before anything else touches MIDI: chipnomad_lib's engine
   // path (applyVoiceEvents/chipnomadMidiPanic) now goes through the router,
   // which does nothing until a backend is registered.
@@ -709,6 +752,10 @@ void appDraw(void) {
   pianoDisplayDraw();
   waveformDisplayRefresh();
 
+  ScreenOverlayCoordinates sidebar;
+  const PlaybackStatus* playback = chipnomadGetPlaybackStatus(chipnomadState);
+  drawPlaybackCounter(playback);
+
   // Tracks
   char digit[2] = "0";
   for (int c = 0; c < chipnomadState->project.tracksCount; c++) {
@@ -737,7 +784,7 @@ void appDraw(void) {
       gfxDrawBitmap(waveformBitmap, 36, 3 + c);
     }
 
-    uint8_t note = chipnomadGetPlaybackStatus(chipnomadState)->tracks[c].note.pitchFinal;
+    uint8_t note = playback->tracks[c].note.pitchFinal;
     const char* noteStr = noteName(&chipnomadState->project, note);
 
     // Use warning color if track warning is active

@@ -1339,10 +1339,12 @@ In Link mode the session owns the tempo: the row shows no BPM field, and the ses
 - **MIDI** opens the [MIDI](#14-midi) submenu: device selection and the MIDI In channel-to-instrument mapping.
 - **Synths** contains **AY Quality**, **Sample dithering**, and global **Braids BITS / DRFT / SIGN** settings.
 - **Mixer** contains **Mix volume** and the per-project `250-4000 Hz` **Tilt pivot** (default `1 kHz`) used by all Mixer Tilt controls.
-- **Graphics** contains **Edit color theme**, **Load font**, **Persistent waveform**, **Track visuals**, **Waveform FPS**, and the active renderer (`GPU` or `Software`). **Waveform FPS** sets the refresh rate of the instrument scope and mixer visualizers from `01` to `60`. Track visuals selects **Detailed** (the synth waveform and its overlays) or **Audio waveform** (the actual summed output of that track) independently for every track; audio waveform clears any prior ADSR overlay immediately when playback starts. ChipNomad fonts and themes should work.
+- **Graphics** contains **Edit color theme**, **Load font**, **Persistent waveform**, **Track visuals**, **Waveform FPS**, **Boot screen**, and the playback counter settings. **Waveform FPS** sets the refresh rate of the instrument scope and mixer visualizers from `01` to `60`. Track visuals selects **Detailed** (the synth waveform and its overlays) or **Audio waveform** (the actual summed output of that track) independently for every track; audio waveform clears any prior ADSR overlay immediately when playback starts. ChipNomad fonts and themes should work.
 - **Key mapping** customises the controls.
 - **Support report** writes a small diagnostic text file with the app version, platform, audio settings and CPU load, playback/overflow state, and a compact project summary. It does not include sample data or project title/author text. On Android and Web it opens the normal export/download flow; desktop and handheld builds save `support-report.txt` in the app's writable folder.
 - **Quit ChooChooTracker** exits cleanly.
+
+The playback counter sits above the track list on the right. **Playback counter** selects **Bars** (`B00000`, the default) or **Time** (`00:00`). **Rows per bar** defaults to `16` and **Ticks per row** to `6`, so a bar is 96 elapsed playback ticks regardless of the project's groove. Both values can be changed in Graphics. The count continues across song loops, keeps its last value after stopping, and resets when playback starts again. Time uses the audio clock, including changes in tempo.
 
 ## 13. Performance and troubleshooting
 
