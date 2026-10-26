@@ -471,7 +471,7 @@ TEST_SUITE("MIDI settings") {
 TEST_CASE_FIXTURE(StickLiveFixture, "screenMidi shows device rows and links to channel mapping") {
   screenMidi.fullRedraw();
   REQUIRE(mockScreenData != nullptr);
-  CHECK(mockScreenData->rows == 4);
+  CHECK(mockScreenData->rows == 6);
   auto* screen = mockScreenData;
 
   screen->drawField(0, 0, CellState::focus);
@@ -498,6 +498,20 @@ TEST_CASE_FIXTURE(StickLiveFixture, "screenMidi shows device rows and links to c
   CHECK(std::string(mockGfxCells[6], 15) == "MIDI CC mapping");
   screen->onEdit(0, 3, CellEditAction::tap);
   CHECK(currentScreen == &screenMidiCC);
+
+  CHECK(appSettings.midiSendClock == 0);
+  CHECK(appSettings.midiSendTransport == 0);
+  CHECK(screen->onEdit(0, 4, CellEditAction::tap) == 1);
+  CHECK(appSettings.midiSendClock == 1);
+  CHECK(appSettings.midiSendTransport == 0);
+  CHECK(screen->onEdit(0, 5, CellEditAction::tap) == 1);
+  CHECK(appSettings.midiSendTransport == 1);
+  screen->drawField(0, 4, CellState::focus);
+  CHECK(std::string(mockGfxCells[8], 10) == "Send clock");
+  CHECK(std::string(mockGfxCells[8] + 16, 2) == "ON");
+  appSettings.clockSource = ClockSource::midiClock;
+  screen->drawField(0, 5, CellState::focus);
+  CHECK(std::string(mockGfxCells[9] + 20, 12) == "(MIDI slave)");
 
   currentScreen = &screenMidi;
   CHECK(screenMidi.onInput(1, keyOpt, 0) == 1);
@@ -537,13 +551,23 @@ TEST_CASE_FIXTURE(StickLiveFixture, "MIDI clock mode round-trips through setting
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.clockSource == ClockSource::midiClock);
 
+  appSettings.midiSendClock = 1;
+  appSettings.midiSendTransport = 1;
+  REQUIRE(settingsSave() == 0);
+  initDefaultAppSettings();
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.midiSendClock == 1);
+  CHECK(appSettings.midiSendTransport == 1);
+
   // Invalid values fall back to the default rather than being trusted.
   FILE* file = fopen(realSettingsPath.c_str(), "w");
   REQUIRE(file != nullptr);
-  fprintf(file, "midiClockMode: 7\n");
+  fprintf(file, "midiClockMode: 7\nmidiSendClock: 7\nmidiSendTransport: -1\n");
   fclose(file);
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.clockSource == ClockSource::internal);
+  CHECK(appSettings.midiSendClock == 0);
+  CHECK(appSettings.midiSendTransport == 0);
 }
 
 TEST_CASE_FIXTURE(StickLiveFixture, "screenMidiChannelMap cycles channel-to-instrument assignment") {

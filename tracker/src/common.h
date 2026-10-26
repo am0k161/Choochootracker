@@ -56,7 +56,7 @@ enum class TrackVisualMode : uint8_t { detailed, audio };
 struct TrackVisualSettings { TrackVisualMode mode = TrackVisualMode::detailed; };
 
 // Clock source for engine tempo. Generalized from the old 0/1
-// midiClockMode int to a 3-state enum: internal (project.tickRate),
+// midiClockMode int to an enum: internal (project.tickRate),
 // midiClock (follow incoming MIDI Clock 0xF8 + transport), or link
 // (Ableton Link session). On file load, an old `midiClockMode:`
 // line in settings.txt is read as a backwards-compat alias: 0 ->
@@ -131,6 +131,8 @@ struct AppSettings {
   // the Project screen. Old `midiClockMode:` lines in settings.txt are
   // read as a backwards-compat alias (0 -> internal, 1 -> midiClock).
   ClockSource clockSource;
+  uint8_t midiSendClock;
+  uint8_t midiSendTransport;
   // Saved to settings.txt: which instrument a MIDI-in note on a given
   // channel (0-15) plays during preview, e.g. channel 0 -> instrument 5.
   // -1 = channel not assigned (falls back to the currently selected

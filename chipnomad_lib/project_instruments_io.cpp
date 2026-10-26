@@ -916,6 +916,8 @@ static int saveInstrumentAChChid(FILE* file, Instrument* instrument) {
   fprintf(file, "- Timbre: %hu\n", a->timbre);
   fprintf(file, "- Color: %hu\n", a->color);
   fprintf(file, "- Saturation: %hhu\n", a->saturation);
+  fprintf(file, "- SID shape: %hhu\n", a->sidShape);
+  fprintf(file, "- SID pulse: %hu\n", a->sidPulseWidth);
   fprintf(file, "- Cutoff: %hu\n", a->cutoff);
   fprintf(file, "- Resonance: %hhu\n", a->resonance);
   fprintf(file, "- Env mod: %hhu\n", a->envMod);
@@ -928,8 +930,6 @@ static int saveInstrumentMidi(FILE* file, Instrument* instrument) {
   InstrumentMidi* m = &instrument->chip.midi;
   fprintf(file, "- Channel: %hhu\n", m->channel);
   fprintf(file, "- Program: %hhu\n", m->program);
-  fprintf(file, "- SID shape: %hhu\n", a->sidShape);
-  fprintf(file, "- SID pulse: %hu\n", a->sidPulseWidth);
   fprintf(file, "- Bank high: %hhu\n", m->bankHigh);
   fprintf(file, "- Bank low: %hhu\n", m->bankLow);
   fprintf(file, "- CC1 number: %hhu\n", m->ccNumber[0]);

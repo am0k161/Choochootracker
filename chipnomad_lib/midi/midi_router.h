@@ -105,11 +105,9 @@ enum class MidiInputMode {
 // clock). slave: follow an external device's Clock (0xF8) and transport
 // (0xFA Start / 0xFB Continue / 0xFC Stop) - the app layer reads the
 // measured tempo and transport state via the getters below and drives
-// playback from them. master (generating clock for other gear) is still
-// reserved for a future PR.
+// playback from them. Outgoing clock/transport are configured independently.
 enum class MidiClockMode {
   off,
-  master,
   slave,
 };
 
@@ -122,6 +120,11 @@ MidiRouterState* midiRouterCreate(void);
 void midiRouterDestroy(MidiRouterState* router);
 
 // --- Out path (audio thread) ---
+// UI thread: independent output switches, both off by default. Slave mode
+// suppresses both to prevent feedback. Internal and Link use the engine tempo.
+void midiRouterSetSyncOutput(MidiRouterState* router, int clock, int transport);
+// One call per engine tick; clock runs during sequencer playback only.
+void midiRouterMasterTick(MidiRouterState* router, int playing, uint64_t dueMicros);
 // Sends a Note On at dueMicros and tracks it as active on [trackIdx][slot],
 // so a later midiRouterEmitNoteOff or midiRouterPanic can target the right
 // note even if the instrument/channel changes in between (e.g. after a

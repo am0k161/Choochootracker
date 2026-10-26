@@ -84,6 +84,8 @@ void initDefaultAppSettings(void) {
   appSettings.midiInputDeviceName[0] = '\0';
   appSettings.midiOutputDeviceName[0] = '\0';
   appSettings.clockSource = ClockSource::internal;
+  appSettings.midiSendClock = 0;
+  appSettings.midiSendTransport = 0;
   for (int i = 0; i < MIDI_CHANNEL_COUNT; i++) appSettings.midiChannelInstrument[i] = -1;
   appSettings.persistentWaveform = 0;
 #ifdef ANDROID_BUILD
@@ -255,6 +257,8 @@ int settingsSave(void) {
   // Write the canonical `clockSource:` line for v3+; also write the
   // legacy `midiClockMode:` alias (0/1 only, never 2) so older binaries
   // that read the old field still load the Internal/Midi-Clock choice.
+  fprintf(file, "midiSendClock: %d\n", appSettings.midiSendClock);
+  fprintf(file, "midiSendTransport: %d\n", appSettings.midiSendTransport);
   fprintf(file, "clockSource: %d\n", (int)appSettings.clockSource);
   fprintf(file, "midiClockMode: %d\n",
     appSettings.clockSource == ClockSource::midiClock ? 1 : 0);
@@ -441,6 +445,14 @@ int settingsLoad(void) {
     } else if (strncmp(line, "midiOutputDeviceName: ", 22) == 0) {
       strncpy(appSettings.midiOutputDeviceName, line + 22, MIDI_DEVICE_NAME_LENGTH);
       appSettings.midiOutputDeviceName[MIDI_DEVICE_NAME_LENGTH] = 0;
+    } else if (strncmp(line, "midiSendClock: ", 15) == 0) {
+      int value = 0;
+      if (sscanf(line + 15, "%d", &value) == 1 && (value == 0 || value == 1))
+        appSettings.midiSendClock = (uint8_t)value;
+    } else if (strncmp(line, "midiSendTransport: ", 19) == 0) {
+      int value = 0;
+      if (sscanf(line + 19, "%d", &value) == 1 && (value == 0 || value == 1))
+        appSettings.midiSendTransport = (uint8_t)value;
     } else if (strncmp(line, "clockSource: ", 13) == 0) {
       // Canonical v3+ setting. Read before the legacy `midiClockMode:`
       // alias below; if both lines exist (new binaries write both), the

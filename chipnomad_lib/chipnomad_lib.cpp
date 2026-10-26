@@ -1440,6 +1440,14 @@ static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
     if (state->playbackState.tracks[t].note.noteTriggered && state->insertChains[t])
       state->insertChains[t]->trigger();
   const int isPlaying = playbackIsPlaying(&state->playbackState);
+  // Auditioning a note/row is not a transport start for external gear.
+  int transportPlaying = 0;
+  for (int t = 0; t < state->audioProject.tracksCount; ++t) {
+    const auto mode = state->playbackState.tracks[t].mode;
+    if (mode != PlaybackMode::stopped && mode != PlaybackMode::phraseRow)
+      transportPlaying = 1;
+  }
+  midiRouterMasterTick(state->midiRouter, transportPlaying, dueMicros);
   // Mute/solo changes gate the mix in either direction. Correct their output
   // boundary just like a stop, without altering voice or transport state.
   // Repeated settings and changes to unused tracks leave normal audio alone.

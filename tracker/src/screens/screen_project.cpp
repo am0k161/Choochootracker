@@ -36,7 +36,7 @@ static int editingStringLength = 0;
 // to a whole BPM on the first tempo edit; untouched projects save unchanged.
 static uint16_t bpmValue = 125;
 // Mirror of appSettings.clockSource for the Clock source row.
-// 0 = Internal, 1 = Midi Clock, 2 = Ableton Link (future).
+// 0 = Internal, 1 = Midi Clock, 2 = Ableton Link.
 static uint8_t clockSourceMirror = 0;
 
 // Whole-BPM range: tickRate 1-200 Hz maps to 2.5-500 BPM, so whole numbers

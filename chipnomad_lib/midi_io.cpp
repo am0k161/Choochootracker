@@ -18,6 +18,7 @@ static RtMidiOut* g_midiOut = NULL;
 // 3rd byte after a Program Change would be read as the start of an
 // unrelated running-status data byte by some receivers.
 static int channelMessageLength(uint8_t status) {
+  if (status >= 0xf8) return 1;
   uint8_t type = status & 0xf0;
   return (type == 0xC0 || type == 0xD0) ? 2 : 3;
 }
@@ -256,7 +257,7 @@ void midiIoSendMessage(uint8_t status, uint8_t data1, uint8_t data2) {
   if (!g_midiOut) return;
   std::vector<unsigned char> message;
   message.push_back(status);
-  message.push_back(data1);
+  if (channelMessageLength(status) >= 2) message.push_back(data1);
   if (channelMessageLength(status) == 3) message.push_back(data2);
   try {
     g_midiOut->sendMessage(&message);

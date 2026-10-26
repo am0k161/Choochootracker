@@ -686,6 +686,7 @@ void appSetup(void) {
   int savedOutputPort = findMidiPortByName(0, appSettings.midiOutputDeviceName);
   if (savedOutputPort >= 0 && midiRouterOpenOutput(savedOutputPort) == 0) appSettings.midiOutputDevice = savedOutputPort;
   midiRouterSetChannelInstrumentMap(chipnomadState->midiRouter, appSettings.midiChannelInstrument);
+  midiRouterSetSyncOutput(chipnomadState->midiRouter, appSettings.midiSendClock, appSettings.midiSendTransport);
   midiRouterSetClockMode(chipnomadState->midiRouter,
     appSettings.clockSource == ClockSource::midiClock ? MidiClockMode::slave : MidiClockMode::off);
   // Ableton Link: restore the saved selection. Connect happens on demand

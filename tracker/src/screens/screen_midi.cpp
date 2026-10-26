@@ -65,6 +65,8 @@ static void drawCursor(int col, int row) {
     gfxCursor(DEVICE_FIELD_X, 2 + row, (int)strlen(name));
   } else if ((row == 2 || row == 3) && col == 0) {
     gfxCursor(0, 5 + row - 2, (int)strlen(row == 2 ? "Channel mapping" : "MIDI CC mapping"));
+  } else if ((row == 4 || row == 5) && col == 0) {
+    gfxCursor(16, row + 4, 3);
   }
 }
 
@@ -97,10 +99,28 @@ static void drawField(int col, int row, CellState state) {
   } else if (row == 3 && col == 0) {
     gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
     gfxPrint(0, 6, "MIDI CC mapping");
+  } else if ((row == 4 || row == 5) && col == 0) {
+    gfxSetFgColor(appSettings.colorScheme.textDefault);
+    gfxPrint(0, row + 4, row == 4 ? "Send clock" : "Send transport");
+    gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
+    const int enabled = row == 4 ? appSettings.midiSendClock : appSettings.midiSendTransport;
+    gfxClearRect(16, row + 4, 24, 1);
+    gfxPrint(16, row + 4, enabled ? "ON" : "OFF");
+    if (appSettings.clockSource == ClockSource::midiClock)
+      gfxPrint(20, row + 4, "(MIDI slave)");
   }
 }
 
 static int onEdit(int col, int row, CellEditAction action) {
+  if ((row == 4 || row == 5) && col == 0) {
+    uint8_t* value = row == 4 ? &appSettings.midiSendClock : &appSettings.midiSendTransport;
+    action = convertMultiAction(action);
+    if (action == CellEditAction::tap || action == CellEditAction::doubleTap) *value = !*value;
+    else if (!edit8noLast(action, value, 1, 0, 1)) return 0;
+    midiRouterSetSyncOutput(chipnomadState->midiRouter, appSettings.midiSendClock, appSettings.midiSendTransport);
+    settingsSave();
+    return 1;
+  }
   if ((row == 0 || row == 1) && col == 0) {
     action = convertMultiAction(action);
     int direction = (action == CellEditAction::increase || action == CellEditAction::increaseBig) ? 1 :
@@ -150,7 +170,7 @@ static int onEdit(int col, int row, CellEditAction action) {
 }
 
 static ScreenData screenMidiData = {
-  .rows = 4,
+  .rows = 6,
   .cursorRow = 0,
   .cursorCol = 0,
   .topRow = 0,
@@ -196,8 +216,8 @@ static void draw(void) {
     strncpy(displayedMidiStatus, status, 40);
     displayedMidiStatus[40] = '\0';
     gfxSetFgColor(appSettings.colorScheme.warning);
-    gfxClearRect(0, 7, 40, 1);
-    if (displayedMidiStatus[0]) gfxPrint(0, 7, displayedMidiStatus);
+    gfxClearRect(0, 11, 40, 1);
+    if (displayedMidiStatus[0]) gfxPrint(0, 11, displayedMidiStatus);
   }
 
   // Dropped count is monotonic (see midiRouterGetDroppedCount) and only
@@ -207,8 +227,8 @@ static void draw(void) {
   if (displayedMidiStatus[0] || dropped == displayedDroppedCount || dropped == 0) return;
   displayedDroppedCount = dropped;
   gfxSetFgColor(appSettings.colorScheme.warning);
-  gfxClearRect(0, 7, 40, 1);
-  gfxPrintf(0, 7, "MIDI out queue dropped %d msg%s", dropped, dropped == 1 ? "" : "s");
+  gfxClearRect(0, 11, 40, 1);
+  gfxPrintf(0, 11, "MIDI out queue dropped %d msg%s", dropped, dropped == 1 ? "" : "s");
 }
 
 static int inputScreenNavigation(int keys, int tapCount) {

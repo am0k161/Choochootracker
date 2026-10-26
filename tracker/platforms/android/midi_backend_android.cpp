@@ -141,9 +141,11 @@ static void drainOutput(void) {
       continue;
     }
     jbyte bytes[3] = {(jbyte)item.message.status, (jbyte)item.message.data1, (jbyte)item.message.data2};
-    jbyteArray array = env->NewByteArray(3);
+    const int length = item.message.status >= 0xf8 ? 1 :
+      ((item.message.status & 0xe0) == 0xc0 ? 2 : 3);
+    jbyteArray array = env->NewByteArray(length);
     if (array) {
-      env->SetByteArrayRegion(array, 0, 3, bytes);
+      env->SetByteArrayRegion(array, 0, length, bytes);
       env->CallVoidMethod(activity, sendOutput, array);
       env->DeleteLocalRef(array);
       if (env->ExceptionCheck()) env->ExceptionClear();
@@ -264,7 +266,7 @@ static const MidiBackend backend = {
   openInputPort, closeInputPort, openOutputPort, closeOutputPort,
   pollInput, scheduleOutput, flushOutput, droppedCount, nowMicros,
   nullptr, nullptr,
-  1, 1, 1, 0,
+  1, 1, 1, 1,
 };
 
 } // namespace
