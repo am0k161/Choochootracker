@@ -1,10 +1,12 @@
 #include <stdio.h>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <limits.h>
 #include <string.h>
 #include "audio_manager.h"
 #include "audio_input_manager.h"
+#include "output_safety_limiter.h"
 #include "corelib_audio.h"
 
 #include "chipnomad_lib.h"
@@ -33,6 +35,7 @@ static int byowtblPreviewOscillator;
 static uint64_t byowtblPreviewFrames;
 static float* floatBuffer;
 static float* samplePreviewBuffer;
+static OutputSafetyLimiter outputLimiter;
 
 enum { PREVIEW_NONE, PREVIEW_PCM, PREVIEW_AY, PREVIEW_SCWF, PREVIEW_BYOWTBL };
 static constexpr double previewTwoPi = 6.28318530717958647692;
@@ -147,15 +150,15 @@ static void audioCallback(int16_t* buffer, int stereoSamples) {
 
   // Convert float to int16_t
   for (int i = 0; i < stereoSamples * 2; i++) {
-    int sample = floatBuffer[i] * 32767;
-    if (sample > 32767) sample = 32767;
-    if (sample < -32768) sample = -32768;
-    buffer[i] = sample;
+    const float sample = floatBuffer[i];
+    buffer[i] = !std::isfinite(sample) ? 0 :
+      (int16_t)(sample >= 1.0f ? 32767 : sample <= -1.0f ? -32768 : sample * 32767.0f);
   }
 
   // Audio input monitoring (Phase 2.4): route armed capture into the output
   // when enabled. No-op (single atomic load) when monitor is off.
   audioInputManager.mixMonitor(buffer, stereoSamples);
+  outputLimiter.process(buffer, floatBuffer, stereoSamples, aSampleRate);
 
   const auto elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
     std::chrono::steady_clock::now() - startedAt).count();
@@ -172,6 +175,7 @@ static int start(int sampleRate, int bufferSize) {
 
   aSampleRate = sampleRate;
   aBufferSize = bufferSize;
+  outputLimiter.reset();
   cpuLoadPercent.store(0, std::memory_order_relaxed);
   memset(&samplePreview, 0, sizeof(samplePreview));
   samplePreviewVoice.init((float)sampleRate);

@@ -24,6 +24,7 @@ static void coefficients(float cutoff, float sampleRate, float damping, float* o
 
 void MultimodeFilter::init(float sampleRate) {
   sampleRate_ = sampleRate > 0.0f ? sampleRate : 48000.0f;
+  feedbackDecay_ = expf(-1.0f / (0.02f * sampleRate_));
   // Open303's coefficient approximation is specified through fs/8. Two
   // internal steps reach 12 kHz at a 48 kHz host rate.
   for (auto& filter : acid_) filter.setSampleRate(sampleRate_ * 2.0f);
@@ -36,8 +37,10 @@ void MultimodeFilter::init(float sampleRate) {
 void MultimodeFilter::configure(bool enabled, uint8_t character, uint8_t mode,
                                 bool slope24dB, float cutoffHz, float resonance,
                                 uint8_t color) {
-  const uint8_t nextCharacter = character > 7 ? 1 : character;
-  if (nextCharacter != character_) reset();
+  // Projects saved while Prism existed keep their Color setting and play as Snarl.
+  const uint8_t nextCharacter = character == 7 ? 6 : character > 7 ? 1 : character;
+  const bool characterChanged = nextCharacter != character_;
+  if (characterChanged) reset();
   enabled_ = enabled;
   character_ = nextCharacter;
   mode_ = mode > 2 ? 0 : mode;
@@ -79,18 +82,23 @@ void MultimodeFilter::configure(bool enabled, uint8_t character, uint8_t mode,
       : 1.5f - 1.25f * r2;
     coefficients(cutoffHz_, sampleRate_, damping_, coeff_[0]);
     if (character_ >= 5) {
+      const float onePoleTangent = tanf(kPi * cutoffHz_ / sampleRate_);
+      onePoleG_ = onePoleTangent / (1.0f + onePoleTangent);
       // 00 = 0%, 80 = 150%, FF = 300%; the upper half adds the wild range.
       const float normal = fminf(color_ / 128.0f, 1.0f);
       const float extension = fmaxf((int(color_) - 128) * (2.0f / 127.0f), 0.0f);
-      innerDamping_ = fmaxf(0.12f,
-        0.55f + 0.35f * (1.0f - resonance_) - 0.35f * extension);
-      const float firstPosition = character_ == 6
-        ? 0.7f + 0.8f * normal + 3.5f * extension
-        : 0.45f + 0.7f * normal + 0.6f * extension;
-      coefficients(cutoffHz_ * firstPosition,
-                   sampleRate_, innerDamping_, coeff_[1]);
-      coefficients(cutoffHz_ * (1.5f + 0.7f * normal + 5.8f * extension),
-                   sampleRate_, innerDamping_, coeff_[2]);
+      if (character_ == 6) {
+        snarlTargetDelay_ = fmaxf(8.0f, fminf(240.0f,
+          sampleRate_ / (cutoffHz_ * (0.35f + 0.2f * normal + 0.1f * extension))));
+        if (characterChanged)
+          snarlDelaySamples_[0] = snarlDelaySamples_[1] = snarlTargetDelay_;
+      }
+      if (character_ == 5) {
+        innerDamping_ = fmaxf(0.12f,
+          0.55f + 0.35f * (1.0f - resonance_) - 0.35f * extension);
+        coefficients(cutoffHz_ * (0.25f + 0.15f * normal + 0.15f * extension),
+                     sampleRate_, innerDamping_, coeff_[1]);
+      }
     }
   }
 }
@@ -99,6 +107,13 @@ void MultimodeFilter::reset() {
   memset(ic1eq_, 0, sizeof(ic1eq_));
   memset(ic2eq_, 0, sizeof(ic2eq_));
   memset(feedback_, 0, sizeof(feedback_));
+  memset(feedbackEnvelope_, 0, sizeof(feedbackEnvelope_));
+  memset(onePoleState_, 0, sizeof(onePoleState_));
+  memset(snarlDelay_, 0, sizeof(snarlDelay_));
+  memset(snarlDelaySamples_, 0, sizeof(snarlDelaySamples_));
+  memset(snarlWrite_, 0, sizeof(snarlWrite_));
+  if (character_ == 6)
+    snarlDelaySamples_[0] = snarlDelaySamples_[1] = snarlTargetDelay_;
   for (auto& channel : k35_)
     for (auto& cell : channel) k35_reset(&cell);
   for (auto& filter : acid_) filter.reset();
@@ -139,25 +154,48 @@ float MultimodeFilter::processCreative(float input, int channel) {
   const float previous = feedback_[channel];
   float driven;
   if (character_ == 5) {
-    // Roar: soft-clipped outer-filter feedback, increasing with Color.
-    driven = audioTanh(input * (1.05f + 0.45f * normal + 2.5f * extension) +
-                       previous * (0.05f + 0.6f * normal + 3.2f * extension));
-  } else if (character_ == 6) {
-    // Snarl: one resonant node moving across the cutoff in the feedback path.
-    const float node = processStage(input + previous * (0.15f + 1.4f * extension), channel, 1,
-                                    coeff_[1], innerDamping_, 1);
-    driven = audioTanh(input * 1.1f + node * (1.2f + 0.4f * normal + 3.0f * extension));
+    // Roar: a gated, filtered feedback loop driven harder by Color.
+    feedbackEnvelope_[channel] = fmaxf(fabsf(input),
+                                      feedbackEnvelope_[channel] * feedbackDecay_);
+    driven = audioTanh(input * (1.05f + 0.45f * normal + 2.0f * extension) +
+                       previous * (0.1f + normal + 2.0f * extension));
   } else {
-    // Prism: two moving nodes give the feedback a formant-like colour.
-    const float nodeInput = input + previous * (0.15f + 1.4f * extension);
-    const float first = processStage(nodeInput, channel, 1, coeff_[1], innerDamping_, 1);
-    const float second = processStage(nodeInput, channel, 2, coeff_[2], innerDamping_, 1);
-    driven = audioTanh(input + first * (1.25f + 0.35f * normal + 2.4f * extension)
-                       - second * (1.05f + 0.25f * normal + 2.2f * extension));
+    driven = audioTanh(input * 0.85f);
   }
-  const float output = processStage(driven, channel, 0, coeff_[0], damping_, mode_);
-  feedback_[channel] = audioTanh(output);
-  return audioTanh(output * 1.1f);
+  float output = processStage(driven, channel, 0, coeff_[0], damping_, mode_);
+  if (character_ == 6) {
+    // Snarl: a short, saturated delay loop adds moving resonant teeth.
+    float& delay = snarlDelaySamples_[channel];
+    delay += 0.005f * (snarlTargetDelay_ - delay);
+    const int whole = (int)delay;
+    const float fraction = delay - whole;
+    const int read = (snarlWrite_[channel] - whole) & (kSnarlDelaySize - 1);
+    const int older = (read - 1) & (kSnarlDelaySize - 1);
+    const float delayed = snarlDelay_[channel][read] * (1.0f - fraction) +
+                          snarlDelay_[channel][older] * fraction;
+    const float feedback = 0.3f + 0.15f * resonance_ +
+                           0.15f * normal + 0.1f * extension;
+    snarlDelay_[channel][snarlWrite_[channel]] =
+      audioTanh(output * (1.3f + normal + extension) + delayed * feedback);
+    snarlWrite_[channel] = (snarlWrite_[channel] + 1) & (kSnarlDelaySize - 1);
+    output = output * 0.65f + delayed * (0.55f + 0.2f * normal + 0.1f * extension);
+  }
+  // A third pole makes LP/HP 18 dB/oct. BP has a steeper upper skirt.
+  const float v = (output - onePoleState_[channel]) * onePoleG_;
+  const float low = v + onePoleState_[channel];
+  onePoleState_[channel] = low + v;
+  output = mode_ == 2 ? output - low : low;
+  if (character_ == 5) {
+    const float feedbackHigh = processStage(output, channel, 1, coeff_[1],
+                                            innerDamping_, 2);
+    const float gate = fminf(1.0f, feedbackEnvelope_[channel] * 4.0f);
+    feedback_[channel] = gate * (0.2f + 0.08f * normal + 0.05f * extension) *
+                         audioTanh(feedbackHigh * (1.0f + normal + extension));
+  }
+  const float level = character_ == 5
+    ? 1.0f / (1.0f + 0.45f * normal + 0.45f * extension)
+    : 1.2f / (1.0f + 0.35f * normal + extension);
+  return audioTanh(output * 1.1f) * level;
 }
 
 float MultimodeFilter::process(float input, int channel) {
@@ -172,9 +210,15 @@ float MultimodeFilter::process(float input, int channel) {
     return audioTanh(0.7f * output);
   }
   if (character_ >= 5) return processCreative(input, channel);
+  // A resonant SVF stage peaks at roughly 1 / damping. Two stages can
+  // multiply that gain again, otherwise a sustained note clips the output.
+  const float resonanceGain = fminf(1.0f, damping_);
   float output = processStage(input, channel, 0, coeff_[0], damping_, mode_);
+  output *= resonanceGain;
   if (slope24dB_)
     output = processStage(output, channel, 1, coeff_[0], damping_, mode_);
+  if (slope24dB_) output *= resonanceGain;
+  if (!isfinite(output)) { reset(); return 0.0f; }
   return output;
 }
 

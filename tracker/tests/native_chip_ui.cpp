@@ -44,11 +44,13 @@ int main(int argc,char** argv){
     getInstrumentFunctions(InstrumentType::Braids).init(&instrument);
     screenSetup(&screenInstrument,0);appDraw();
     require(instrument.chip.braids.filterCharacter==2,"default Classic");
-    for(int character=3;character<=7;++character) {
+    for(int character=3;character<=6;++character) {
       require(screenInstrumentBraids.onEdit(1,4,CellEditAction::increase),"filter type edit");
       appDraw();
       require(instrument.chip.braids.filterCharacter==character,"filter type selection");
     }
+    require(screenInstrumentBraids.onEdit(1,4,CellEditAction::increase),"filter type edit at Snarl");
+    require(instrument.chip.braids.filterCharacter==6,"Snarl is the last filter type");
     auto before=instrument.chip.braids.filterColor;
     require(screenInstrumentBraids.onEdit(1,6,CellEditAction::increase),"filter Color edit");
     appDraw();

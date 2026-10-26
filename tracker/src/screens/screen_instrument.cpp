@@ -547,6 +547,11 @@ void instrumentCommonDrawField(int col, int row, CellState state) {
   }
 }
 
+static const char* filterCharacterName(uint8_t character) {
+  static const char* types[] = {"Off", "Clean", "Classic", "Aggro", "Acid", "Roar", "Snarl"};
+  return types[character == 7 ? 6 : character <= 6 ? character : 1];
+}
+
 void instrumentCommonDrawVoicePostStatic(int drawEnvelope) {
   const InstrumentVoicePostSettings* post =
     instrumentVoicePostSettings(&chipnomadState->project.instruments[cInstrument]);
@@ -580,8 +585,7 @@ int instrumentCommonDrawVoicePostCursor(int col, int row) {
     InstrumentVoicePostSettings* post = instrumentVoicePostSettings(&chipnomadState->project.instruments[cInstrument]);
     int width = 2;
     if (row == 4) {
-      static const char* types[] = {"Off", "Clean", "Classic", "Aggro", "Acid", "Roar", "Snarl", "Prism"};
-      width = (int)strlen(types[post && post->filterCharacter <= 7 ? post->filterCharacter : 1]);
+      width = (int)strlen(filterCharacterName(post ? post->filterCharacter : 1));
     } else if (row == 6) {
       width = post && post->filterCharacter >= 5 && post->filterCharacter <= 7 ? 2 : 5;
     } else if (row == 7) {
@@ -608,7 +612,7 @@ int instrumentCommonDrawVoicePostField(int col, int row, CellState state,
   gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
   gfxClearRect(26, row + 4, 8, 1);
   switch (row) {
-    case 4: { static const char* types[] = {"Off", "Clean", "Classic", "Aggro", "Acid", "Roar", "Snarl", "Prism"}; gfxPrint(26, 8, types[post->filterCharacter <= 7 ? post->filterCharacter : 1]); break; }
+    case 4: gfxPrint(26, 8, filterCharacterName(post->filterCharacter)); break;
     case 5: { static const char* modes[] = {"LP", "BP", "HP"}; gfxPrint(26, 9, modes[post->filterMode <= 2 ? post->filterMode : 0]); break; }
     case 6:
       if (post->filterCharacter >= 5 && post->filterCharacter <= 7)
@@ -632,7 +636,8 @@ int instrumentCommonOnEditVoicePost(int col, int row, CellEditAction action,
   if (!col) return 0;
   switch (row) {
     case 4: {
-      int handled = edit8noLast(action, &post->filterCharacter, 1, 0, 7);
+      if (post->filterCharacter == 7) post->filterCharacter = 6;
+      int handled = edit8noLast(action, &post->filterCharacter, 1, 0, 6);
       post->filterEnabled = post->filterCharacter != 0;
       if (handled) currentScreen->fullRedraw();
       return handled;

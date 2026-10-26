@@ -555,7 +555,7 @@ An `F` in the note volume column triggers an accent. Normal notes use a half-ste
 
 Its six macros are **Decay**, **Tone**, **Sweep**, **Noise**, **FM** and **Drive**. Their labels adapt where useful (for example, Kick's Noise is `Click`, and Cowbell's FM is metallic cross-modulation). Every macro is active on every model, but its musical role changes with the model: Sweep can alter pitch, burst spacing or metallic spread; FM can add cross-modulation, a metallic layer or a ring-like overtone. The lower half of each range is intended for conventional drum sounds; the upper half deliberately opens wider timbral morphs and more synthetic results.
 
-Every model can use the shared LP/BP/HP multimode filter, with Clean, Classic, Aggro, Acid, Roar, Snarl or Prism character, cutoff and resonance. Clean, Classic, Aggro and Acid expose `12`/`24 dB` slope; Roar, Snarl and Prism expose Color instead. Bogie supports all of its active macros plus Volume, Pitch, Cutoff and Resonance as modulation and motion-recording destinations. Use short Decay with Cowbell for sharp phonk attacks; increase FM for a harder, more metallic bell.
+Every model can use the shared LP/BP/HP multimode filter, with Clean, Classic, Aggro, Acid, Roar or Snarl character, cutoff and resonance. Clean, Classic, Aggro and Acid expose `12`/`24 dB` slope; Roar and Snarl expose Color instead. Bogie supports all of its active macros plus Volume, Pitch, Cutoff and Resonance as modulation and motion-recording destinations. Use short Decay with Cowbell for sharp phonk attacks; increase FM for a harder, more metallic bell.
 
 On the Modulation screen, press **EDIT** on a source to choose a family (Envelopes, LFO or Sticks), then its source. **Left** and **Right** still cycle sources directly.
 
@@ -631,7 +631,7 @@ Several VCO types are available:
 
 Each instrument feeds its VCO into a multimode filter.
 
-The filter can work as a low-pass (LP), band-pass (BP) or high-pass (HP) filter, with cutoff from 20 Hz to 20 kHz. Clean, Classic, Aggro and Acid have a `12 dB`/`24 dB` slope switch. The three creative characters use that slot for a Color control instead.
+The filter can work as a low-pass (LP), band-pass (BP) or high-pass (HP) filter, with cutoff from 20 Hz to 20 kHz. Clean, Classic, Aggro and Acid have a `12 dB`/`24 dB` slope switch. Roar and Snarl use Color instead and have an `18 dB` LP/HP base slope; their BP upper slope is steeper than the lower slope. Snarl's saturation can add harmonics above the cutoff.
 
 Several filter characters are available:
 
@@ -639,11 +639,10 @@ Several filter characters are available:
 - **Classic**: inspired by classic American analogue synths
 - **Aggro**: gritty MS-20-style KORG-35 filter, with resonant LP, BP and HP
 - **Acid**: Open303's TB-303 low-pass in LP/24; its other modes and slopes are Open303-based adaptations. Acid reaches an effective maximum cutoff of 12 kHz (slightly lower below a 48 kHz output rate), even though the shared cutoff control reaches 20 kHz.
-- **Roar**: saturated filter feedback; Color increases the feedback
-- **Snarl**: an extra resonant peak around the cutoff; Color moves the peak
-- **Prism**: two moving peaks for a formant-like colour; Color shifts their positions
+- **Roar**: inspired by Massive's Scream filter; a saturated filter with a separate high-pass feedback path. Color increases its growl and drive.
+- **Snarl**: inspired by Bitwig's Rasp; a short saturated delay loop creates moving resonant teeth around the cutoff. Color changes their spacing and intensity.
 
-For Roar, Snarl and Prism, Color runs from `00` (0%) through `80` (150%) to `FF` (300%). The upper half pushes the feedback and resonant peaks into more extreme, sometimes unstable sounds.
+For Roar and Snarl, Color runs from `00` (0%) through `80` (150%) to `FF` (300%). The upper half intensifies Roar's saturation and Snarl's moving peaks. Older projects that selected Prism play that character as Snarl, retaining its Color value.
 
 Aggro, Acid and the creative characters can get strongly resonant. Start low and turn them up gently. Existing Aggro and Acid instruments use these new sounds when loaded.
 
@@ -1268,6 +1267,8 @@ Use it to balance the 8 tracks, shape each track with Tilt EQ, and send audio to
 The mixer is track-based, not instrument-based. If a track changes instruments, its level, PAN, Tilt and sends remain attached to the track. Instruments also have their own `00-FF` **Vol** and **Pan** in the top row of the Instrument screen. Instrument PAN is applied first, then track PAN. Both preserve an existing stereo image at centre; they progressively attenuate the opposite side when moved left or right.
 
 On the **MASTER FX** row, select **LEVEL** to adjust the overall output volume from `001%` to `100%`. This is the same **Mix volume** setting found in Settings > Mixer and is saved for the device, so it is useful on consoles without a physical volume control. Select **EDIT** to open the master effects.
+
+During playback, the output limiter lowers sustained loud signals and isolated peaks, and removes DC offset. If a dense mix sounds quieter than expected, lower track levels or effect sends. Keep the console's own volume moderate when testing new sounds.
 
 ### Auto Mix
 

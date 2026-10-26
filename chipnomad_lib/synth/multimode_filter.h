@@ -17,6 +17,7 @@ class MultimodeFilter {
   float process(float input, int channel = 0);
 
  private:
+  static constexpr int kSnarlDelaySize = 256;
   float processStage(float input, int channel, int stage, const float* coeff,
                      float damping, uint8_t mode);
   float processAggro(float input, int channel);
@@ -28,10 +29,18 @@ class MultimodeFilter {
   bool slope24dB_ = false;
   float cutoffHz_ = 1000.0f, resonance_ = 0.0f;
   float damping_ = 1.0f, innerDamping_ = 1.0f;
-  float coeff_[3][3] = {};
-  float ic1eq_[2][3] = {};
-  float ic2eq_[2][3] = {};
+  float coeff_[2][3] = {};
+  float ic1eq_[2][2] = {};
+  float ic2eq_[2][2] = {};
   float feedback_[2] = {};
+  float feedbackEnvelope_[2] = {};
+  float feedbackDecay_ = 0.0f;
+  float onePoleState_[2] = {};
+  float onePoleG_ = 0.0f;
+  float snarlDelay_[2][kSnarlDelaySize] = {};
+  float snarlDelaySamples_[2] = {};
+  float snarlTargetDelay_ = 64.0f;
+  int snarlWrite_[2] = {};
   float k35G_ = 0.0f, k35K_ = 0.0f;
   k35_t k35_[2][4] = {};
   rosic::TeeBeeFilter acid_[2];

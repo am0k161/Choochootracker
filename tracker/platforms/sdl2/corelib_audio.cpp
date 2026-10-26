@@ -2,6 +2,10 @@
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <cstring>
+#ifdef MIYOOPORTS_BUILD
+#include <cmath>
+#include <cstdlib>
+#endif
 #ifdef PORTMASTER_BUILD
 #include <cstdlib>
 #include <string>
@@ -145,6 +149,24 @@ int audioSetup(AudioCallback* audioCallback, int sampleRate, int bufferSize) {
     fprintf(stderr, "Failed to open audio: %s\n", SDL_GetError());
     return 1;
   }
+#ifdef MIYOOPORTS_BUILD
+  // The mmiyoo driver can reset hardware gain when it opens after Onion's
+  // audio server stops. Restore the level captured by launch.sh.
+  const char* savedVolume = SDL_getenv("CCT_MIYOO_VOLUME_DB");
+  if (savedVolume && *savedVolume) {
+    char* end = nullptr;
+    const float db = strtof(savedVolume, &end);
+    if (end != savedVolume && *end == '\0' && std::isfinite(db) && db >= -96.0f && db <= 12.0f) {
+      for (int channel = 0; channel < 2; ++channel) {
+        FILE* control = fopen("/proc/mi_modules/mi_ao/mi_ao0", "w");
+        if (!control) break;
+        fprintf(control, "set_ao_volume %d %.2fdB\n", channel, db);
+        fclose(control);
+      }
+      SDL_setenv("CCT_MIYOO_VOLUME_DB", "", 1);
+    }
+  }
+#endif
 #ifdef WEB_BUILD
   webAudioCallback = audioCallback;
   webSampleRate = sampleRate;

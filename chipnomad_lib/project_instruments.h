@@ -253,7 +253,7 @@ struct InstrumentAYSample {
 
 struct InstrumentVoicePostSettings {
   uint8_t filterEnabled;
-  uint8_t filterCharacter; // 0: off, 1: clean, 2: classic, 3: aggro, 4: acid, 5: roar, 6: snarl, 7: prism
+  uint8_t filterCharacter; // 0: off, 1: clean, 2: classic, 3: aggro, 4: acid, 5: roar, 6: snarl; legacy 7 plays as snarl
   uint8_t filterMode;
   uint8_t filterSlope24dB;
   uint16_t filterCutoffHz;
