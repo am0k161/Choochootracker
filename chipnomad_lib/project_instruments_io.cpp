@@ -216,6 +216,7 @@ static int loadVoicePostSetting(const char* line, InstrumentVoicePostSettings* p
   else if (strncmp(line, "- Filter slope: ", 16) == 0) sscanf(line, "- Filter slope: %hhu", &post->filterSlope24dB);
   else if (strncmp(line, "- Filter cutoff: ", 17) == 0) sscanf(line, "- Filter cutoff: %hu", &post->filterCutoffHz);
   else if (strncmp(line, "- Filter resonance: ", 20) == 0) sscanf(line, "- Filter resonance: %hhu", &post->filterResonance);
+  else if (strncmp(line, "- Filter color: ", 16) == 0) sscanf(line, "- Filter color: %hhu", &post->filterColor);
   else if (strncmp(line, "- Attack: ", 10) == 0) sscanf(line, "- Attack: %hhu", &post->attack);
   else if (strncmp(line, "- Decay: ", 9) == 0) sscanf(line, "- Decay: %hhu", &post->decay);
   else if (strncmp(line, "- Sustain: ", 11) == 0) sscanf(line, "- Sustain: %hhu", &post->sustain);
@@ -232,6 +233,7 @@ static void saveVoicePostSettings(FILE* file, const InstrumentVoicePostSettings*
   fprintf(file, "- Filter slope: %hhu\n", post->filterSlope24dB);
   fprintf(file, "- Filter cutoff: %hu\n", post->filterCutoffHz);
   fprintf(file, "- Filter resonance: %hhu\n", post->filterResonance);
+  fprintf(file, "- Filter color: %hhu\n", post->filterColor);
   fprintf(file, "- Attack: %hhu\n", post->attack);
   fprintf(file, "- Decay: %hhu\n", post->decay);
   fprintf(file, "- Sustain: %hhu\n", post->sustain);
@@ -297,6 +299,7 @@ static int loadInstrumentSample(FILE* file, Instrument* instrument) {
     else if (strncmp(line, "- Sample start: ", 16) == 0) sscanf(line, "- Sample start: %hhu", &sample->start);
     else if (strncmp(line, "- Sample end: ", 14) == 0) sscanf(line, "- Sample end: %hhu", &sample->end);
     else if (strncmp(line, "- Sample loop: ", 15) == 0) sscanf(line, "- Sample loop: %hhu", &sample->loopMode);
+    else if (strncmp(line, "- Sample loop start: ", 21) == 0) sscanf(line, "- Sample loop start: %hhu", &sample->loopStart);
     else if (strncmp(line, "- Sample slice: ", 16) == 0) sscanf(line, "- Sample slice: %hhu", &sample->slice);
     else if (strncmp(line, "- Sample auto sensitivity: ", 26) == 0) sscanf(line, "- Sample auto sensitivity: %hhu", &sample->autoSensitivity);
     else if (strncmp(line, "- Sample slice bounds: ", 23) == 0) {
@@ -323,7 +326,7 @@ static int loadInstrumentSample(FILE* file, Instrument* instrument) {
     char error[64];
     sampleLoadWav16(sample->path, sample, error, sizeof(error));
   }
-  if (sample->loopMode > 2) sample->loopMode = 0;
+  if (sample->loopMode > 4) sample->loopMode = 0;
   sample->slice = sampleNormalizeSliceEx(sample->slice);
   if (sample->autoSensitivity < 1 || sample->autoSensitivity > 99) sample->autoSensitivity = 50;
   if (sample->stretchMode > 6) sample->stretchMode = 0;
@@ -333,6 +336,8 @@ static int loadInstrumentSample(FILE* file, Instrument* instrument) {
 
 static int loadInstrumentAChChid(FILE* file, Instrument* instrument) {
   InstrumentAChChid* a = &instrument->chip.achchid;
+  a->sidShape = 4;
+  a->sidPulseWidth = 2048;
   while (1) {
     char* line = peekLine(file);
     if (line == NULL || line[0] == '#') return 0;
@@ -342,6 +347,8 @@ static int loadInstrumentAChChid(FILE* file, Instrument* instrument) {
     else if (strncmp(line, "- Timbre: ", 10) == 0) sscanf(line, "- Timbre: %hu", &a->timbre);
     else if (strncmp(line, "- Color: ", 9) == 0) sscanf(line, "- Color: %hu", &a->color);
     else if (strncmp(line, "- Saturation: ", 14) == 0) sscanf(line, "- Saturation: %hhu", &a->saturation);
+    else if (strncmp(line, "- SID shape: ", 13) == 0) sscanf(line, "- SID shape: %hhu", &a->sidShape);
+    else if (strncmp(line, "- SID pulse: ", 13) == 0) sscanf(line, "- SID pulse: %hu", &a->sidPulseWidth);
     else if (strncmp(line, "- Cutoff: ", 10) == 0) sscanf(line, "- Cutoff: %hu", &a->cutoff);
     else if (strncmp(line, "- Resonance: ", 13) == 0) sscanf(line, "- Resonance: %hhu", &a->resonance);
     else if (strncmp(line, "- Env mod: ", 11) == 0) sscanf(line, "- Env mod: %hhu", &a->envMod);
@@ -411,6 +418,15 @@ static int loadInstrumentBYOWTBL(FILE* file, Instrument* instrument) {
     char error[64];
     srWavetableLoadWav(table->oscillator[i].path, &table->oscillator[i],
                        &table->frameSize[i], &table->tableFrames[i], error, sizeof(error));
+  }
+  return 0;
+}
+
+static int loadInstrumentAudioIn(FILE* file, Instrument* instrument) {
+  while (const char* line = peekLine(file)) {
+    if (line[0] == '#') break;
+    loadVoicePostSetting(line, &instrument->chip.audioIn);
+    consumeLine(file);
   }
   return 0;
 }
@@ -577,7 +593,7 @@ static int loadInstrumentOPLL(FILE* file, Instrument* instrument) {
 }
 
 static int loadSimpleChip(FILE* file, Instrument* instrument) {
-  InstrumentSimpleChip p{};bool seen=false,bassSeen=false,programSeen=false;
+  InstrumentSimpleChip p{};p.filterColor=128;bool seen=false,bassSeen=false,programSeen=false;
   p.segaBassExtension=instrument->type==InstrumentType::SegaPSG;
   while(char* line=peekLine(file)) {
     if(line[0]=='#')break;
@@ -637,6 +653,10 @@ int instrumentLoadData(FILE* file, Instrument* instrument, Project* p) {
     }
     consumeLine(file);
   }
+
+  // Older CCT/CNI files have no Color line. instrumentClear() zeroes the union.
+  if (InstrumentVoicePostSettings* post = instrumentVoicePostSettings(instrument))
+    post->filterColor = 128;
 
   // Check version to determine format
   if (projectFileVersion == 1) {
@@ -699,6 +719,9 @@ int instrumentLoadData(FILE* file, Instrument* instrument, Project* p) {
         break;
       case InstrumentType::Monk:
         if (loadInstrumentMonk(file, instrument)) return 1;
+        break;
+      case InstrumentType::AudioIn:
+        if (loadInstrumentAudioIn(file, instrument)) return 1;
         break;
       case InstrumentType::MME:
         if (loadInstrumentMME(file, instrument)) return 1;
@@ -859,6 +882,12 @@ static int saveInstrumentSample(FILE* file, Instrument* instrument) {
   fprintf(file, "- Sample start: %hhu\n", sample->start);
   fprintf(file, "- Sample end: %hhu\n", sample->end);
   fprintf(file, "- Sample loop: %hhu\n", sample->loopMode);
+  // Loop start marker: only written when it differs from the default, so
+  // existing files stay byte-identical. 0 means the loop wraps to the
+  // Region START.
+  if (sample->loopStart != 0) {
+    fprintf(file, "- Sample loop start: %hhu\n", sample->loopStart);
+  }
   fprintf(file, "- Sample slice: %hhu\n", sampleNormalizeSliceEx(sample->slice));
   // AUTO sensitivity: only written when it differs from the default, so
   // existing files stay byte-identical.
@@ -893,6 +922,8 @@ static int saveInstrumentAChChid(FILE* file, Instrument* instrument) {
   fprintf(file, "- Timbre: %hu\n", a->timbre);
   fprintf(file, "- Color: %hu\n", a->color);
   fprintf(file, "- Saturation: %hhu\n", a->saturation);
+  fprintf(file, "- SID shape: %hhu\n", a->sidShape);
+  fprintf(file, "- SID pulse: %hu\n", a->sidPulseWidth);
   fprintf(file, "- Cutoff: %hu\n", a->cutoff);
   fprintf(file, "- Resonance: %hhu\n", a->resonance);
   fprintf(file, "- Env mod: %hhu\n", a->envMod);
@@ -964,6 +995,7 @@ static int saveInstrumentDrumSynth(FILE* file, Instrument* instrument) {
   fprintf(file, "- Filter slope: %hhu\n", d->filterSlope24dB);
   fprintf(file, "- Filter cutoff: %hu\n", d->filterCutoffHz);
   fprintf(file, "- Filter resonance: %hhu\n", d->filterResonance);
+  fprintf(file, "- Filter color: %hhu\n", d->filterColor);
   return 0;
 }
 
@@ -1081,6 +1113,9 @@ int instrumentSaveData(FILE* file, int idx, Instrument* instrument) {
       break;
     case InstrumentType::Monk:
       saveInstrumentMonk(file, instrument);
+      break;
+    case InstrumentType::AudioIn:
+      saveVoicePostSettings(file, &instrument->chip.audioIn);
       break;
     case InstrumentType::MME:
       saveInstrumentMME(file, instrument);

@@ -27,11 +27,11 @@ cd "$GAMEDIR" || exit 1
 export XDG_DATA_HOME="$CONFDIR"
 export SDL_GAMECONTROLLERCONFIG="$sdl_controllerconfig"
 export HOTKEY=guide
-# RtMidi links ALSA into the process on PortMaster.  On ArkOS the ALSA
-# "default" device may resolve to a dmix slave that is unavailable; use the
-# internal card directly unless the user/platform already chose a device.
+# Keep ArkOS's default ALSA route so its volume controls affect playback.
+# Some installations cannot open that route, so the audio backend may retry
+# with the internal card. Respect a device already chosen by the user/platform.
 if [ "$CFW_NAME" = "ArkOS" ] && [ -z "$AUDIODEV" ]; then
-  export AUDIODEV="plughw:0,0"
+  export CCT_AUDIODEV_FALLBACK="plughw:0,0"
 fi
 
 bind_directories ~/.choochootracker "$CONFDIR/.choochootracker"

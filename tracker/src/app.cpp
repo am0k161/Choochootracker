@@ -1,5 +1,6 @@
 #include "soundbank_library.h"
 #include <string.h>
+#include <stdio.h>
 #include "corelib_gfx.h"
 #include "corelib_font.h"
 #include "corelib_file.h"
@@ -65,6 +66,45 @@ static int audioProjectDirty;
 static MidiCCMapping midiCCApplied[PROJECT_MAX_MIDI_CC_MAPPINGS];
 static uint8_t midiCCAppliedValue[PROJECT_MAX_MIDI_CC_MAPPINGS];
 static uint8_t midiCCAppliedValid[PROJECT_MAX_MIDI_CC_MAPPINGS];
+static uint64_t playbackCounterTicks;
+static uint64_t playbackCounterMicros;
+static uint64_t playbackCounterStartMicros;
+static uint64_t playbackCounterPreviousTicks;
+static bool playbackCounterWasPlaying;
+
+static void drawPlaybackCounter(const PlaybackStatus* status) {
+  if (status->isPlaying) {
+    if (!playbackCounterWasPlaying || status->linkPhaseTicks < playbackCounterPreviousTicks) {
+      playbackCounterStartMicros = status->linkPhaseTickMicros;
+      playbackCounterMicros = 0;
+    }
+    playbackCounterTicks = status->linkPhaseTicks;
+    if (status->linkPhaseTickMicros >= playbackCounterStartMicros)
+      playbackCounterMicros = status->linkPhaseTickMicros - playbackCounterStartMicros;
+  } else if (playbackCounterWasPlaying && status->linkPhaseTickMicros >= playbackCounterStartMicros) {
+    playbackCounterMicros = status->linkPhaseTickMicros - playbackCounterStartMicros;
+  }
+  playbackCounterWasPlaying = status->isPlaying != 0;
+  playbackCounterPreviousTicks = status->linkPhaseTicks;
+
+  char label[7];
+  if (appSettings.playbackCounterMode == 0) {
+    const uint64_t ticksPerBar = (uint64_t)appSettings.playbackBarRows * appSettings.playbackBarTicks;
+    uint64_t bars = playbackCounterTicks / ticksPerBar;
+    unsigned quarter = playbackCounterTicks ?
+      (unsigned)((playbackCounterTicks % ticksPerBar) * 4 / ticksPerBar) + 1 : 0;
+    if (bars > 9999) { bars = 9999; quarter = 4; }
+    snprintf(label, sizeof(label), "%03llu:%u", (unsigned long long)bars, quarter);
+  } else {
+    uint64_t seconds = playbackCounterMicros / 1000000;
+    if (seconds > 59999) seconds = 59999;
+    snprintf(label, sizeof(label), "%02llu:%02llu",
+      (unsigned long long)(seconds / 60), (unsigned long long)(seconds % 60));
+  }
+  gfxSetFgColor(appSettings.colorScheme.textTitles);
+  gfxClearRect(34, 2, 6, 1);
+  gfxPrint(34, 2, label);
+}
 
 static bool monitorNeeded(void) {
   return (currentScreen == &screenMixer && screenMixerGetPage() == 0) ||
@@ -499,10 +539,46 @@ void appResetInputState(void) {
   quickHelpSelectAlone = 0;
 }
 
+int appTapSequenceOpen(int button) {
+  return tapButton == button && tapTimerCount > 0;
+}
+
+#ifndef WEB_BUILD
+// Moves an autosave that failed to load to autosave.cct.unreadable (or
+// .unreadable-2, -3, ...) so later autosaves cannot overwrite it.
+static int keepUnreadableAutosave(void) {
+  char autosave[PATH_LENGTH + 1];
+  snprintf(autosave, sizeof(autosave), "%s", getAutosavePath());
+  char keepPath[PATH_LENGTH + 32];
+  for (int n = 1; n < 100; ++n) {
+    if (n == 1) snprintf(keepPath, sizeof(keepPath), "%s.unreadable", autosave);
+    else snprintf(keepPath, sizeof(keepPath), "%s.unreadable-%d", autosave, n);
+    FILE* existing = fopen(keepPath, "rb");
+    if (existing) {
+      fclose(existing);
+      continue;
+    }
+    return rename(autosave, keepPath) == 0;
+  }
+  return 0;
+}
+#endif
+
+static void autosaveProject(void) {
+  if (autosaveKept < 0) return; // The unreadable autosave is still in place
+  if (projectSave(&chipnomadState->project, getAutosavePath()) != 0)
+    screenMessage(MESSAGE_TIME_ERROR, "%s", projectFileError);
+}
+
 /**
 * @brief Initialize the application: setup audio system, load auto-saved project, show the first screen
 */
 void appSetup(void) {
+  playbackCounterTicks = 0;
+  playbackCounterMicros = 0;
+  playbackCounterStartMicros = 0;
+  playbackCounterPreviousTicks = 0;
+  playbackCounterWasPlaying = false;
   // Registered before anything else touches MIDI: chipnomad_lib's engine
   // path (applyVoiceEvents/chipnomadMidiPanic) now goes through the router,
   // which does nothing until a backend is registered.
@@ -564,6 +640,11 @@ void appSetup(void) {
   // Only a genuine parse failure is worth warning about - no autosave yet
   // (first launch) is normal and falls through to the demo silently.
   autosaveLoadFailed = autosaveExists && !projectLoaded;
+#ifndef WEB_BUILD
+  // Never autosave over a file that failed to load: set it aside first so
+  // the work in it can still be recovered.
+  if (autosaveLoadFailed) autosaveKept = keepUnreadableAutosave() ? 1 : -1;
+#endif
 #ifdef WEB_BUILD
   const char* defaultProject = "/projects/grieg-mountain-king-fm.cct";
 #else
@@ -590,7 +671,15 @@ void appSetup(void) {
   chipnomadSetBraidsSettings(chipnomadState, appSettings.braidsBits,
     appSettings.braidsDrift, appSettings.braidsSignature,
     appSettings.braidsSignatureSeed);
-  audioManager.start(appSettings.audioSampleRate, appSettings.audioBufferSize);
+  audioOutputSelect(appSettings.audioOutputDeviceName);
+  if (audioManager.start(appSettings.audioSampleRate, appSettings.audioBufferSize) &&
+      appSettings.audioOutputDeviceName[0]) {
+    audioOutputSelect("");
+    if (!audioManager.start(appSettings.audioSampleRate, appSettings.audioBufferSize)) {
+      appSettings.audioOutputDeviceName[0] = 0;
+      settingsSave();
+    }
+  }
   audioManager.resume();
 
   // Audio input: enumerate capture devices and re-arm the ones saved in
@@ -605,6 +694,8 @@ void appSetup(void) {
   int savedOutputPort = findMidiPortByName(0, appSettings.midiOutputDeviceName);
   if (savedOutputPort >= 0 && midiRouterOpenOutput(savedOutputPort) == 0) appSettings.midiOutputDevice = savedOutputPort;
   midiRouterSetChannelInstrumentMap(chipnomadState->midiRouter, appSettings.midiChannelInstrument);
+  midiRouterSetSyncOutput(chipnomadState->midiRouter, appSettings.midiSendClock, appSettings.midiSendTransport);
+  midiRouterSetOutputDelayMs(appSettings.midiOutputDelayMs);
   midiRouterSetClockMode(chipnomadState->midiRouter,
     appSettings.clockSource == ClockSource::midiClock ? MidiClockMode::slave : MidiClockMode::off);
   // Ableton Link: restore the saved selection. Connect happens on demand
@@ -674,6 +765,10 @@ void appDraw(void) {
   pianoDisplayDraw();
   waveformDisplayRefresh();
 
+  ScreenOverlayCoordinates sidebar;
+  const PlaybackStatus* playback = chipnomadGetPlaybackStatus(chipnomadState);
+  drawPlaybackCounter(playback);
+
   // Tracks
   char digit[2] = "0";
   for (int c = 0; c < chipnomadState->project.tracksCount; c++) {
@@ -702,7 +797,7 @@ void appDraw(void) {
       gfxDrawBitmap(waveformBitmap, 36, 3 + c);
     }
 
-    uint8_t note = chipnomadGetPlaybackStatus(chipnomadState)->tracks[c].note.pitchFinal;
+    uint8_t note = playback->tracks[c].note.pitchFinal;
     const char* noteStr = noteName(&chipnomadState->project, note);
 
     // Use warning color if track warning is active
@@ -747,11 +842,12 @@ static void handleAudioDeviceRemoved(int isCapture) {
   screenNotifyAudioRestart();
   audioInputManagerStopRecording();
   audioInputManager.disarmAll();
-  audioInputCleanup();
-  audioInputRefreshDevices();
+  if (!audioManager.refreshDevices || audioManager.refreshDevices()) {
+    screenMessage(MESSAGE_TIME_ERROR, "Audio refresh failed");
+    return;
+  }
   audioInputManager.enumerate();
   syncArmedDevicesFromSettings();
-  audioManager.restart();
 }
 
 void appOnEvent(MainLoopEventData eventData) {
@@ -1099,7 +1195,7 @@ void appOnEvent(MainLoopEventData eventData) {
     // Autosave
     if (++autosaveCounter >= AUTOSAVE_INTERVAL_FRAMES) {
       autosaveCounter = 0;
-      projectSave(&chipnomadState->project, getAutosavePath());
+      autosaveProject();
     }
 
     // Multi-tap timer handling
@@ -1133,7 +1229,7 @@ void appOnEvent(MainLoopEventData eventData) {
     break;
   case MainLoopEvent::exit:
     // Auto-save the current project and settings on exit
-    projectSave(&chipnomadState->project, getAutosavePath());
+    autosaveProject();
     settingsSave();
     break;
   case MainLoopEvent::sleep:
@@ -1143,7 +1239,7 @@ void appOnEvent(MainLoopEventData eventData) {
       // Stop playback to avoid state issues
       chipnomadQueuePlaybackStop(chipnomadState);
       // Auto-save project
-      projectSave(&chipnomadState->project, getAutosavePath());
+      autosaveProject();
     }
     // Save settings
     settingsSave();

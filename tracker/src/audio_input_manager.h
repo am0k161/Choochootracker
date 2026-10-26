@@ -29,7 +29,7 @@ struct AudioInputRing {
 
   // Realtime-safe push from the capture callback. Returns false when full
   // (sample block dropped, counter bumped).
-  bool push(const int16_t* stereo, int stereoSampleCount);
+  bool push(const int16_t* stereo, int stereoSampleCount, int channels = 2);
   // Drains up to stereoSampleCount samples; returns how many were read.
   int pop(int16_t* stereo, int stereoSampleCount);
   void clear();
@@ -91,6 +91,10 @@ class AudioInputManager {
   // buffer after chipnomadRender(). No-op when monitor is off.
   void mixMonitor(int16_t* buffer, int stereoSamples);
 
+  // Output callback: independent of recorder and dry monitor consumption.
+  // Always drain, including while stopped, so the next note uses live audio.
+  void readLiveInput(float* stereo, int frames);
+
   // Test/diagnostic hooks.
   unsigned int droppedCount() const;
   bool captureOpen() const { return captureOpen_; }
@@ -118,6 +122,8 @@ class AudioInputManager {
   // by mixMonitor on the output audio thread. Separate from the recorder
   // rings so monitoring never steals recorded data.
   AudioInputRing monitorRing_;
+  AudioInputRing liveRing_;
+  int16_t liveChunk_[1024 * 2];
   int16_t monitorChunk_[1024 * 2];
   int monitorGain_ = 16384; // -6 dB (Q15)
   // Level accumulation (capture callback side).

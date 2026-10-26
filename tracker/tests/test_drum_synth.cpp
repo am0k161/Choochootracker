@@ -87,6 +87,7 @@ TEST_CASE("DrumSynth CNI round trip preserves engine macros and filter") {
   d->engine = DrumSynthEngine::cowbell; d->decay = 91; d->tone = 44; d->sweep = 201;
   d->noise = 12; d->fm = 188; d->drive = 67; d->filterEnabled = 1;
   d->filterMode = 2; d->filterSlope24dB = 1; d->filterCutoffHz = 4321; d->filterResonance = 111;
+  d->filterColor = 209;
   const char* path = "test_drum_synth.cni";
   REQUIRE(instrumentSave(&saved, path, 0) == 0);
   REQUIRE(instrumentLoad(&loaded, path, 0) == 0);
@@ -100,4 +101,5 @@ TEST_CASE("DrumSynth CNI round trip preserves engine macros and filter") {
   CHECK(restored.filterEnabled == 1); CHECK(restored.filterMode == 2);
   CHECK(restored.filterSlope24dB == 1); CHECK(restored.filterCutoffHz == 4321);
   CHECK(restored.filterResonance == 111);
+  CHECK(restored.filterColor == 209);
 }

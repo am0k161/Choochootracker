@@ -48,6 +48,7 @@ void initDefaultAppSettings(void) {
   appSettings.screenHeight = 0;
   appSettings.audioSampleRate = kAudioSampleRate;
   appSettings.audioBufferSize = defaultAudioBufferSize();
+  appSettings.audioOutputDeviceName[0] = 0;
   appSettings.aySampleDithering = 1; // Default: ON
   appSettings.doubleTapFrames = 20;
   appSettings.keyRepeatDelay = 16;
@@ -73,6 +74,9 @@ void initDefaultAppSettings(void) {
 #else
   appSettings.waveformRefreshHz = 30;
 #endif
+  appSettings.playbackCounterMode = 0;
+  appSettings.playbackBarRows = 16;
+  appSettings.playbackBarTicks = 6;
   appSettings.stickLiveMode = StickLiveMode::hold;
   for (auto& visual : appSettings.trackVisuals)
     visual.mode = TrackVisualMode::detailed;
@@ -81,6 +85,9 @@ void initDefaultAppSettings(void) {
   appSettings.midiInputDeviceName[0] = '\0';
   appSettings.midiOutputDeviceName[0] = '\0';
   appSettings.clockSource = ClockSource::internal;
+  appSettings.midiSendClock = 0;
+  appSettings.midiSendTransport = 0;
+  appSettings.midiOutputDelayMs = 0;
   for (int i = 0; i < MIDI_CHANNEL_COUNT; i++) appSettings.midiChannelInstrument[i] = -1;
   appSettings.persistentWaveform = 0;
 #ifdef ANDROID_BUILD
@@ -197,6 +204,7 @@ ChipNomadState* chipnomadState;
 int projectModified = 0;
 int sampleLazyPlaybackActive = 0;
 int autosaveLoadFailed = 0;
+int autosaveKept = 0;
 
 int settingsSave(void) {
 #ifdef WEB_BUILD
@@ -214,6 +222,7 @@ int settingsSave(void) {
   fprintf(file, "screenHeight: %d\n", appSettings.screenHeight);
   fprintf(file, "audioSampleRate: %d\n", appSettings.audioSampleRate);
   fprintf(file, "audioBufferSize: %d\n", appSettings.audioBufferSize);
+  fprintf(file, "audioOutputDeviceName: %s\n", appSettings.audioOutputDeviceName);
   fprintf(file, "aySampleDithering: %d\n", appSettings.aySampleDithering);
   fprintf(file, "doubleTapFrames: %d\n", appSettings.doubleTapFrames);
   fprintf(file, "keyRepeatDelay: %d\n", appSettings.keyRepeatDelay);
@@ -228,6 +237,9 @@ int settingsSave(void) {
   fprintf(file, "quickHelpReleaseSeen: %d\n", appSettings.quickHelpReleaseSeen);
   fprintf(file, "ayWavetableLfoView: %d\n", appSettings.ayWavetableLfoView);
   fprintf(file, "waveformRefreshHz: %d\n", appSettings.waveformRefreshHz);
+  fprintf(file, "playbackCounterMode: %d\n", appSettings.playbackCounterMode);
+  fprintf(file, "playbackBarRows: %d\n", appSettings.playbackBarRows);
+  fprintf(file, "playbackBarTicks: %d\n", appSettings.playbackBarTicks);
 
   const char* stickLiveMode = appSettings.stickLiveMode == StickLiveMode::free ? "FREE" :
     appSettings.stickLiveMode == StickLiveMode::toggle ? "TOGGLE" : "HOLD";
@@ -248,6 +260,9 @@ int settingsSave(void) {
   // Write the canonical `clockSource:` line for v3+; also write the
   // legacy `midiClockMode:` alias (0/1 only, never 2) so older binaries
   // that read the old field still load the Internal/Midi-Clock choice.
+  fprintf(file, "midiSendClock: %d\n", appSettings.midiSendClock);
+  fprintf(file, "midiSendTransport: %d\n", appSettings.midiSendTransport);
+  fprintf(file, "midiOutputDelayMs: %d\n", appSettings.midiOutputDelayMs);
   fprintf(file, "clockSource: %d\n", (int)appSettings.clockSource);
   fprintf(file, "midiClockMode: %d\n",
     appSettings.clockSource == ClockSource::midiClock ? 1 : 0);
@@ -377,6 +392,9 @@ int settingsLoad(void) {
       sscanf(line + 17, "%d", &appSettings.audioSampleRate);
     } else if (strncmp(line, "audioBufferSize: ", 17) == 0) {
       sscanf(line + 17, "%d", &appSettings.audioBufferSize);
+    } else if (strncmp(line, "audioOutputDeviceName: ", 23) == 0) {
+      strncpy(appSettings.audioOutputDeviceName, line + 23, AUDIO_DEVICE_NAME_LENGTH);
+      appSettings.audioOutputDeviceName[AUDIO_DEVICE_NAME_LENGTH] = 0;
     } else if (strncmp(line, "aySampleDithering: ", 19) == 0) {
       sscanf(line + 19, "%d", &appSettings.aySampleDithering);
     } else if (strncmp(line, "doubleTapFrames: ", 17) == 0) {
@@ -405,6 +423,18 @@ int settingsLoad(void) {
       sscanf(line + 20, "%d", &appSettings.ayWavetableLfoView);
     } else if (strncmp(line, "waveformRefreshHz: ", 19) == 0) {
       sscanf(line + 19, "%d", &appSettings.waveformRefreshHz);
+    } else if (strncmp(line, "playbackCounterMode: ", 21) == 0) {
+      int mode;
+      if (sscanf(line + 21, "%d", &mode) == 1 && mode >= 0 && mode <= 1)
+        appSettings.playbackCounterMode = (uint8_t)mode;
+    } else if (strncmp(line, "playbackBarRows: ", 17) == 0) {
+      int rows;
+      if (sscanf(line + 17, "%d", &rows) == 1 && rows >= 1 && rows <= 16)
+        appSettings.playbackBarRows = (uint8_t)rows;
+    } else if (strncmp(line, "playbackBarTicks: ", 18) == 0) {
+      int ticks;
+      if (sscanf(line + 18, "%d", &ticks) == 1 && ticks >= 1 && ticks <= 254)
+        appSettings.playbackBarTicks = (uint8_t)ticks;
     } else if (strncmp(line, "stickLiveMode: ", 15) == 0) {
       appSettings.stickLiveMode = strcmp(line + 15, "FREE") == 0 ? StickLiveMode::free :
         strcmp(line + 15, "TOGGLE") == 0 ? StickLiveMode::toggle : StickLiveMode::hold;
@@ -422,6 +452,18 @@ int settingsLoad(void) {
     } else if (strncmp(line, "midiOutputDeviceName: ", 22) == 0) {
       strncpy(appSettings.midiOutputDeviceName, line + 22, MIDI_DEVICE_NAME_LENGTH);
       appSettings.midiOutputDeviceName[MIDI_DEVICE_NAME_LENGTH] = 0;
+    } else if (strncmp(line, "midiSendClock: ", 15) == 0) {
+      int value = 0;
+      if (sscanf(line + 15, "%d", &value) == 1 && (value == 0 || value == 1))
+        appSettings.midiSendClock = (uint8_t)value;
+    } else if (strncmp(line, "midiSendTransport: ", 19) == 0) {
+      int value = 0;
+      if (sscanf(line + 19, "%d", &value) == 1 && (value == 0 || value == 1))
+        appSettings.midiSendTransport = (uint8_t)value;
+    } else if (strncmp(line, "midiOutputDelayMs: ", 19) == 0) {
+      int value = 0;
+      if (sscanf(line + 19, "%d", &value) == 1 && value >= 0 && value <= 200)
+        appSettings.midiOutputDelayMs = (uint8_t)value;
     } else if (strncmp(line, "clockSource: ", 13) == 0) {
       // Canonical v3+ setting. Read before the legacy `midiClockMode:`
       // alias below; if both lines exist (new binaries write both), the

@@ -168,11 +168,24 @@ static void initVoicePostSettings(InstrumentVoicePostSettings* post) {
   post->filterSlope24dB = 0;
   post->filterCutoffHz = FILTER_CUTOFF_MAX_HZ;
   post->filterResonance = 0;
+  post->filterColor = 128;
   post->attack = 0;
   post->decay = 0;
   post->sustain = 255;
   post->release = 0;
   post->envelopeShape = 0x80;
+}
+
+static int initAudioInInstrument(Instrument* instrument) {
+  initCommon(instrument);
+  instrument->type = InstrumentType::AudioIn;
+  instrument->transposeEnabled = 0;
+  initVoicePostSettings(&instrument->chip.audioIn);
+  return 0;
+}
+static const char* modNameAudioIn(int index) {
+  static const char* names[] = {"Off", "Volume", "Cutoff", "Reso"};
+  return index >= 0 && index < 4 ? names[index] : "Off";
 }
 
 static int initBraidsInstrument(Instrument* instrument) {
@@ -290,6 +303,8 @@ static int initAChChidInstrument(Instrument* instrument) {
   a->wave = AChChidWave::saw;
   a->timbre = a->color = 16384;
   a->saturation = 0;
+  a->sidShape = 4;
+  a->sidPulseWidth = 2048;
   a->cutoff = 1000;
   a->resonance = 0;
   a->envMod = 25;
@@ -404,12 +419,17 @@ static int freeMidiInstrument(Instrument* instrument) { freeCommon(instrument); 
 // typed code below; no union member is addressed by an offset.
 #define D(n, f, r, v) {n, (FXId)(f), r, v}
 #define N D("-", instrumentNoFX, 0, InstrumentMotionValue::raw)
+static const InstrumentModDestination destAudioIn[] = {N,
+  D("Volume", instrumentNoFX, 255, InstrumentMotionValue::raw),
+  D("Cutoff", fxSCF, 255, InstrumentMotionValue::cutoff),
+  D("Reso", fxSRS, 255, InstrumentMotionValue::raw)};
+static const InstrumentFX fxAudioIn[] = {{fxSCF, "SCF"}, {fxSRS, "SRS"}};
 static const InstrumentModDestination destNone[] = {N};
 static const InstrumentModDestination destAY1[] = {N, D("Volume", instrumentNoFX, 255, InstrumentMotionValue::raw), D("Pitch", instrumentNoFX, 0, InstrumentMotionValue::raw), D("Noise", instrumentNoFX, 0, InstrumentMotionValue::raw), D("EnvPrd", instrumentNoFX, 0, InstrumentMotionValue::raw)};
 static const InstrumentModDestination destAY2[] = {N, D("Volume", instrumentNoFX,255,InstrumentMotionValue::raw), D("Pitch",instrumentNoFX,0,InstrumentMotionValue::raw), D("TonePit",instrumentNoFX,0,InstrumentMotionValue::raw), D("Noise",instrumentNoFX,0,InstrumentMotionValue::raw), D("EnvPit",instrumentNoFX,0,InstrumentMotionValue::raw), D("SoftPit",instrumentNoFX,0,InstrumentMotionValue::raw), D("FMDepth",instrumentNoFX,0,InstrumentMotionValue::raw), D("PulseW",instrumentNoFX,0,InstrumentMotionValue::raw), D("PulseL",instrumentNoFX,0,InstrumentMotionValue::raw), D("WavIdx",instrumentNoFX,0,InstrumentMotionValue::raw)};
 static const InstrumentModDestination destAYSample[] = {N, D("Volume",instrumentNoFX,255,InstrumentMotionValue::raw), D("Pitch",instrumentNoFX,0,InstrumentMotionValue::raw), D("SmplPit",instrumentNoFX,0,InstrumentMotionValue::raw), D("TonePit",instrumentNoFX,0,InstrumentMotionValue::raw), D("Noise",instrumentNoFX,0,InstrumentMotionValue::raw)};
 static const InstrumentModDestination destBraids[] = {N,D("Volume",instrumentNoFX,255,InstrumentMotionValue::raw),D("Pitch",instrumentNoFX,0,InstrumentMotionValue::raw),D("Timbre",fxBTM,16384,InstrumentMotionValue::raw),D("Color",fxBCL,16384,InstrumentMotionValue::raw),D("Cutoff",fxBCF,FILTER_CUTOFF_MAX_HZ,InstrumentMotionValue::cutoff),D("Reso",fxBRS,255,InstrumentMotionValue::raw)};
-static const InstrumentModDestination destSample[] = {N,D("Volume",instrumentNoFX,255,InstrumentMotionValue::raw),D("Pitch",instrumentNoFX,0,InstrumentMotionValue::raw),D("Start",fxSST,255,InstrumentMotionValue::raw),D("End",fxSEN,255,InstrumentMotionValue::raw),D("Speed",fxSSP,500,InstrumentMotionValue::speed),D("Loop",fxSLP,2,InstrumentMotionValue::raw),D("Cutoff",fxSCF,FILTER_CUTOFF_MAX_HZ,InstrumentMotionValue::cutoff),D("Reso",fxSRS,255,InstrumentMotionValue::raw)};
+static const InstrumentModDestination destSample[] = {N,D("Volume",instrumentNoFX,255,InstrumentMotionValue::raw),D("Pitch",instrumentNoFX,0,InstrumentMotionValue::raw),D("Start",fxSST,255,InstrumentMotionValue::raw),D("End",fxSEN,255,InstrumentMotionValue::raw),D("Speed",fxSSP,500,InstrumentMotionValue::speed),D("Loop",fxSLP,4,InstrumentMotionValue::raw),D("Cutoff",fxSCF,FILTER_CUTOFF_MAX_HZ,InstrumentMotionValue::cutoff),D("Reso",fxSRS,255,InstrumentMotionValue::raw)};
 static const InstrumentModDestination destPlaits[] = {N,D("Volume",instrumentNoFX,255,InstrumentMotionValue::raw),D("Pitch",instrumentNoFX,0,InstrumentMotionValue::raw),D("Harmonic",fxPHA,16384,InstrumentMotionValue::raw),D("Timbre",fxPTM,16384,InstrumentMotionValue::raw),D("Morph",fxPMO,16384,InstrumentMotionValue::raw),D("AuxMix",fxPAX,255,InstrumentMotionValue::raw),D("Cutoff",fxPCF,FILTER_CUTOFF_MAX_HZ,InstrumentMotionValue::cutoff),D("Reso",fxPRS,255,InstrumentMotionValue::raw)};
 static const InstrumentModDestination destSCWF[] = {N,D("Volume",instrumentNoFX,255,InstrumentMotionValue::raw),D("Pitch",instrumentNoFX,0,InstrumentMotionValue::raw),D("Detune",fxSDT,255,InstrumentMotionValue::raw),D("Mix",fxSMX,255,InstrumentMotionValue::raw),D("Cutoff",fxSCF2,FILTER_CUTOFF_MAX_HZ,InstrumentMotionValue::cutoff),D("Reso",fxSRS2,255,InstrumentMotionValue::raw)};
 static const InstrumentModDestination destBYOWTBL[] = {N,D("Volume",instrumentNoFX,255,InstrumentMotionValue::raw),D("Pitch",instrumentNoFX,0,InstrumentMotionValue::raw),D("Detune",fxSDT,255,InstrumentMotionValue::raw),D("Mix",fxSMX,255,InstrumentMotionValue::raw),D("Index A",fxBIA,255,InstrumentMotionValue::raw),D("Index B",fxBIB,255,InstrumentMotionValue::raw),D("Cutoff",fxSCF2,FILTER_CUTOFF_MAX_HZ,InstrumentMotionValue::cutoff),D("Reso",fxSRS2,255,InstrumentMotionValue::raw)};
@@ -427,7 +447,7 @@ static const InstrumentFX fxAY1[]={F(fxAYM,"AYM"),F(fxNOI,"NOI"),F(fxNOA,"NOA"),
 static const InstrumentFX fxAY2[]={F(fxAYM,"AYM"),F(fxNOI,"NOI"),F(fxNOA,"NOA"),F(fxTNN,"TNN"),F(fxTNP,"TNP"),F(fxTNF,"TNF"),F(fxTRT,"TRT"),F(fxEAU,"EAU"),F(fxENN,"ENN"),F(fxENP,"ENP"),F(fxENF,"ENF"),F(fxERT,"ERT"),F(fxSFT,"SFT"),F(fxSFN,"SFN"),F(fxSFP,"SFP"),F(fxSFF,"SFF"),F(fxSRT,"SRT"),F(fxSFM,"SFM"),F(fxPWM,"PWM"),F(fxSPL,"SPL"),F(fxSWT,"SWT")};
 static const InstrumentFX fxAYSample[]={F(fxAYM,"AYM"),F(fxNOI,"NOI"),F(fxNOA,"NOA"),F(fxTNN,"TNN"),F(fxTNP,"TNP"),F(fxTNF,"TNF"),F(fxTRT,"TRT"),F(fxSFN,"SFN"),F(fxSFP,"SFP"),F(fxSFF,"SFF"),F(fxSMS,"SMS")};
 static const InstrumentFX fxBraids[]={F(fxBMD,"BMD"),F(fxBTM,"BTM"),F(fxBCL,"BCL"),F(fxBCF,"BCF"),F(fxBRS,"BRS")};
-static const InstrumentFX fxSample[]={F(fxSLP,"SPL"),F(fxSLI,"SLI"),F(fxSPT,"SPT"),F(fxSST,"SST"),F(fxSTA,"STA"),F(fxSEN,"SEN"),F(fxSVL,"SVL"),F(fxSCF,"SCF"),F(fxSRS,"SRS"),F(fxSSP,"SSP"),F(fxRNS,"RNS")};
+static const InstrumentFX fxSample[]={F(fxSLP,"SPL"),F(fxSLI,"SLI"),F(fxSPT,"SPT"),F(fxSST,"SST"),F(fxSTA,"STA"),F(fxSEN,"SEN"),F(fxSVL,"SVL"),F(fxSCF,"SCF"),F(fxSRS,"SRS"),F(fxSSP,"SSP"),F(fxRNS,"RNS"),F(fxLST,"LST")};
 static const InstrumentFX fxSCWF[]={F(fxSDT,"SDT"),F(fxSMX,"SMX"),F(fxSCF2,"SCF"),F(fxSRS2,"SRS")};
 static const InstrumentFX fxBYOWTBL[]={F(fxSDT,"SDT"),F(fxSMX,"SMX"),F(fxBIA,"BIA"),F(fxBIB,"BIB"),F(fxSCF2,"SCF"),F(fxSRS2,"SRS")};
 static const InstrumentFX fxPlaits[]={F(fxPMD,"PMD"),F(fxPHA,"PHA"),F(fxPTM,"PTM"),F(fxPMO,"PMO"),F(fxPAX,"PAX"),F(fxPCF,"PCF"),F(fxPRS,"PRS")};
@@ -458,7 +478,7 @@ static const InstrumentDefinition instrumentDefinitions[] = {
   // Keep the retired PD slots so existing MIDI instruments retain their on-disk type ID.
   {"Retired",InstrumentCategory::none,InstrumentScreenKind::none,destNone,COUNT(destNone),NULL,0,{0,modNameNone,initNoneInstrument,freeNoneInstrument,0,0}},
   {"Retired",InstrumentCategory::none,InstrumentScreenKind::none,destNone,COUNT(destNone),NULL,0,{0,modNameNone,initNoneInstrument,freeNoneInstrument,0,0}},
-  {"MIDI Out",InstrumentCategory::midi,InstrumentScreenKind::midi,destMidi,COUNT(destMidi),fxMidi,COUNT(fxMidi),{0,modNameMidi,initMidiInstrument,freeMidiInstrument,0,0}},
+  {"MIDI Out",InstrumentCategory::external,InstrumentScreenKind::midi,destMidi,COUNT(destMidi),fxMidi,COUNT(fxMidi),{0,modNameMidi,initMidiInstrument,freeMidiInstrument,0,0}},
   {"OPLL / MSX",InstrumentCategory::fm,InstrumentScreenKind::opl,destOPLL,COUNT(destOPLL),NULL,0,{2,modNameOPLL,initOPLLInstrument,freeNoneInstrument,1,0}},
   {"VRC7",InstrumentCategory::fm,InstrumentScreenKind::opl,destOPLL,COUNT(destOPLL),NULL,0,{2,modNameOPLL,initVRC7Instrument,freeNoneInstrument,1,0}},
   {"AdLib / OPL2",InstrumentCategory::fm,InstrumentScreenKind::opl,destOPLL,COUNT(destOPLL),NULL,0,{2,modNameOPLL,initOPL2Instrument,freeNoneInstrument,1,0}},
@@ -472,6 +492,7 @@ static const InstrumentDefinition instrumentDefinitions[] = {
   {"SID",InstrumentCategory::chip,InstrumentScreenKind::opl,destOPLL,COUNT(destOPLL),NULL,0,{2,modNameOPLL,initSIDInstrument,freeNoneInstrument,0,0}},
   {"SOUNDFONT",InstrumentCategory::sample,InstrumentScreenKind::soundfont,destOPLL,COUNT(destOPLL),fxSoundFont,COUNT(fxSoundFont),{2,modNameOPLL,initSoundFontInstrument,freeNoneInstrument,0,0}},
   {"MonkSynth",InstrumentCategory::synth,InstrumentScreenKind::monk,destMonk,COUNT(destMonk),fxMonk,COUNT(fxMonk),{8,modNameMonk,initMonkInstrument,freeNoneInstrument,1,0}},
+  {"Audio in",InstrumentCategory::external,InstrumentScreenKind::audioIn,destAudioIn,COUNT(destAudioIn),fxAudioIn,COUNT(fxAudioIn),{3,modNameAudioIn,initAudioInInstrument,freeNoneInstrument,1,0}},
 };
 #undef COUNT
 
@@ -567,6 +588,7 @@ InstrumentVoicePostSettings* instrumentVoicePostSettings(Instrument* instrument)
     case InstrumentType::GBNoise: return &instrument->chip.simpleChip;
     case InstrumentType::Braids: return &instrument->chip.braids;
     case InstrumentType::Sample: return &instrument->chip.sample;
+    case InstrumentType::AudioIn: return &instrument->chip.audioIn;
     case InstrumentType::SCWF: return &instrument->chip.scwf;
     case InstrumentType::BYOWTBL: return &instrument->chip.byowtbl;
     case InstrumentType::Plaits:
@@ -597,6 +619,8 @@ int instrumentMotionDestination(const Instrument* instrument, int destination, F
       *base = destination == 3 ? (instrument->chip.braids.timbre + 64) / 129 : destination == 4 ? (instrument->chip.braids.color + 64) / 129 : destination == 5 ? instrument->chip.braids.filterCutoffHz : instrument->chip.braids.filterResonance; break;
     case InstrumentType::Plaits: case InstrumentType::PlaitsAlt:
       *base = destination == 3 ? (instrument->chip.plaits.harmonics + 64) / 129 : destination == 4 ? (instrument->chip.plaits.timbre + 64) / 129 : destination == 5 ? (instrument->chip.plaits.morph + 64) / 129 : destination == 6 ? instrument->chip.plaits.auxMix : destination == 7 ? instrument->chip.plaits.filterCutoffHz : instrument->chip.plaits.filterResonance; break;
+    case InstrumentType::AudioIn:
+      *base = destination == 2 ? instrument->chip.audioIn.filterCutoffHz : instrument->chip.audioIn.filterResonance; break;
     case InstrumentType::Sample:
       *base = destination == 3 ? instrument->chip.sample.start : destination == 4 ? instrument->chip.sample.end : destination == 5 ? instrument->chip.sample.speedPercent : destination == 6 ? instrument->chip.sample.loopMode : destination == 7 ? instrument->chip.sample.filterCutoffHz : instrument->chip.sample.filterResonance; break;
     case InstrumentType::SCWF:
@@ -631,7 +655,7 @@ int instrumentCCDestinationAvailable(const Instrument* instrument, int destinati
   if (destination >= midiCCDestinationAttack && destination <= midiCCDestinationRelease)
     return instrumentVoicePostSettings(const_cast<Instrument*>(instrument)) != NULL;
   if (destination == 1) return 1; // Volume is shared by every instrument.
-  if (destination < 3) return 0;
+  if (destination < 3 && !(instrument->type == InstrumentType::AudioIn && destination == 2)) return 0;
   const InstrumentModDestination* d = instrumentModDestination(instrument->type, destination);
   if (!d || (!d->range && instrument->type != InstrumentType::AY2 &&
              instrument->type != InstrumentType::AYSample)) return 0;
@@ -739,6 +763,11 @@ int instrumentSetCCDestination(Instrument* instrument, int destination, uint8_t 
       else if (destination == 8) instrument->chip.drumSynth.drive = value;
       else if (destination == 9) instrument->chip.drumSynth.filterCutoffHz = value;
       else if (destination == 10) instrument->chip.drumSynth.filterResonance = value;
+      else return 0;
+      break;
+    case InstrumentType::AudioIn:
+      if (destination == 2) instrument->chip.audioIn.filterCutoffHz = value;
+      else if (destination == 3) instrument->chip.audioIn.filterResonance = value;
       else return 0;
       break;
     case InstrumentType::Monk:

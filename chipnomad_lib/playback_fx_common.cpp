@@ -370,6 +370,19 @@ static void handleFX_PVB(PlaybackState* state, PlaybackTrackState* track, int tr
   track->note.fineOffset += vibratoCommonLogic(fx, scale);
 }
 
+// LST - Sample loop start (relative). The signed value shifts the loop
+// start marker from its current position; the offset accumulates across
+// rows and survives retriggers until the next note trigger. Consumption
+// happens at audio rate in updateSampleVoices.
+static void initFX_LST(PlaybackState* state, PlaybackTrackState* track, int trackIdx, PlaybackFXState* fx, PlaybackTableState *tableState, int tableFXColumn) {
+  (void)state; (void)track; (void)trackIdx; (void)tableState; (void)tableFXColumn;
+  fx->acc += (int8_t)fx->fxValue;
+}
+
+static void restartFX_LST(PlaybackState* state, PlaybackTrackState* track, int trackIdx, PlaybackFXState* fx) {
+  // Do nothing - LST should keep the accumulated offset
+}
+
 
 // PSL - Pitch slide (portamento)
 static void initFX_PSL(PlaybackState* state, PlaybackTrackState* track, int trackIdx, PlaybackFXState* fx, PlaybackTableState *tableState, int tableFXColumn) {
@@ -473,6 +486,7 @@ void initFXHandlers(void) {
   fxHandlers[fxARP] = (PlaybackFXHandler){NULL, handleFX_ARP, restartFX_ARP};
   fxHandlers[fxARC] = (PlaybackFXHandler){initFX_ARC, NULL, NULL};
   fxHandlers[fxPVB] = (PlaybackFXHandler){NULL, handleFX_PVB, restartFX_PVB};
+  fxHandlers[fxLST] = (PlaybackFXHandler){initFX_LST, NULL, restartFX_LST};
   fxHandlers[fxPBN] = (PlaybackFXHandler){initFX_PBN, handleFX_PBN, NULL};
   fxHandlers[fxPSL] = (PlaybackFXHandler){initFX_PSL, handleFX_PSL, NULL};
   fxHandlers[fxPIT] = (PlaybackFXHandler){initFX_PIT, handleFX_PIT, restartFX_PIT};

@@ -76,7 +76,7 @@ void SoundbankVoice::updateLayer(Layer& l) {
   l.step = std::clamp(l.step, 1.0 / 65536, 65536.0);
   const float cutoff = std::min(controls_.cutoffHz < 0 ? z.cutoff : float(controls_.cutoffHz), cutoff_);
   const float resonance = controls_.resonanceTenths < 0 ? z.resonance : controls_.resonanceTenths / 10.f;
-  l.filter.configure(cutoff < 19999, 0, 0, false, cutoff,
+  l.filter.configure(cutoff < 19999, 1, 0, false, cutoff,
                      std::clamp(resonance / 40.f, 0.f, 1.f));
   if (l.choked) return; // Exclusive-group fades keep their authored choke time.
   l.decay = controls_.decayMs < 0 ? z.envelope.decay : controls_.decayMs / 1000.f;

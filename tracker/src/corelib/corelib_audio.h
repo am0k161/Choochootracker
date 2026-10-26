@@ -16,7 +16,12 @@ typedef void AudioCaptureCallback(const int16_t* buffer, int stereoSamples, int 
 
 int audioSetup(AudioCallback* audioCallback, int sampleRate, int bufferSize);
 void audioPause(int isPaused);
+void audioLock(void);
+void audioUnlock(void);
 void audioCleanup(void);
+int audioOutputDeviceCount(void);
+int audioOutputDeviceName(int index, char* buffer, int bufferSize);
+void audioOutputSelect(const char* name); // Empty name selects the system default.
 
 // Audio input (capture) API. Mirrors the output API above. Availability
 // varies per platform: SDL2 backends enumerate real devices; SDL 1.2
@@ -32,9 +37,8 @@ int audioInputSetup(AudioCaptureCallback* callback, int sampleRate,
                     int bufferSize, int channels, int deviceIndex);
 void audioInputPause(int isPaused);
 void audioInputCleanup(void);
-// Re-enumerates capture devices after hot-plug. On SDL2 this re-queries the
-// device list (SDL caches it until the audio subsystem re-inits, so this
-// performs SDL_QuitSubSystem/SDL_InitSubSystem(SDL_INIT_AUDIO) when needed).
+// Re-enumerates capture devices after hot-plug. The caller must close both
+// capture and output streams before this resets SDL_INIT_AUDIO.
 // Returns 0 on success.
 int audioInputRefreshDevices(void);
 

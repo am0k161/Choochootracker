@@ -1,4 +1,7 @@
 #include "corelib_audio.h"
+int audioOutputDeviceCount(void) { return 0; }
+int audioOutputDeviceName(int, char* buffer, int size) { if (buffer && size > 0) buffer[0] = 0; return 1; }
+void audioOutputSelect(const char*) {}
 #include <SDL/SDL.h>
 
 static void sdlAudioCallback(void* userdata, uint8_t* buffer, int bufferBytes) {
@@ -30,6 +33,9 @@ int audioSetup(AudioCallback* audioCallback, int sampleRate, int bufferSize) {
 void audioPause(int isPaused) {
   SDL_PauseAudio(isPaused);
 }
+
+void audioLock(void) { SDL_LockAudio(); }
+void audioUnlock(void) { SDL_UnlockAudio(); }
 
 void audioCleanup(void) {
   SDL_CloseAudio();

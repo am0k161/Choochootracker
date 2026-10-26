@@ -2,6 +2,10 @@
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <cstring>
+#ifdef PORTMASTER_BUILD
+#include <cstdlib>
+#include <string>
+#endif
 #ifdef WEB_BUILD
 #include <emscripten.h>
 static AudioCallback* webAudioCallback = nullptr;
@@ -14,6 +18,20 @@ static int webSampleRate, webBufferSize;
 uint64_t outputLatencyMicros(void);
 static uint64_t measuredOutputLatencyMicros = 0;
 uint64_t outputLatencyMicros(void) { return measuredOutputLatencyMicros; }
+static SDL_AudioDeviceID selectedOutputDevice = 0;
+static char selectedOutputName[128] = {};
+
+int audioOutputDeviceCount(void) { return SDL_GetNumAudioDevices(SDL_FALSE); }
+int audioOutputDeviceName(int index, char* buffer, int bufferSize) {
+  if (!buffer || bufferSize <= 0) return 1;
+  const char* name = SDL_GetAudioDeviceName(index, SDL_FALSE);
+  if (!name) { buffer[0] = 0; return 1; }
+  SDL_strlcpy(buffer, name, (size_t)bufferSize);
+  return 0;
+}
+void audioOutputSelect(const char* name) {
+  SDL_strlcpy(selectedOutputName, name ? name : "", sizeof(selectedOutputName));
+}
 #ifdef ANDROID_BUILD
 #include "../android/audio_diagnostics.h"
 #include <jni.h>
@@ -107,7 +125,23 @@ int audioSetup(AudioCallback* audioCallback, int sampleRate, int bufferSize) {
   spec.callback = sdlAudioCallback;
   spec.userdata = (void *)audioCallback;
 
-  if (SDL_OpenAudio(&spec, NULL) < 0) {
+  int opened;
+  if (selectedOutputName[0]) {
+    selectedOutputDevice = SDL_OpenAudioDevice(selectedOutputName, SDL_FALSE, &spec, NULL, 0);
+    opened = selectedOutputDevice ? 0 : -1;
+  } else {
+    selectedOutputDevice = 0;
+    opened = SDL_OpenAudio(&spec, NULL);
+  }
+#ifdef PORTMASTER_BUILD
+  const char* fallback = SDL_getenv("CCT_AUDIODEV_FALLBACK");
+  if (opened < 0 && !selectedOutputName[0] && fallback && *fallback) {
+    fprintf(stderr, "Default audio unavailable (%s); retrying %s\n", SDL_GetError(), fallback);
+    if (SDL_setenv("AUDIODEV", fallback, 1) == 0)
+      opened = SDL_OpenAudio(&spec, NULL);
+  }
+#endif
+  if (opened < 0) {
     fprintf(stderr, "Failed to open audio: %s\n", SDL_GetError());
     return 1;
   }
@@ -142,13 +176,18 @@ void audioPause(int isPaused) {
 #ifdef ANDROID_BUILD
   // Reset only while SDL holds the callback paused, so intentional pauses do
   // not appear as scheduling gaps and the callback owns its timing state.
-  if (!isPaused && SDL_GetAudioStatus() == SDL_AUDIO_PAUSED) previousCallback = 0;
+  if (!isPaused && (selectedOutputDevice ? SDL_GetAudioDeviceStatus(selectedOutputDevice) : SDL_GetAudioStatus()) == SDL_AUDIO_PAUSED) previousCallback = 0;
 #endif
-  SDL_PauseAudio(isPaused);
+  if (selectedOutputDevice) SDL_PauseAudioDevice(selectedOutputDevice, isPaused);
+  else SDL_PauseAudio(isPaused);
 }
 
+void audioLock(void) { if (selectedOutputDevice) SDL_LockAudioDevice(selectedOutputDevice); else SDL_LockAudio(); }
+void audioUnlock(void) { if (selectedOutputDevice) SDL_UnlockAudioDevice(selectedOutputDevice); else SDL_UnlockAudio(); }
+
 void audioCleanup(void) {
-  SDL_CloseAudio();
+  if (selectedOutputDevice) { SDL_CloseAudioDevice(selectedOutputDevice); selectedOutputDevice = 0; }
+  else SDL_CloseAudio();
 #ifdef ANDROID_BUILD
   if (diagnosticThread) {
     SDL_AtomicSet(&diagnosticStop, 1);
@@ -295,9 +334,33 @@ int audioInputSetup(AudioCaptureCallback* callback, int sampleRate,
   spec.callback = sdlCaptureCallback;
   spec.userdata = (void*)callback;
 
-  captureDevice = SDL_OpenAudioDevice(
-    deviceIndex >= 0 ? SDL_GetAudioDeviceName(deviceIndex, SDL_TRUE) : NULL,
-    SDL_TRUE, &spec, NULL, 0);
+  const char* deviceName = deviceIndex >= 0 ? SDL_GetAudioDeviceName(deviceIndex, SDL_TRUE) : NULL;
+  captureDevice = SDL_OpenAudioDevice(deviceName, SDL_TRUE, &spec, NULL, 0);
+  if (captureDevice == 0) {
+    fprintf(stderr, "Failed to open audio input '%s': %s\n",
+      deviceName ? deviceName : "default", SDL_GetError());
+#ifdef PORTMASTER_BUILD
+    // The built-in codec's raw PCM may reject our stereo capture format.
+    // SDL's ALSA backend opens AUDIODEV when no device name is supplied;
+    // plughw converts to the codec's supported format.
+    if (deviceName && SDL_GetCurrentAudioDriver() &&
+        SDL_strcmp(SDL_GetCurrentAudioDriver(), "alsa") == 0 &&
+        SDL_strstr(deviceName, "audiocodec")) {
+      const char* previous = getenv("AUDIODEV");
+      const bool hadAudioDev = previous != nullptr;
+      const std::string savedAudioDev = hadAudioDev ? previous : "";
+      if (setenv("AUDIODEV", "plughw:CARD=audiocodec,DEV=0", 1) == 0) {
+        captureDevice = SDL_OpenAudioDevice(NULL, SDL_TRUE, &spec, NULL, 0);
+        if (hadAudioDev) setenv("AUDIODEV", savedAudioDev.c_str(), 1);
+        else unsetenv("AUDIODEV");
+      }
+      if (captureDevice == 0)
+        fprintf(stderr, "Failed to open built-in microphone via plughw:audiocodec,0: %s\n", SDL_GetError());
+      else
+        fprintf(stderr, "Opened built-in microphone via plughw:audiocodec,0\n");
+    }
+#endif
+  }
   if (captureDevice == 0) return 1;
   SDL_PauseAudioDevice(captureDevice, 0);
   return 0;
@@ -305,8 +368,8 @@ int audioInputSetup(AudioCaptureCallback* callback, int sampleRate,
 
 int audioInputRefreshDevices(void) {
   // SDL caches the device list until the audio subsystem re-initializes.
-  // Re-init it so hot-plugged USB interfaces show up. Capture devices must be
-  // closed first (the caller disarms before calling this).
+  // Re-init it so hot-plugged USB interfaces show up. The caller closes both
+  // capture and output streams before calling this.
   if (captureDevice) return 1;
   SDL_QuitSubSystem(SDL_INIT_AUDIO);
   if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) return 1;

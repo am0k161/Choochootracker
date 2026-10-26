@@ -1,5 +1,6 @@
 #include "midi_router.h"
 #include <string.h>
+#include <atomic>
 
 #define MIDI_ROUTER_HELD_NOTES_MAX (16 * 128)
 
@@ -36,7 +37,9 @@ struct MidiRouterState {
 
   // Reserved for future PRs - not branched on anywhere yet.
   MidiInputMode inputMode;
-  MidiClockMode clockMode;
+  std::atomic<MidiClockMode> clockMode{MidiClockMode::off};
+  std::atomic<bool> masterRunning{false};
+  std::atomic<unsigned> syncOutput{0}; // bit 0: clock, bit 1: transport
 
   // Slave-mode clock sync (only read when clockMode == slave). Transport:
   // running mirrors the last Start/Continue (1) / Stop (0); every transport
@@ -58,6 +61,11 @@ struct MidiRouterState {
 };
 
 static const MidiBackend* g_backend = nullptr;
+static std::atomic<unsigned> g_outputDelayMs{0};
+
+void midiRouterSetOutputDelayMs(unsigned delayMs) {
+  g_outputDelayMs.store(delayMs > 200 ? 200 : delayMs, std::memory_order_relaxed);
+}
 
 void midiRouterSetBackend(const MidiBackend* backend) {
   g_backend = backend;
@@ -102,7 +110,6 @@ const char* midiRouterStatusMessage(void) {
 
 MidiRouterState* midiRouterCreate(void) {
   MidiRouterState* router = new MidiRouterState();
-  memset(router, 0, sizeof(MidiRouterState));
   for (int i = 0; i < 16; i++) router->channelInstrument[i] = -1;
   router->inputMode = MidiInputMode::auto_;
   router->clockMode = MidiClockMode::off;
@@ -113,9 +120,24 @@ void midiRouterDestroy(MidiRouterState* router) {
   delete router;
 }
 
-static void sendEvent(uint8_t type, uint8_t channel, uint8_t data1, uint8_t data2, uint64_t dueMicros) {
+static void sendEvent(uint8_t type, uint8_t channel, uint8_t data1, uint8_t data2, uint64_t dueMicros, bool delayed = true) {
+  if (delayed) dueMicros += (uint64_t)g_outputDelayMs.load(std::memory_order_relaxed) * 1000;
   MidiEvent event = {dueMicros, type, channel, data1, data2};
   g_backend->scheduleOutput(g_backend->userdata, &event, dueMicros);
+}
+
+void midiRouterSetSyncOutput(MidiRouterState* router, int clock, int transport) {
+  if (router) router->syncOutput.store((clock ? 1u : 0u) | (transport ? 2u : 0u));
+}
+
+// Called once per engine tick (24 PPQN), using the audio event deadline.
+void midiRouterMasterTick(MidiRouterState* router, int playing, uint64_t dueMicros) {
+  if (!router || !g_backend || !g_backend->scheduleOutput || !g_backend->hasClockOutput) return;
+  const unsigned output = router->clockMode.load() == MidiClockMode::slave ? 0 : router->syncOutput.load();
+  const bool running = (output & 2) && playing;
+  const bool wasRunning = router->masterRunning.exchange(running);
+  if (running != wasRunning) sendEvent(running ? 0xfa : 0xfc, 0, 0, 0, dueMicros);
+  if ((output & 1) && playing) sendEvent(0xf8, 0, 0, 0, dueMicros);
 }
 
 void midiRouterEmitNoteOn(MidiRouterState* router, int trackIdx, int slot, uint8_t channel, uint8_t note, uint8_t velocity, uint64_t dueMicros) {
@@ -170,18 +192,19 @@ void midiRouterPanic(MidiRouterState* router) {
   // this sweep's own Note Offs/panic CCs below are scheduled fresh on top.
   if (g_backend->flushOutputQueue) g_backend->flushOutputQueue(g_backend->userdata);
   uint64_t now = g_backend->nowMicros ? g_backend->nowMicros(g_backend->userdata) : 0;
+  if (router->masterRunning.exchange(false)) sendEvent(0xfc, 0, 0, 0, now, false);
   for (int trackIdx = 0; trackIdx < PROJECT_MAX_TRACKS; ++trackIdx) {
     for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) {
       if (!router->noteActive[trackIdx][slot]) continue;
-      sendEvent(0x80, router->activeChannel[trackIdx][slot], router->activeNote[trackIdx][slot], 0, now);
+      sendEvent(0x80, router->activeChannel[trackIdx][slot], router->activeNote[trackIdx][slot], 0, now, false);
       router->noteActive[trackIdx][slot] = 0;
     }
   }
   // Final fallback, unconditionally on every channel: cheap insurance
   // against any note this sweep doesn't know about.
   for (uint8_t channel = 0; channel < 16; ++channel) {
-    sendEvent(0xB0, channel, 123, 0, now); // All Notes Off
-    sendEvent(0xB0, channel, 120, 0, now); // All Sound Off
+    sendEvent(0xB0, channel, 123, 0, now, false); // All Notes Off
+    sendEvent(0xB0, channel, 120, 0, now, false); // All Sound Off
   }
   memset(router->channelSetupSent, 0, sizeof(router->channelSetupSent));
 }

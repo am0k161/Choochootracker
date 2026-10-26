@@ -9,6 +9,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <cstdio>
 #include <memory>
@@ -102,6 +103,35 @@ TEST_CASE("Beads reverb settings survive save and load") {
   CHECK(loaded.beadsReverbTime == 77);
   CHECK(loaded.beadsReverbTone == 201);
   CHECK(loaded.beadsReverbHighpassCutoffHz == 900);
+}
+
+TEST_CASE("table volumes retain their level when loading old projects") {
+  Project saved, loaded;
+  projectInit(&saved); projectInit(&loaded);
+  saved.chipsCount = 1;
+  saved.tracksCount = 1;
+  saved.chipType = ChipType::AY;
+  std::strcpy(saved.pitchTable.name, "Table volume test");
+  const char* path = "build/tests/table_volume_io.cct";
+
+  saved.tables[0].rows[0].volume = 64;
+  REQUIRE(projectSave(&saved, path) == 0);
+  REQUIRE(projectLoad(&loaded, path) == 0);
+  CHECK(loaded.tables[0].rows[0].volume == 64);
+
+  saved.tables[0].rows[0].volume = 15;
+  REQUIRE(projectSave(&saved, path) == 0);
+  std::ifstream input(path, std::ios::binary);
+  std::string data((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  input.close();
+  const size_t header = data.find("# ChooChooTracker Module 11.0");
+  REQUIRE(header != std::string::npos);
+  data.replace(header, std::strlen("# ChooChooTracker Module 11.0"), "# ChooChooTracker Module 7.0");
+  std::ofstream output(path, std::ios::binary | std::ios::trunc);
+  output.write(data.data(), data.size());
+  output.close();
+  REQUIRE(projectLoad(&loaded, path) == 0);
+  CHECK(loaded.tables[0].rows[0].volume == PHRASE_VOLUME_MAX);
 }
 
 TEST_CASE("Tape Echo settings survive save and load") {
@@ -535,7 +565,7 @@ TEST_CASE("projects preserve syncLFO and slowLFO settings") {
   REQUIRE(projectSave(&saved, path) == 0);
   INFO(projectFileError);
   REQUIRE(projectLoad(&loaded, path) == 0);
-  CHECK(projectFileVersion == 7);
+  CHECK(projectFileVersion == 11);
   const Modulation& reloaded = loaded.instruments[0].modulation[2];
   CHECK(reloaded.type == mod.type);
   CHECK(reloaded.p3 == mod.p3);
@@ -590,6 +620,7 @@ TEST_CASE("new instruments use audible synth defaults") {
   CHECK(instrument.chip.braids.sustain == 255);
   CHECK(instrument.chip.braids.release == 0);
   CHECK(instrument.chip.braids.filterCharacter == 2);
+  CHECK(instrument.chip.braids.filterColor == 128);
   CHECK(instrument.chip.braids.filterCutoffHz == 20000);
   CHECK(instrument.chip.braids.timbre == 16384);
   CHECK(instrument.chip.braids.color == 16384);
@@ -621,8 +652,38 @@ TEST_CASE("new instruments use audible synth defaults") {
     CHECK(post->sustain == 255);
     CHECK(post->filterEnabled == 1);
     CHECK(post->filterCharacter == 2);
+    CHECK(post->filterColor == 128);
     CHECK(post->filterCutoffHz == 20000);
   }
+}
+
+TEST_CASE("filter Color round-trips and older instruments default to 128") {
+  auto saved = std::make_unique<Project>();
+  auto loaded = std::make_unique<Project>();
+  projectInit(saved.get()); projectInit(loaded.get());
+  Instrument* instrument = &saved->instruments[0];
+  getInstrumentFunctions(InstrumentType::Braids).init(instrument);
+  instrument->chip.braids.filterCharacter = 7;
+  instrument->chip.braids.filterColor = 201;
+  const char* path = "test_filter_color.cni";
+  const char* oldPath = "test_filter_color_old.cni";
+  REQUIRE(instrumentSave(saved.get(), path, 0) == 0);
+  REQUIRE(instrumentLoad(loaded.get(), path, 0) == 0);
+  CHECK(loaded->instruments[0].chip.braids.filterCharacter == 7);
+  CHECK(loaded->instruments[0].chip.braids.filterColor == 201);
+
+  FILE* input = fopen(path, "rb");
+  FILE* old = fopen(oldPath, "wb");
+  REQUIRE(input != nullptr);
+  REQUIRE(old != nullptr);
+  char line[512];
+  while (fgets(line, sizeof(line), input))
+    if (strncmp(line, "- Filter color: ", 16) != 0) fputs(line, old);
+  fclose(input); fclose(old);
+  projectInit(loaded.get());
+  REQUIRE(instrumentLoad(loaded.get(), oldPath, 0) == 0);
+  CHECK(loaded->instruments[0].chip.braids.filterColor == 128);
+  std::remove(path); std::remove(oldPath);
 }
 
 // instrumentIsEmpty tests

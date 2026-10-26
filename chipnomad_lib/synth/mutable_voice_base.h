@@ -55,8 +55,8 @@ class MutableVoiceBase {
     calibration_ = calibration;
   }
   void setFilter(bool enabled, uint8_t character, uint8_t mode, bool slope24dB,
-                 float cutoffHz, float resonance) {
-    post_.setFilter(enabled, character, mode, slope24dB, cutoffHz, resonance);
+                 float cutoffHz, float resonance, uint8_t color = 128) {
+    post_.setFilter(enabled, character, mode, slope24dB, cutoffHz, resonance, color);
   }
   void setEnvelope(float attack, float decay, float sustain, float release,
                    uint8_t shape = 0x80) {

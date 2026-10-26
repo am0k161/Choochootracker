@@ -71,6 +71,10 @@ static void onSampleLoaded(const char* path) {
     // Region when the Sample Edit screen is entered.
     instrument->chip.sample.start = 0;
     instrument->chip.sample.end = 255;
+    // The loop wrap marker belongs to the old audio: a new file starts
+    // unlooped. Project reload is unaffected - the .cct loop start line is
+    // parsed before the WAV load and does not go through this path.
+    instrument->chip.sample.loopStart = 0;
     if (cueCount > 0 && sampleDecodeSliceMode(instrument->chip.sample.slice) == sliceModeOff) {
       // Cues seed an AUTO-mode sample with manual bounds: the sentinel
       // count matches the cue count and playback stays full-sample until
@@ -103,6 +107,9 @@ static void onSampleLoaded(const char* path) {
     // deleted and its state reset before the editor is re-entered.
     sampleEditorDiscardRecording(cInstrument);
   }
+  // The loader frees the previous PCM buffer.  Publish the replacement while
+  // audio is still paused so the callback cannot render its stale snapshot.
+  chipnomadQueueProjectRefresh(chipnomadState);
   audioManager.resume();
   screenSetup(&screenInstrument, cInstrument);
 }
@@ -185,7 +192,7 @@ static void drawField(int col, int row, CellState state) {
     case 5:
       if (!col) gfxPrint(sourceValueX, 9, stretchLabels[sample->stretchMode <= 6 ? sample->stretchMode : 0]);
       break;
-    case 6: if(!col) { static const char* m[]={"Off","Loop","Ping"}; gfxPrint(sourceValueX,10,m[sample->loopMode<=2?sample->loopMode:0]); } break;
+    case 6: if(!col) { static const char* m[]={"Off","Loop","Loop X","Ping","Ping X"}; gfxPrint(sourceValueX,10,m[sample->loopMode<=4?sample->loopMode:0]); } break;
     case 7:
       if (!col) {
         // Speed is inert while Stretch drives the duration: dim it.
@@ -229,7 +236,7 @@ static int onEdit(int col, int row, CellEditAction action) {
       }
       return handled;
     }
-    case 6: handled=!col?edit8noLast(action,&sample->loopMode,1,0,2):0; break;
+    case 6: handled=!col?edit8noLast(action,&sample->loopMode,1,0,4):0; break;
     case 7:
       // Speed is inert while Stretch drives the duration.
       if (sample->stretchMode != 0) return 0;

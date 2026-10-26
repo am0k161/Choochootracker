@@ -16,6 +16,7 @@ class PlaitsVoice;
 class PlaitsAltVoice;
 class AChChidVoice;
 class DrumSynthVoice;
+class AudioInputVoice;
 class MMEVoice;
 class MonkSynthVoice;
 class SinteredVoice;
@@ -27,6 +28,7 @@ class FourOpVoice;
 class OPLVoice;
 class SimpleChipVoice;
 class AudioCommandQueue;
+struct PreparedInstrumentVoices;
 struct MidiRouterState;
 struct LinkClientState;
 class AudioMonitor;
@@ -108,6 +110,7 @@ struct ChipNomadState {
   uint8_t braidsBits, braidsDrift, braidsSignature;
   uint32_t braidsSignatureSeed;
   SoundbankVoice* soundbankVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
+  AudioInputVoice* audioInputVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
   SampleVoice* sampleVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
   SCWFVoice* scwfVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
   PlaitsVoice* plaitsVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
@@ -172,6 +175,10 @@ void chipnomadDestroy(ChipNomadState* state);
 * @param factory Chip factory function, or NULL to use default implementations
 */
 void chipnomadInitChips(ChipNomadState* state, int sampleRate, ChipFactory factory);
+bool chipnomadCanSwitchInstrumentLive(InstrumentType type);
+PreparedInstrumentVoices* chipnomadPrepareInstrumentVoices(ChipNomadState* state, InstrumentType type);
+// Install a prepared pool while the audio callback is locked. Takes ownership.
+void chipnomadInstallInstrumentVoices(ChipNomadState* state, PreparedInstrumentVoices* prepared);
 
 // Reserve render buffers before starting the audio device. Rendering never
 // grows these buffers, so this must be called again after reconfiguration.
@@ -233,7 +240,9 @@ void chipnomadSetRenderBufferOverflow(ChipNomadState* state);
 * @param samples Number of stereo sample pairs to render
 * @return Number of samples actually rendered (may be less if playback stops)
 */
-int chipnomadRender(ChipNomadState* state, float* buffer, int samples);
+// Optional live stereo input has exactly samples frames at the output rate.
+// Omitted for offline export: Audio in then receives silence.
+int chipnomadRender(ChipNomadState* state, float* buffer, int samples, const float* liveInput = nullptr);
 
 /**
 * Set emulation quality for all chips

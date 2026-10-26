@@ -3,6 +3,7 @@
 
 #include "screens.h"
 
+constexpr int AUDIO_INPUT_FROM_INSTRUMENT = 1;
 extern const AppScreen screenAudioInput;
 
 #endif

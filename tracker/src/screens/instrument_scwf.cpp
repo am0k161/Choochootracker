@@ -59,6 +59,7 @@ static void loaded(const char* path) {
     updatePathFromFile(appSettings.scwfPath, path);
     projectModified = 1;
   }
+  chipnomadQueueProjectRefresh(chipnomadState);
   audioManager.resume();
   screenSetup(&screenInstrument, cInstrument);
 }

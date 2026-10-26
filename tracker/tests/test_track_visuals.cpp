@@ -1,5 +1,6 @@
 #include "doctest.h"
 #include "common.h"
+#include "app.h"
 #include "project_utils.h"
 #include "app_ui_mock.h"
 #include "corelib_file.h"
@@ -21,6 +22,10 @@ struct VisualFixture {
   AppSettings saved = appSettings;
   ChipNomadState* state = chipnomadState;
   const AppScreen* screen = currentScreen;
+  int* songRow = pSongRow;
+  int* songTrack = pSongTrack;
+  int* chainRow = pChainRow;
+  int contentRowOffset = gfxGetContentRowOffset();
   std::string settingsPath, contents;
   bool existed;
   VisualFixture() {
@@ -40,6 +45,8 @@ struct VisualFixture {
   ~VisualFixture() {
     chipnomadDestroy(chipnomadState);
     chipnomadState = state; appSettings = saved; currentScreen = screen;
+    pSongRow = songRow; pSongTrack = songTrack; pChainRow = chainRow;
+    gfxSetContentRowOffset(contentRowOffset);
     if (existed) { std::ofstream f(settingsPath); f << contents; }
     else std::filesystem::remove(settingsPath);
   }
@@ -119,13 +126,119 @@ TEST_CASE_FIXTURE(VisualFixture, "Boot screen Graphics row toggles and saves wit
   REQUIRE(table != nullptr);
   REQUIRE(table->onEdit(0, 6, CellEditAction::tap) == 1);
   table->drawField(0, 6, CellState::focus);
-  CHECK(std::string(mockGfxCells[8], 11) == "Boot screen");
-  CHECK(std::string(mockGfxCells[8] + 23, 8) == "Night   ");
+  CHECK(std::string(mockGfxCells[10], 11) == "Boot screen");
+  CHECK(std::string(mockGfxCells[10] + 23, 8) == "Night   ");
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.bootScreenNight == 1);
   REQUIRE(table->onEdit(0, 6, CellEditAction::tap) == 1);
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.bootScreenNight == 0);
+}
+
+TEST_CASE_FIXTURE(VisualFixture, "Playback counter Graphics controls persist and reject invalid values") {
+  CHECK(appSettings.playbackCounterMode == 0);
+  CHECK(appSettings.playbackBarRows == 16);
+  CHECK(appSettings.playbackBarTicks == 6);
+  currentScreen = &screenGraphicsSettings;
+  screenGraphicsSettings.setup(0);
+  screenGraphicsSettings.fullRedraw();
+  ScreenData* table = mockScreenData;
+  REQUIRE(table != nullptr);
+  CHECK(table->rows == 10);
+  gfxClear();
+  for (int row = 0; row < table->rows; ++row) table->drawField(0, row, CellState::normal);
+  for (int y : {4, 9, 11}) CHECK(std::string(mockGfxCells[y], 31) == std::string(31, ' '));
+  CHECK(std::string(mockGfxCells[13], 15) == " - Rows per bar");
+  CHECK(std::string(mockGfxCells[14], 16) == " - Ticks per row");
+  table->drawCursor(0, 8);
+  CHECK(mockCursorY == 13);
+  REQUIRE(table->onEdit(0, 7, CellEditAction::tap) == 1);
+  REQUIRE(table->onEdit(0, 8, CellEditAction::decrease) == 1);
+  REQUIRE(table->onEdit(0, 9, CellEditAction::increase) == 1);
+  CHECK(appSettings.playbackCounterMode == 1);
+  CHECK(appSettings.playbackBarRows == 15);
+  CHECK(appSettings.playbackBarTicks == 7);
+  table->drawField(0, 7, CellState::focus);
+  CHECK(std::string(mockGfxCells[12] + 23, 4) == "Time");
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.playbackCounterMode == 1);
+  CHECK(appSettings.playbackBarRows == 15);
+  CHECK(appSettings.playbackBarTicks == 7);
+  { std::ofstream f(settingsPath); f << "playbackCounterMode: 2\nplaybackBarRows: 0\nplaybackBarTicks: 255\n"; }
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.playbackCounterMode == 0);
+  CHECK(appSettings.playbackBarRows == 16);
+  CHECK(appSettings.playbackBarTicks == 6);
+}
+
+TEST_CASE_FIXTURE(VisualFixture, "Playback counter holds at stop and resets on the next start") {
+  screensInitAll();
+  currentScreen = &screenSong;
+  gfxClear();
+  auto& status = chipnomadState->uiPlaybackStatus;
+  status.isPlaying = 0;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "000:0 ");
+
+  status.isPlaying = 1;
+  status.linkPhaseTicks = 0;
+  status.linkPhaseTickMicros = 1000000;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "000:0 ");
+  for (const auto& step : {std::pair<uint64_t, const char*>{1, "000:1 "},
+                           {23, "000:1 "}, {24, "000:2 "}, {48, "000:3 "},
+                           {72, "000:4 "}, {96, "001:1 "}}) {
+    status.linkPhaseTicks = step.first;
+    appDraw();
+    CHECK(std::string(mockGfxCells[2] + 34, 6) == step.second);
+  }
+  status.linkPhaseTicks = 191;
+  status.linkPhaseTickMicros = 4000000;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "001:4 ");
+  appSettings.playbackCounterMode = 1;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "00:03 ");
+  status.isPlaying = 0;
+  status.linkPhaseTicks = 0;
+  status.linkPhaseTickMicros = 6000000;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "00:05 ");
+  status.linkPhaseTickMicros = 9000000;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "00:05 ");
+
+  status.isPlaying = 1;
+  status.linkPhaseTickMicros = 10000000;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "00:00 ");
+  status.linkPhaseTicks = 192;
+  status.linkPhaseTickMicros = 13000000;
+  appSettings.playbackCounterMode = 0;
+  gfxSetContentRowOffset(2);
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "002:1 ");
+  CHECK(gfxGetContentRowOffset() == 2);
+  appSettings.playbackBarRows = 8;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "004:1 ");
+  status.linkPhaseTicks = 204;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "004:2 ");
+  appSettings.playbackBarTicks = 3;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "008:3 ");
+  appSettings.playbackBarTicks = 6;
+  status.linkPhaseTicks = 1000ull * 8 * 6;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "1000:1");
+  status.linkPhaseTicks = 100000ull * 8 * 6;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "9999:4");
+  appSettings.playbackCounterMode = 1;
+  status.linkPhaseTickMicros = 70000000000ull;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "999:59");
 }
 
 TEST_CASE_FIXTURE(VisualFixture, "One display choice switches each track and saves bulk choices") {

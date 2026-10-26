@@ -4,6 +4,21 @@
 #include "native_fm_amp.h"
 #include "../chip_program.h"
 #include <cstddef>
+// SID waveform generator for engines with their own envelope and filter.
+class SIDOscillator {
+ public:
+  void init(float rate);
+  void configure(uint8_t shape, uint16_t pulseWidth);
+  void noteOn(bool slide);
+  float sample(double frequencyHz);
+ private:
+  m6581_t chip_{};
+  double cycles_ = 0;
+  float rate_ = 48000;
+  uint8_t shape_ = 4;
+  uint16_t pulseWidth_ = 2048;
+};
+
 // One independent note/filter context. Quiet/released notes are retired first
 // by the same bounded policy as other CPU-heavy native instruments.
 class SIDVoice {

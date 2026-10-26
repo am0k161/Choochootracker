@@ -4,6 +4,7 @@
 #include "screen_audio_input.h"
 #include "../common.h"
 #include "../audio_input_manager.h"
+#include "../audio_manager.h"
 #include "../corelib/corelib_audio.h"
 #include "../monitor_display.h"
 #include "corelib_gfx.h"
@@ -24,6 +25,7 @@
 
 // Marquee state for long device names: while the cursor rests on a name
 // that does not fit the field, the full name scrolls through it.
+static bool returnToInstrument = false;
 static int marqueeDevice = -1;
 static int marqueeOffset = 0;
 static int marqueeFrameCounter = 0;
@@ -219,9 +221,12 @@ static int onEdit(int col, int row, CellEditAction action) {
       return 1;
     } else if (col == 1) {
       // Refresh: restart the SDL audio subsystem for hot-plugged devices.
+      audioInputManagerStopRecording();
       audioInputManager.disarmAll();
-      audioInputCleanup();
-      audioInputRefreshDevices();
+      if (!audioManager.refreshDevices || audioManager.refreshDevices()) {
+        screenMessage(MESSAGE_TIME_ERROR, "Audio refresh failed");
+        return 1;
+      }
       audioInputManager.enumerate();
       syncArmedDevicesFromSettings();
       screenFullRedraw(&screenAudioInputData);
@@ -236,7 +241,10 @@ static int onEdit(int col, int row, CellEditAction action) {
       audioInputManager.disarm(slot);
     } else {
       slot = audioInputManager.arm(deviceIndex);
-      if (slot < 0) return 1; // all slots full or capture open failed
+      if (slot < 0) {
+        screenMessage(MESSAGE_TIME, "Cannot arm audio input");
+        return 1;
+      }
     }
     persistArmedDevices();
     screenFullRedraw(&screenAudioInputData);
@@ -248,6 +256,7 @@ static int onEdit(int col, int row, CellEditAction action) {
 
 
 static void setup(int input) {
+  returnToInstrument = input == AUDIO_INPUT_FROM_INSTRUMENT;
   screenAudioInputData.cursorRow = 0;
   screenAudioInputData.cursorCol = 0;
   audioInputManager.enumerate();
@@ -326,7 +335,7 @@ static void draw(void) {
 
 static int audioInputScreenInput(int isKeyDown, int keys, int taps) {
   if (keys == keyOpt) {
-    screenSetup(&screenAudioSettings, 0);
+    screenSetup(returnToInstrument ? &screenInstrument : &screenAudioSettings, returnToInstrument ? -1 : 0);
     return 1;
   }
   // The meter column is display-only: horizontal moves step over it

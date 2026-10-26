@@ -334,6 +334,13 @@ static int screenTouchEnvelopeAt(int col, int row, int* targetCol) {
 
 static int screenTouchCellAt(int col, int row, int* targetCol, int* targetRow) {
   if (!touchScreenData || touchScreenData->selectMode == 1) return 0;
+  if (currentScreen == &screenMixer && screenMixerGetPage() == 0 && row == 12) {
+    int column = col >= 10 && col <= 17 ? 0 : col >= 22 && col <= 31 ? 1 : -1;
+    if (column < 0) return 0;
+    if (targetCol) *targetCol = column;
+    if (targetRow) *targetRow = PROJECT_MAX_TRACKS;
+    return 1;
+  }
   if (currentScreen == &screenInstrument &&
       chipnomadState->project.instruments[cInstrument].type == InstrumentType::SoundFont && row >= 5) {
     if ((row != 6 && row != 7) || col < 0 || col > 31 || (row == 7 && col == 27)) return 0;
@@ -384,11 +391,20 @@ static int screenTouchCellAt(int col, int row, int* targetCol, int* targetRow) {
     if (targetRow) *targetRow = field;
     return 1;
   }
-  if (currentScreen == &screenGraphicsSettings) {
-    const int fieldY[] = {2, 3, 4, 5};
-    const int widths[] = {16, 9, 26, 13};
+  if (currentScreen == &screenControlsSettings) {
+    const int fieldY[] = {3, 4, 6, 8, 9, 10};
     int field = -1;
-    for (int i = 0; i < 4; ++i) if (row == fieldY[i]) field = i;
+    for (int i = 0; i < touchScreenData->rows; ++i) if (row == fieldY[i]) field = i;
+    if (field < 0 || col < 0 || col >= (field == touchScreenData->rows - 1 ? 11 : 31)) return 0;
+    if (targetCol) *targetCol = 0;
+    if (targetRow) *targetRow = field;
+    return 1;
+  }
+  if (currentScreen == &screenGraphicsSettings) {
+    const int fieldY[] = {2, 3, 5, 6, 7, 8, 10, 12, 13, 14};
+    const int widths[] = {16, 9, 26, 13, 30, 0, 31, 31, 31, 31};
+    int field = -1;
+    for (int i = 0; i < 10; ++i) if (row == fieldY[i]) field = i;
     if (field < 0 || col < 0 || col >= widths[field]) return 0;
     if (targetCol) *targetCol = 0;
     if (targetRow) *targetRow = field;
@@ -396,9 +412,9 @@ static int screenTouchCellAt(int col, int row, int* targetCol, int* targetRow) {
   }
   if (currentScreen == &screenProject) {
     // Field y-coordinates: row 0 buttons at y=3, File/Title/Author at
-    // y=5/6/7, Linear pitch y=9, Clock source y=10, Tempo y=11, then the
-    // AY-specific rows (chip type, PWM, AY clock, pitch table, scale).
-    const int fieldY[] = {3, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 17};
+    // y=5/6/7, Linear pitch y=9, Clock source y=10, Tempo y=11,
+    // Pitch table y=12, Scale y=13.
+    const int fieldY[] = {3, 5, 6, 7, 9, 10, 11, 12, 13};
     int field = -1, column = 0;
     for (unsigned i = 0; i < sizeof(fieldY) / sizeof(fieldY[0]); ++i)
       if (row == fieldY[i]) field = i;
@@ -411,7 +427,7 @@ static int screenTouchCellAt(int col, int row, int* targetCol, int* targetRow) {
     } else if (field <= 3) {
       column = col - 7;
       if (column < 0 || column >= touchScreenData->getColumnCount(field)) return 0;
-    } else if (field == 10) {
+    } else if (field == 8) {
       if (col < 0 || col >= 5) return 0;
     } else {
       if (col < 13 || col >= 34) return 0;
@@ -510,7 +526,7 @@ static int screenTouchCellAt(int col, int row, int* targetCol, int* targetRow) {
     if (row >= 2 && row <= 4) {
       instrumentCommonRow = row - 2;
       row = instrumentCommonRow;
-    } else if (touchScreenData == &screenInstrumentSample) {
+    } else if (touchScreenData == &screenInstrumentSample || type == InstrumentType::AudioIn) {
       // Sampler page: the Sample row sits at y=6 and the SOURCE separator
       // at y=7 shifts Pitch..Reso down to y=8..12 (rows 4..8). The ADSR
       // strip is matched earlier by the envelope handler.

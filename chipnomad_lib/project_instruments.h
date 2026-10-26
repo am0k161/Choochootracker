@@ -40,6 +40,7 @@ enum class InstrumentType : uint8_t {
   SID = 27,
   SoundFont = 28,
   Monk = 29,
+  AudioIn = 30,
   totalCount,
 };
 
@@ -252,11 +253,12 @@ struct InstrumentAYSample {
 
 struct InstrumentVoicePostSettings {
   uint8_t filterEnabled;
-  uint8_t filterCharacter; // 0: off, 1: clean, 2: classic, 3: aggressive, 4: acid
+  uint8_t filterCharacter; // 0: off, 1: clean, 2: classic, 3: aggro, 4: acid, 5: roar, 6: snarl, 7: prism
   uint8_t filterMode;
   uint8_t filterSlope24dB;
   uint16_t filterCutoffHz;
   uint8_t filterResonance;
+  uint8_t filterColor;
   uint8_t attack;
   uint8_t decay;
   uint8_t sustain;
@@ -270,7 +272,7 @@ struct InstrumentBraids : InstrumentVoicePostSettings {
   uint16_t color;
 };
 
-enum class AChChidWave : uint8_t { square, saw, braids };
+enum class AChChidWave : uint8_t { square, saw, braids, sid };
 struct InstrumentAChChid {
   AChChidWave wave;
   int8_t fineTune;
@@ -279,6 +281,8 @@ struct InstrumentAChChid {
   uint16_t color;
   uint8_t saturation;
   uint16_t cutoff;
+  uint8_t sidShape;
+  uint16_t sidPulseWidth;
   uint8_t resonance;
   uint8_t envMod;
   uint16_t decay;
@@ -353,7 +357,12 @@ struct InstrumentSample : InstrumentVoicePostSettings {
   uint16_t speedPercent;
   uint8_t start;
   uint8_t end;
-  uint8_t loopMode; // 0: off, 1: loop, 2: ping-pong
+  uint8_t loopMode; // 0: off, 1: loop, 2: loop X-fade, 3: ping-pong, 4: ping-pong X-fade
+  // Loop start marker, 0-255 normalized like start/end. Where the loop wraps
+  // back to when a loop mode is active (instrument loopMode != 0 or SPL >= 02).
+  // Inert otherwise; 0 means the loop wraps to the Region START, which keeps
+  // old projects bit-identical.
+  uint8_t loopStart;
   // Slice sentinel (see sample_voice.h): 0 off, 1..64 EQUAL, 65..128 AUTO,
   // 129..192 LAZY (value - 64/128 is the slice count).
   uint8_t slice;
@@ -546,6 +555,7 @@ union InstrumentChipData {
   InstrumentMonk monk;
   InstrumentSintered sintered;
   InstrumentMidi midi;
+  InstrumentVoicePostSettings audioIn;
 };
 
 struct Instrument {
@@ -570,8 +580,8 @@ struct InstrumentFunctions {
 
 // This is metadata, not an audio abstraction: renderers keep their typed
 // paths while screens, validation and motion routing share this one catalogue.
-enum class InstrumentCategory : uint8_t { none, chip, sample, synth, drums, midi, fm };
-enum class InstrumentScreenKind : uint8_t { none, ay1, ay2, aySample, braids, sample, scwf, byowtbl, plaits, achchid, drumSynth, mme, sintered, midi, opll, opl, simpleChip, dx7, soundfont, monk };
+enum class InstrumentCategory : uint8_t { none, chip, sample, synth, drums, external, fm };
+enum class InstrumentScreenKind : uint8_t { none, ay1, ay2, aySample, braids, sample, scwf, byowtbl, plaits, achchid, drumSynth, mme, sintered, midi, opll, opl, simpleChip, dx7, soundfont, monk, audioIn };
 enum class InstrumentMotionValue : uint8_t { raw, speed, cutoff };
 
 static constexpr FXId instrumentNoFX = FX_ID_EMPTY;

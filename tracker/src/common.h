@@ -56,7 +56,7 @@ enum class TrackVisualMode : uint8_t { detailed, audio };
 struct TrackVisualSettings { TrackVisualMode mode = TrackVisualMode::detailed; };
 
 // Clock source for engine tempo. Generalized from the old 0/1
-// midiClockMode int to a 3-state enum: internal (project.tickRate),
+// midiClockMode int to an enum: internal (project.tickRate),
 // midiClock (follow incoming MIDI Clock 0xF8 + transport), or link
 // (Ableton Link session). On file load, an old `midiClockMode:`
 // line in settings.txt is read as a backwards-compat alias: 0 ->
@@ -99,6 +99,7 @@ struct AppSettings {
   int screenHeight;
   int audioSampleRate;
   int audioBufferSize;
+  char audioOutputDeviceName[AUDIO_DEVICE_NAME_LENGTH + 1];
   int aySampleDithering;
   int doubleTapFrames;
   int keyRepeatDelay;
@@ -113,6 +114,9 @@ struct AppSettings {
   int quickHelpReleaseSeen;
   int ayWavetableLfoView;
   int waveformRefreshHz;
+  uint8_t playbackCounterMode; // 0 = bars, 1 = elapsed time
+  uint8_t playbackBarRows;
+  uint8_t playbackBarTicks;
   // Port indices are runtime-only (not saved): enumeration order isn't
   // stable across reboots/replugging. -1 = off. What IS saved is each
   // device's name (below); appSetup() resolves it back to a live index on
@@ -128,6 +132,9 @@ struct AppSettings {
   // the Project screen. Old `midiClockMode:` lines in settings.txt are
   // read as a backwards-compat alias (0 -> internal, 1 -> midiClock).
   ClockSource clockSource;
+  uint8_t midiSendClock;
+  uint8_t midiSendTransport;
+  uint8_t midiOutputDelayMs;
   // Saved to settings.txt: which instrument a MIDI-in note on a given
   // channel (0-15) plays during preview, e.g. channel 0 -> instrument 5.
   // -1 = channel not assigned (falls back to the currently selected
@@ -185,6 +192,9 @@ extern int sampleLazyPlaybackActive;
 // title screen can warn instead of silently offering to "continue" into the
 // demo project it fell back to.
 extern int autosaveLoadFailed;
+// After a failed autosave load: 1 = the unreadable file was kept beside the
+// autosave, -1 = it could not be moved, so autosaving is paused this session.
+extern int autosaveKept;
 
 // Settings functions
 void initDefaultAppSettings(void);

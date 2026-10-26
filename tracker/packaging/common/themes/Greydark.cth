@@ -1,0 +1,10 @@
+colorBackground: 0x000000
+colorTextEmpty: 0x908080
+colorTextInfo: 0xcfbfbf
+colorTextDefault: 0xcfbfbf
+colorTextValue: 0xffffff
+colorTextTitles: 0xefdfdf
+colorPlayMarkers: 0xffefef
+colorCursor: 0xffefef
+colorSelection: 0x505050
+colorWarning: 0xff4040

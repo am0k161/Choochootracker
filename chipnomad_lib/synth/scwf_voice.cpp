@@ -54,7 +54,8 @@ void SCWFVoice::configure(const InstrumentSCWF* instrument, float pitchCents,
       : 0.0;
   }
   post_.setFilter(instrument_->filterEnabled != 0, instrument_->filterCharacter, instrument_->filterMode,
-                  instrument_->filterSlope24dB != 0, cutoffHz, resonance / 255.0f);
+                  instrument_->filterSlope24dB != 0, cutoffHz, resonance / 255.0f,
+                  instrument_->filterColor);
   post_.setEnvelope(true, scwfEnvelopeTime(attack < 0 ? instrument_->attack : attack),
                     scwfEnvelopeTime(decay < 0 ? instrument_->decay : decay),
                     (sustain < 0 ? instrument_->sustain : sustain) / 255.0f,

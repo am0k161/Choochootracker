@@ -843,7 +843,7 @@ void outputRegistersAY(ChipNomadState* chipNomadState, int trackIdx, int chipIdx
         if (tableIdx != EMPTY_VALUE_8 && p->tables[tableIdx].rows[track->note.instrumentTable.rows[0]].volume != EMPTY_VALUE_8) {
           volume *= p->tables[tableIdx].rows[track->note.instrumentTable.rows[0]].volume;
         } else {
-          volume *= 15;
+          volume *= PHRASE_VOLUME_MAX;
         }
 
         // Aux table volume
@@ -851,11 +851,11 @@ void outputRegistersAY(ChipNomadState* chipNomadState, int trackIdx, int chipIdx
         if (tableIdx != EMPTY_VALUE_8 && p->tables[tableIdx].rows[track->note.auxTable.rows[0]].volume != EMPTY_VALUE_8) {
           volume *= p->tables[tableIdx].rows[track->note.auxTable.rows[0]].volume;
         } else {
-          volume *= 15;
+          volume *= PHRASE_VOLUME_MAX;
         }
 
         // Normalize volume
-        volume = volume / (15 * 15 * 15);
+        volume = volume / (15 * PHRASE_VOLUME_MAX * PHRASE_VOLUME_MAX);
 
         // Sanity limits (even though it should never happen)
         volume = clampInt(volume, 0, 15);

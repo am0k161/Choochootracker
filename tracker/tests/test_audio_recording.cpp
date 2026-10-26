@@ -32,6 +32,8 @@ TEST_CASE("external recording: capture -> ring -> writer produces valid WAV") {
   // A previous take can still leave buffered data; start discards it.
   REQUIRE(audioInputManager.ring(0)->push(stale, 512));
 
+  float live[8192 * 2];
+  audioInputManager.readLiveInput(live, 8192); // discard earlier idle capture
   RecordingWavWriter writer;
   REQUIRE(writer.open(path, 48000, 2, 16) == 0);
   audioInputManagerStartRecording(&writer, 0);
@@ -47,6 +49,9 @@ TEST_CASE("external recording: capture -> ring -> writer produces valid WAV") {
   for (int offset = 0; offset < kFrames; offset += 512) {
     int chunk = kFrames - offset < 512 ? kFrames - offset : 512;
     audioInputManager.onCapture(block.data() + offset * 2, chunk, 2);
+    audioInputManager.readLiveInput(live, chunk);
+    for (int i = 0; i < chunk * 2; ++i)
+      CHECK(live[i] == doctest::Approx(block[offset * 2 + i] / 32768.0f));
   }
 
   // The writer thread drains asynchronously; wait (bounded) until every

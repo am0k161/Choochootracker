@@ -18,10 +18,13 @@ It follows the classic LSDj workflow and navigation system, with several sound d
 ### ArkOS / PortMaster
 
 Install `choochootracker.zip` through PortMaster, or copy the extracted package to the console's `ports` directory. Start **ChooChooTracker** from the Ports menu.
+On the RG353V with ArkOS, use the console's **+ / -** buttons to adjust output volume during playback.
 
 ### Miyoo Mini / Mini Plus (Onion OS)
 
 Extract the MiyooPorts archive at the root of the SD card so that its `Roms/PORTS/` folders merge with Onion's existing folders. Start **ChooChooTracker** from the Ports menu after refreshing the collection. Back up the app's `projects/` folder before replacing an existing installation.
+
+The same MiyooPorts build scales the tracker interface to the detected screen size on the original Mini, Mini Plus, Mini V4 and Mini Flip. The screen size is detected at each launch, including after moving an SD card between models. If a Mini V4 still shows wide borders, update Onion OS so it can switch the display to its higher resolution when launching the port.
 
 Project loading time can vary with the instrument types used in a song. If startup or project loading seems unusually slow, report how long each takes, along with the console model and Onion OS version.
 
@@ -57,6 +60,12 @@ preserved. Input polling and app timers keep their usual cadence.
 | `title` | Title screen assets |
 | `waveforms` | `.wav` single-cycle waveforms for the 2xSCWF engine |
 
+The current project is autosaved every minute and on exit as `autosave.cct` next to the app. If the autosave cannot be loaded at startup, the title screen says so and the demo project opens instead. The unreadable file is kept as `autosave.cct.unreadable` (then `-2`, `-3`, ...) so later autosaves never overwrite it, and the work in it can still be recovered.
+
+Project saves and autosaves include loaded or recorded sample audio.
+
+If a manual save or autosave fails while the app is open, an error appears on screen. Keep the project open and retry after checking the working folder and free storage.
+
 ## 2. Controls
 
 ChooChooTracker works best with a gamepad that has a D-pad, 2 analogue sticks and 7 buttons.
@@ -83,9 +92,13 @@ touch controls appear automatically when no gamepad is connected: in portrait
 they sit below the tracker, with a square D-pad, A/EDIT, B/OPT, START/PLAY and
 SELECT/SHIFT controls, then a separate Live/Motion section with two modulation
 sticks and momentary REC/DEL controls. Landscape keeps the D-pad on the left
-and the action buttons on the right. Android projects and samples stay private to
-the app; use the Android file picker to import `.cct` projects and `.wav` samples,
-and to choose where WAV exports are saved.
+and the action buttons on the right. Android can keep projects and samples in
+private app storage or a folder chosen in **Settings > Working folder**. The
+direct APK starts with a shared folder on Android 11 and later, but you can
+change it from that setting; on Android 10 it asks you to choose a folder.
+Use the Android file picker to import `.cct` projects
+and `.wav` samples, and to choose where WAV exports are saved.
+If an Android import or export fails, a message appears with the storage checks to try.
 
 ### Navigation
 
@@ -228,6 +241,8 @@ A song has 8 tracks. Each track contains a sequence of chains, and each chain co
 
 Settings → Load font → fonts/Pixel16x24 contains TechMonoAudit (converted from Share Tech Mono), Departure Mono, Spleen and Cozette. Each supplies the complete printable ASCII set in 16×24 cells for a 640×480 display. Pixel-built fonts keep their native pixels or integer scaling with padding; Cozette remains smaller because doubling its 13-pixel ink height would exceed the cell. The NostromoAmberDa2 theme is available through Settings → Edit color theme → Load. It retains the Nostromo amber background and informational text, with red primary text, darker orange values and a teal cursor. Loading the assets does not change your selected font or theme. See the accompanying README.txt for attribution and licenses.
 
+The themes folder also includes Bb22200, Eclair, Greydark and Reddeep. NostromoAmberDa2 is in the IDEColorThemes subfolder.
+
 ### Project page spacing
 
 The Project page puts the application version on its own line and separates Load, Save, New, Export and Manage from the project metadata with blank rows. Cursor positions and touch targets follow the displayed fields; project settings and file operations are unchanged.
@@ -262,7 +277,7 @@ You can keep multiple sub-songs in a project by creating "islands": sections sep
 
 #### Live Mode
 
-Double-tap **OPT** to enter or leave Live Mode; `LIVE` replaces the Song title. In Live Mode, **PLAY** starts the selected chain on its own track when that track is stopped. On a playing track, it queues the selected chain for the next chain boundary; press **PLAY** twice for an urgent change at the next phrase boundary. A selected empty Song cell queues a quantised stop instead. `+` marks a queued chain, `!` an urgent chain and `-` a queued stop.
+Double-tap **OPT** to enter or leave Live Mode; `LIVE` replaces the Song title. The switch happens a moment after the second tap, so tapping **OPT** 3 times adds a highlight without entering or leaving Live Mode. In Live Mode, **PLAY** starts the selected chain on its own track when that track is stopped. On a playing track, it queues the selected chain for the next chain boundary; press **PLAY** twice for an urgent change at the next phrase boundary. A selected empty Song cell queues a quantised stop instead. `+` marks a queued chain, `!` an urgent chain and `-` a queued stop.
 
 Select one Song row across several columns to queue or stop those tracks together. Multi-row selections are deliberately rejected. Live queues are cleared while a Song range loop is active. Live is a performance mode and is not saved in the project.
 
@@ -526,7 +541,7 @@ Global Braids settings are available in the app settings:
 
 ### aChChid
 
-**aChChid** is a monophonic acid bass engine based on Open303. `Square` and `Saw` use its native TB-303 oscillator, filter, envelope and accent behaviour. `Braids` replaces only the oscillator, then continues through the same 303 filter and amplifier path. It exposes Model, Timbre, Color and Shaper instead of Fine tune. Shaper progresses from soft saturation into wavefolding. aChChid does not use ChooChooTracker's unified post-filter or ADSR.
+**aChChid** is a monophonic acid bass engine based on Open303. `Square` and `Saw` use its native TB-303 oscillator, filter, envelope and accent behaviour. `Braids` and `SID` replace only the oscillator, then continue through the same 303 filter and amplifier path. Braids offers Model, Timbre, Color and Shaper. SID offers Shape (triangle, saw, pulse, noise or the four SID waveform combinations), Width (pulse width) and Shaper. Width affects only forms containing a pulse. Shaper progresses from soft saturation into wavefolding. SID does not use the SID chip's filter or envelope. aChChid does not use ChooChooTracker's unified post-filter or ADSR.
 
 Cutoff and Decay use logarithmic editing: **EDIT + LEFT/RIGHT** moves by one
 musical control step, while **EDIT + UP/DOWN** moves by sixteen steps. Cutoff
@@ -540,7 +555,7 @@ An `F` in the note volume column triggers an accent. Normal notes use a half-ste
 
 Its six macros are **Decay**, **Tone**, **Sweep**, **Noise**, **FM** and **Drive**. Their labels adapt where useful (for example, Kick's Noise is `Click`, and Cowbell's FM is metallic cross-modulation). Every macro is active on every model, but its musical role changes with the model: Sweep can alter pitch, burst spacing or metallic spread; FM can add cross-modulation, a metallic layer or a ring-like overtone. The lower half of each range is intended for conventional drum sounds; the upper half deliberately opens wider timbral morphs and more synthetic results.
 
-Every model can use the shared LP/BP/HP multimode filter, with Clean, Classic, Aggro or Acid character, `12`/`24 dB` slope, cutoff and resonance. Bogie supports all of its active macros plus Volume, Pitch, Cutoff and Resonance as modulation and motion-recording destinations. Use short Decay with Cowbell for sharp phonk attacks; increase FM for a harder, more metallic bell.
+Every model can use the shared LP/BP/HP multimode filter, with Clean, Classic, Aggro, Acid, Roar, Snarl or Prism character, cutoff and resonance. Clean, Classic, Aggro and Acid expose `12`/`24 dB` slope; Roar, Snarl and Prism expose Color instead. Bogie supports all of its active macros plus Volume, Pitch, Cutoff and Resonance as modulation and motion-recording destinations. Use short Decay with Cowbell for sharp phonk attacks; increase FM for a harder, more metallic bell.
 
 On the Modulation screen, press **EDIT** on a source to choose a family (Envelopes, LFO or Sticks), then its source. **Left** and **Right** still cycle sources directly.
 
@@ -583,6 +598,16 @@ The six macros are **Waves**, **Interval**, **Amount**, **Flow**, **Feedback** a
 
 MME uses the shared LP/BP/HP multimode filter and ADSR. All six macros, Cutoff and Resonance are available to modulation and motion recording. Hold **EDIT** on Model to open the model popup.
 
+### Audio in
+
+Choose **External > Audio in** to process a live stereo input on a track. Select **SOURCE > Device > [Open]** on the instrument page to open the audio input settings and arm the source; **Back** returns to the instrument. You can also reach these settings through **Settings > Audio > Audio Input**. Then enter notes in a phrase using this instrument. Any note opens the ADSR; note-off starts its release. The note pitch does not transpose the incoming audio. Without a note, the input stays silent on this track.
+
+The **Input level** meter shows the incoming signal before the envelope and effects, including while no note is playing.
+
+The stereo input passes through the instrument's **FILTER** and **ADSR**, then the track's inserts, volume, pan and effect sends. The filter and envelope controls work like those on the Sampler. Leave the Sampler's dry input **MON** off if you only want to hear the processed signal.
+
+The Sampler can record the same input while Audio in processes it. An input recording captures the original input; use a track bounce to capture the processed track. Offline song export has no live input: record or bounce the performance into a sample first. Audio in uses the active capture device, shared by the armed inputs.
+
 ### MIDI Out
 
 **MIDI Out** (desktop only) drives an external MIDI device instead of synthesizing audio: triggering a note sends a real MIDI Note On on the instrument's **Channel** (`1-16`) and, when the note ends, the matching Note Off. Volume becomes velocity, and a chord track's voices each get their own Note On/Off. There is no audio to hear from ChooChooTracker itself - select the output device under [Settings](#12-settings) first. See [MIDI](#14-midi) for the full picture, including sound preview from a MIDI keyboard.
@@ -606,16 +631,21 @@ Several VCO types are available:
 
 Each instrument feeds its VCO into a multimode filter.
 
-The filter has a switchable `12 dB` or `24 dB` slope and can work as a low-pass (LP), band-pass (BP) or high-pass (HP) filter.
+The filter can work as a low-pass (LP), band-pass (BP) or high-pass (HP) filter, with cutoff from 20 Hz to 20 kHz. Clean, Classic, Aggro and Acid have a `12 dB`/`24 dB` slope switch. The three creative characters use that slot for a Color control instead.
 
 Several filter characters are available:
 
 - **Clean**: sterile and digital
 - **Classic**: inspired by classic American analogue synths
-- **Aggro**: inspired by roaring Japanese analogue synths
-- **Acid**: inspired by psychedelics
+- **Aggro**: gritty MS-20-style KORG-35 filter, with resonant LP, BP and HP
+- **Acid**: Open303's TB-303 low-pass in LP/24; its other modes and slopes are Open303-based adaptations. Acid reaches an effective maximum cutoff of 12 kHz (slightly lower below a 48 kHz output rate), even though the shared cutoff control reaches 20 kHz.
+- **Roar**: saturated filter feedback; Color increases the feedback
+- **Snarl**: an extra resonant peak around the cutoff; Color moves the peak
+- **Prism**: two moving peaks for a formant-like colour; Color shifts their positions
 
-Classic, Aggro and Acid can get seriously resonant in this alpha. Start low and turn them up gently.
+For Roar, Snarl and Prism, Color runs from `00` (0%) through `80` (150%) to `FF` (300%). The upper half pushes the feedback and resonant peaks into more extreme, sometimes unstable sounds.
+
+Aggro, Acid and the creative characters can get strongly resonant. Start low and turn them up gently. Existing Aggro and Acid instruments use these new sounds when loaded.
 
 The filter feeds a VCA controlled by an ADSR envelope. The envelope shape can morph between exponential, linear and logarithmic curves.
 
@@ -666,11 +696,28 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
 
 - Tap **Sample** to load an uncompressed `8-bit`, `16-bit` or `24-bit` PCM WAV. Press **PLAY** in the browser to audition the highlighted file.
 - When a sample is loaded, **EDIT** appears next to its name. Tap it to open the Sample Edit screen. **OPT** or **SELECT + [LEFT]** returns to the instrument.
-- The Sample Edit screen shows the filename (with a `*` marker when the sample in RAM differs from the file on disk), a format readout (sample rate, channels), a tall waveform, and the **Region**, **Select**, **Slice**, **Process** and **File** fields.
-- Edits live in RAM only until a save flow writes them: the project stores the sample's file path and reloads the WAV from disk on the next project load, so leaving the tracker without **Save**/**Save As** discards process operations (the `*` marker is the warning). Loading a different sample into the instrument also discards unsaved edits and resets the Region to the full sample (Start `00`, End `FF`).
+- The Sample Edit screen shows the filename (with a `*` marker when the sample in RAM differs from the file on disk), a format readout (sample rate, channels), a tall waveform, and the **Region**, **Select**, **Loop**, **Slice**, **Process** and **File** fields.
+- Processing edits start in RAM. Project saves and autosaves embed the current sample audio in the `.cct`; **Save**/**Save As** in Sample Edit writes the separate WAV. The `*` marker means the sample in RAM differs from that WAV. Loading another sample replaces the current audio in RAM and resets the Region to the full sample (Start `00`, End `FF`).
 - **Region** sets the playback Start/End markers, also available on the Sampler instrument screen. They set normalised playback boundaries (`00-FF`); if Start is after End, the sample plays in reverse. **EDIT + [LEFT/RIGHT]** fine-adjusts the marker in steps of one (`01`) and zooms the waveform around it while **EDIT** is held; **EDIT + [UP/DOWN]** coarse-adjusts (step 16) and returns the view to the full sample. **EDIT + OPT** resets the marker to its default (Start `00`, End `FF`).
-- The waveform view zooms to a fixed window of one second of audio around the edited marker and pans to keep it visible; samples that fit inside the window stay at the full 1:1 view. The zoom is transient: it lasts while **EDIT** is held, and releasing **EDIT** returns to the full 1:1 view, as do coarse steps. Entering the screen always resets the view to the full sample.
-- **Select** sets a processing selection in absolute frames, independent of the playback Start/End markers. **EDIT + [LEFT/RIGHT]** moves a handle twenty frames and zooms onto it while **EDIT** is held; **EDIT + [UP/DOWN]** jumps by `frameCount/64` (minimum 16) and returns to the full-sample view. **EDIT (tap)** on a handle copies the current Start or End marker position to it. **EDIT + OPT** on either handle empties the whole selection. When the selection is empty both handles show `-`; when the handles are inverted they swap automatically. The selection is session-only editor state: it is not saved with the project, and entering the screen seeds it with the playback Region span (the whole sample with the default markers).
+- The waveform view zooms to a fixed window of 5/7 of a second of audio (40% more magnification than a full second) around the edited marker and pans to keep it visible; samples that fit inside the window stay at the full 1:1 view. The zoom is transient: it lasts while **EDIT** is held, and releasing **EDIT** returns to the full 1:1 view, as do coarse steps. Entering the screen always resets the view to the full sample.
+- **Loop** is a row with two cells: **START** (loop start) and **SPD ALGO**
+ (speed algorithm). It sits between **Select** and **Slice** on screen.
+- **START** shows the loop wrap point in hex and is always adjustable; when
+ looping is off, the marker is ignored in playback. The red waveform marker
+ appears only while looping is active and the value is nonzero. **EDIT +
+ [LEFT/RIGHT]** fine-adjusts the marker in steps of one
+ (`01`) and zooms the waveform around it while **EDIT** is held; **EDIT +
+ [UP/DOWN]** coarse-adjusts (step 16) and returns the view to the full sample.
+ **EDIT + OPT** snaps the marker to the Region Start. The wrap point is drawn
+ as a red marker on the waveform and clamps to the Region: it can never sit
+ before the Region Start or at/after the Region End. Editing the Region
+ markers moves the wrap point back to the Region Start whenever it would fall
+ outside the new Region. Projects saved before this feature load with the
+ wrap point at the Region Start (no audible change).
+- **SPD ALGO** picks the time-stretch algorithm used when **Speed** differs
+ from `100%`: `Granular` (default) or `Stretch`. The box shows `-` when the
+ mode is OFF.
+- **Select** sets a processing selection in absolute frames, independent of the playback Start/End markers. **EDIT + [LEFT/RIGHT]** moves a handle fourteen frames and zooms onto it while **EDIT** is held; **EDIT + [UP/DOWN]** jumps by `frameCount/64` (minimum 16) and returns to the full-sample view. **EDIT (tap)** on a handle copies the current Start or End marker position to it. **EDIT + OPT** on either handle empties the whole selection. When the selection is empty both handles show `-`; when the handles are inverted they swap automatically. The selection is session-only editor state: it is not saved with the project, and entering the screen seeds it with the playback Region span (the whole sample with the default markers).
 - **Slice** is a single row with four value cells - **Mode**, **Count**,
   **Slice** and **Frame** - and is saved with the instrument. Off plays the
   Start/End window. Phrase notes select slices chromatically from **C-0**, and
@@ -721,7 +768,7 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
     every slice mode; the preview stops when the key is released or when you
     leave the screen). The box shows `-` when the mode is OFF.
   - **Frame** shows the current slice's start frame in hex. **EDIT +
-    [LEFT/RIGHT]** nudges it by ten frames (zooming onto the marker while
+    [LEFT/RIGHT]** nudges it by seven frames (zooming onto the marker while
     **EDIT** is held), **EDIT + [UP/DOWN]** nudges by one hundred and
     returns to the full view. A marker stays inside its own slice: it
     cannot cross the previous or next slice start. **EDIT + OPT** deletes
@@ -778,14 +825,15 @@ This clean Sample engine plays mono or stereo PCM samples loaded into RAM.
   - The `*` marker before the filename means the sample in RAM differs from the file on disk (any process operation sets it, Save and Save As clear it). The marker is session-only: it is not saved with the project and resets when the screen is re-entered. If several instruments reference the same WAV file, saving one overwrites the file for all of them.
 - On the Sample instrument screen, use **EDIT + [LEFT/RIGHT]** to load the previous or next WAV in the same folder.
 - **Pitch** transposes by semitones (`-48` to `+48`).
-- **Loop** selects Off, Loop or Ping-Pong.
-- **Speed** controls granular time-stretching from `0%` to `500%` (`100%` is normal).
+- **Loop** selects Off, Loop, Ping-Pong, Loop X-Fade or Ping-Pong X-Fade. The X-Fade modes crossfade the loop wrap over the last 25% of the loop window instead of hard-cutting it.
+- **Speed** controls time-stretching from `0%` to `500%` (`100%` is normal); the algorithm (Granular or Stretch) is picked on the Sample Edit screen's **SPD ALGO** cell.
 
 Unsupported WAV formats display an error. Convert unusual files to `PCM8`, `PCM16` or `PCM24` WAV before importing them.
 
 ##### Audio input
 
 Open **Settings → Audio → Audio Input** before recording from a microphone or USB audio interface. The list shows the inputs currently available to the device. If an armed interface is disconnected, capture is interrupted and the audio handler restarts so the app can continue running. If you were recording, press **STOP** to finish the interrupted take. After reconnecting, select **[Refresh]** and check that the intended input is armed before recording again; reconnecting alone does not reliably re-arm it. **[List]** re-reads the current input list without restarting audio.
+To turn an input off, select its **[x]** box in that list and press **EDIT**. To turn all inputs off at once, press **CLEAR** on the **Audio Input** row in **Settings → Audio**.
 
 Select an input's **ARM** box to make it available to the Sampler recorder; its small meter shows the incoming level. Arm one interface at a time: this version opens only the first armed interface, even if several boxes are checked. Your selection is remembered by device name, so an unavailable interface stays unarmed rather than being replaced by another input. Press **OPT** to return to Audio settings.
 
@@ -895,7 +943,7 @@ Motion recording supports Braids, Plaits, Sampler, 2xSCWF, BYOWTBL and Bogie des
 
 Tables are a core sound design tool in trackers. In Vortex Tracker terms, they combine instruments and ornaments, but they can do much more. If you know LSDj or NerdSEQ, the idea should already feel familiar.
 
-The Pitch column accepts relative (`~`) or absolute (`=`) pitch values in semitones. The Volume column is `00`-`0F`, applies to every engine on top of its envelope, and can be used for a gate: alternate `0F` and `00` then loop with `HOP 00`. The 4 FX lanes mostly match the lanes in a phrase, although a few FX behave differently in tables.
+The Pitch column accepts relative (`~`) or absolute (`=`) pitch values in semitones. The Volume column is `00`-`7F`, applies to every engine on top of its envelope, and can be used for a gate: alternate `7F` and `00` then loop with `HOP 00`. The 4 FX lanes mostly match the lanes in a phrase, although a few FX behave differently in tables.
 
 Putting a `TIC` FX on the last table row sets the speed of that column and overrides the instrument's default table speed. Each FX column can run at a different tick speed. The Pitch and Volume columns follow the speed of the 1st FX column.
 
@@ -1007,6 +1055,8 @@ Each FX has a 3-letter command and a hexadecimal value. The in-app help panel gi
 |---|---|---|
 | `RSN` | `00-FF` | Sets this track's reverb send until the next note trigger. |
 | `DSN` | `00-FF` | Sets this track's delay send until the next note trigger. |
+
+Like a mixer send, `RSN` and `DSN` only change how much new sound goes into the effect. Sound that is already in the reverb or delay keeps ringing out after the next note, even when nothing else sends to the effect.
 
 ### ADSR / Trigger FX
 
@@ -1135,7 +1185,7 @@ The value is interpreted as a signed `8-bit` relative change (`01` adds `1`, `FF
 
 | FX | Value | Meaning |
 |---|---|---|
-| `SPL` | `00-03` | Playback mode: `00` Forward, `01` Reverse, `02` Loop, `03` Ping-Pong |
+| `SPL` | `00-05` | Playback mode: `00` Forward, `01` Reverse, `02` Loop, `03` Ping-Pong, `04` Loop X-Fade, `05` Ping-Pong X-Fade. `02`-`05` write the mapped loop mode to the instrument (the instrument view follows along) and use the sample's loop start marker as the wrap point; `04`/`05` crossfade the wrap over the last 25% of the loop window instead of hard-cutting |
 | `SLI` | `00-FF` | Play the numbered slice (`01` = first slice) regardless of the note; `00` keeps normal note mapping. Requires slice mode enabled on the instrument |
 | `SPT` | signed `XX` | Sample transposition in semitones |
 | `SST` | `00-FF` | Normalised playback start |
@@ -1146,6 +1196,7 @@ The value is interpreted as a signed `8-bit` relative change (`01` adds `1`, `FF
 | `SRS` | `00-FF` | Exponential filter resonance |
 | `SSP` | `00-FF` | Sample speed, mapped from `0%` to `500%` |
 | `RNS` | `M0` | Plays a random slice of a sliced sample instead of the note-mapped one. `M` selects the mode: `0` always random, `1` random per PLAY, `2` pick and keep until the value changes. Requires slice mode enabled on the instrument; the low nibble is unused. |
+| `LST` | signed `XX` | Shifts the loop-start marker by a signed amount per row (`00` = no change, `01` = +1, `FF` = -1). The offset accumulates across rows and survives retriggers until the next note trigger; the marker clamps to `00-FF` at playback time and affects playback only when looping is active. |
 
 ### AY FX shared by AY instruments
 
@@ -1216,6 +1267,8 @@ Use it to balance the 8 tracks, shape each track with Tilt EQ, and send audio to
 
 The mixer is track-based, not instrument-based. If a track changes instruments, its level, PAN, Tilt and sends remain attached to the track. Instruments also have their own `00-FF` **Vol** and **Pan** in the top row of the Instrument screen. Instrument PAN is applied first, then track PAN. Both preserve an existing stereo image at centre; they progressively attenuate the opposite side when moved left or right.
 
+On the **MASTER FX** row, select **LEVEL** to adjust the overall output volume from `001%` to `100%`. This is the same **Mix volume** setting found in Settings > Mixer and is saved for the device, so it is useful on consoles without a physical volume control. Select **EDIT** to open the master effects.
+
 ### Auto Mix
 
 The Mixer contains an **AUTO MIX** button. It renders `6 seconds` offline,
@@ -1251,7 +1304,7 @@ The 1st repeat follows the stereo input. Later feedback crosses between the left
 
 ## 11. Project screen
 
-The Project screen provides **Load**, **Save**, **New**, **Export**, **Manage** and **Scale** commands, along with filename, title and author metadata.
+The Project screen provides **Load**, **Save**, **New**, **Export**, **Manage**, **Pitch table** and **Scale** commands, along with filename, title and author metadata.
 
 ### Export location
 
@@ -1259,7 +1312,7 @@ Exports, stems and bounces are written to a per-project folder inside the app's 
 
 - **Default**: `<app folder>/samples/Exports/<project name>/`. While the project is unnamed, the folder is `current-project`.
 - On the web build the default is `/user/samples/Exports/<project name>/`.
-- On Android the samples folder is inside the app's private workspace.
+- On Android the samples folder is inside the active workspace (private, picked, or shared).
 
 The **Folder** row on the EXPORT screen shows the active destination:
 
@@ -1270,9 +1323,9 @@ When a named project is saved under a new name, the default export folder is ren
 
 **Load** also accepts `.mid`/`.midi` files, imported as a new project: notes are grouped by MIDI channel (one channel per track, up to the track count), quantized to 4 rows per beat, and placed on a single default AY instrument - MIDI program numbers have no chiptune equivalent, so pick real instruments afterward. Only the file's first tempo is used (one global tick rate, no per-section tempo changes). The Export screen's **MIDI** row does the reverse: writes the current arrangement's notes, volume and tempo/groove as a Standard MIDI File (one MIDI track per tracker track); [MIDI Out](#midi-out) instruments and other per-row FX beyond volume and the global groove have no MIDI equivalent and are not translated.
 
-**Load** also accepts Dirtywave M8 songs (`.m8s`, firmware 2.x-4.x), imported as a new project. Only the structure and the notes come across (song rows, chains with their transpose, phrases with note, velocity and instrument number, note-offs, tempo and song name); notes keep their real pitch. M8 instruments have no equivalent here, so each instrument used by a phrase becomes a default AY instrument carrying the M8 instrument's name - pick real sounds afterward. FX, tables and all instrument parameters are ignored.
+**Load** also accepts Dirtywave M8 songs (`.m8s`, firmware 2.x-4.x), imported as a new project: structure (song rows, chains with transpose, phrases), notes, velocities, instrument numbers, note-offs, tempo and name. Notes keep their real pitch (the M8's `C-6` is `C-4` here). Each instrument used is imported under its M8 name: **MACROSYN** becomes Braids (same 47 models; timbre, color, filter, cutoff, resonance and pan carried over, cutoff curve approximate), **SAMPLER** becomes Sample (the `.m8s` only stores the WAV's path on the M8 card: the file is searched under the `.m8s` folder, its parents and your sample folder; otherwise the instrument keeps the M8 path and stays silent; +24 semitones of Pitch, as the M8 plays two octaves lower), **FMSYNTH** becomes a Genesis FM (rough approximation), **WAVSYNTH** and **HYPERSYNTH** become aChChid, **MIDI OUT** becomes MIDI Out (channel, bank, program, first 4 CCs). Other types become a default AY instrument. FX and tables are ignored.
 
-On desktop, the Export screen's **M8S** row does the reverse, in a limited way: tap it and pick an existing `.m8s` as a **template** (remembered until you quit, **EDIT + OPT** forgets it). Its song, chains, phrases, tempo and title are replaced and everything else, including the M8 instruments, is kept as is. FX are not exported, and a song using phrase `FF` or above cannot be exported (the M8 has 255 phrases). The exported file has not been tested on a real M8 yet. See [M8 songs](m8s-format.md) for the details.
+On desktop, the Export screen's **M8S** row does the reverse, in a limited way: tap it and pick an existing `.m8s` as a **template** (remembered until you quit, **EDIT + OPT** forgets it). Its song, chains, phrases, tempo and title are replaced and everything else is kept, except that Braids instruments are written back as MacroSynth and Sample instruments as Sampler (path `/Samples/<file name>`: copy the WAV there on the M8 yourself), if the template has an instrument of that type to copy from. FX are not exported, and a song using phrase `FF` or above cannot be exported (the M8 has 255 phrases). The exported file has not been tested on a real M8 yet. See [M8 songs](m8s-format.md) for the details.
 
 On desktop and Android, **Load** also accepts Furnace modules (`.fur`, tested with the demos of Furnace 0.5 to 0.6.8.3; the newer format 240 layout is read but untested), imported as a new project from the first subsong. At most 8 channels can be kept: by default the channels that have notes, those playing samples first and those of a chip the tracker has instruments for before the others. The notes, volumes (rescaled to `00`-`7F`), note-offs, song order (one chain per order and channel, cut into 16-row phrases) and speed pattern (groove 0) are converted, with the effects `00xy` (ARP), `04xy` (PVB), `08xy` (PAN), `0Fxx` (GGR), `ECxx` (OFF) and `EDxx` (DEL). YM2612, YM2151, OPL2/OPL3 (2 and 4 operators) and SID instruments become the matching tracker instruments (SID instruments keep their volume, arpeggio, pulse width, waveform and cutoff macros; the filter mode and resonance macros keep only their first step, and relative or other macros are dropped), and Furnace samples are written as WAV files to `<samples folder>/<module name>/` and loaded into Sample instruments. AY-3-8910 channels get a default AY instrument; SN76489 instruments become Sega PSG ones with their volume, arpeggio and noise-mode macros; other chips keep their notes with a default square instrument. Macros, wavetables, the other effects and the other chips' patches are dropped, and a message tells how many conversion notes there are.
 
@@ -1329,16 +1382,18 @@ In Link mode the session owns the tempo: the row shows no BPM field, and the ses
 
 ## 12. Settings
 
-- **Audio** offers a **Sample rate** of `32 kHz` or `48 kHz` (default) and an adjustable **Buffer size**. Changes take effect immediately and are saved. Changing the sample rate stops playback and sample preview while the sound engines and any armed audio input reopen at the new rate. If a device rejects the new rate, the previous setting remains active. A larger buffer gives the audio engine more time but increases latency; 32 kHz reduces processing work and limits the highest reproduced frequency to 16 kHz. The CPU load readout shows audio rendering cost.
+- **Audio** offers a **Sample rate** of `32 kHz` or `48 kHz` (default), an adjustable **Buffer size**, and **Audio Output**. Select `Default` for the system output or choose a connected interface, such as a USB sound card; the sound switches immediately and the choice is saved. If the interface is unavailable when the app starts, sound uses the system output. If selecting it fails, the previous output is restored. Changing the sample rate stops playback and sample preview while the sound engines and any armed audio input reopen at the new rate. If a device rejects the new rate, the previous setting remains active. A larger buffer gives the audio engine more time but increases latency; 32 kHz reduces processing work and limits the highest reproduced frequency to 16 kHz. The CPU load readout shows audio rendering cost.
 - **Repeat delay / speed** tune held-button repeat.
 - **Stick live mode** selects `HOLD`, `TOGGLE`, or `FREE` for the existing mapped Stick live button.
 - **MIDI** opens the [MIDI](#14-midi) submenu: device selection and the MIDI In channel-to-instrument mapping.
 - **Synths** contains **AY Quality**, **Sample dithering**, and global **Braids BITS / DRFT / SIGN** settings.
 - **Mixer** contains **Mix volume** and the per-project `250-4000 Hz` **Tilt pivot** (default `1 kHz`) used by all Mixer Tilt controls.
-- **Graphics** contains **Edit color theme**, **Load font**, **Persistent waveform**, **Track visuals**, **Waveform FPS**, and the active renderer (`GPU` or `Software`). **Waveform FPS** sets the refresh rate of the instrument scope and mixer visualizers from `01` to `60`. Track visuals selects **Detailed** (the synth waveform and its overlays) or **Audio waveform** (the actual summed output of that track) independently for every track; audio waveform clears any prior ADSR overlay immediately when playback starts. ChipNomad fonts and themes should work.
+- **Graphics** contains **Edit color theme**, **Load font**, **Persistent waveform**, **Track visuals**, **Waveform FPS**, **Boot screen**, and the playback counter settings. **Waveform FPS** sets the refresh rate of the instrument scope and mixer visualizers from `01` to `60`. Track visuals selects **Detailed** (the synth waveform and its overlays) or **Audio waveform** (the actual summed output of that track) independently for every track; audio waveform clears any prior ADSR overlay immediately when playback starts. ChipNomad fonts and themes should work.
 - **Key mapping** customises the controls.
 - **Support report** writes a small diagnostic text file with the app version, platform, audio settings and CPU load, playback/overflow state, and a compact project summary. It does not include sample data or project title/author text. On Android and Web it opens the normal export/download flow; desktop and handheld builds save `support-report.txt` in the app's writable folder.
 - **Quit ChooChooTracker** exits cleanly.
+
+The playback counter sits above the track list on the right. **Playback counter** selects **Bars** (`000:0` at the start, then bar count and quarters `1` to `4`) or **Time** (`00:00`). **Rows per bar** defaults to `16` and **Ticks per row** to `6`, so a bar is 96 elapsed playback ticks regardless of the project's groove. Both values can be changed in Graphics. The count continues across song loops, keeps its last value after stopping, and resets when playback starts again. Time uses the audio clock, including changes in tempo.
 
 ## 13. Performance and troubleshooting
 
@@ -1368,6 +1423,8 @@ Desktop and PortMaster. Settings > **MIDI** opens this submenu: **MIDI In** / **
 - **Channel mapping**: opens a list of the 16 MIDI channels; assign each one an instrument (`OFF` by default) so notes received on that channel preview that instrument regardless of which one is selected on the Instrument screen - e.g. channel `01` -> instrument `05`. A channel left `OFF` falls back to the currently selected instrument, the original behavior. This mapping is saved to settings.txt.
 - **MIDI CC mapping**: maps an incoming controller to an instrument parameter, including its **Volume**, or to global controls. Global rows show `TRK 1`-`TRK 8` instead of an instrument and provide track **Mute**, **Solo**, **Volume**, **Reverb send**, and **Delay send**; **Song play/stop** has no target. A new mapping ignores the CC that learned/configured it and takes effect on the next physical movement, so setting up mappings during playback cannot reset a patch to zero. Mute and solo use `0-63` = off, `64-127` = on.
 - **Driving an external MIDI device**: give a track the [MIDI Out](#midi-out) instrument type and set its Channel; triggering notes on that track sends real MIDI to the selected MIDI Out device instead of making sound in ChooChooTracker.
+- **Send clock / Send transport**: in Settings > MIDI, select a **MIDI Out** device and enable either switch as needed. Both default to OFF and are remembered for this device. **Send clock** sends 24 pulses per quarter note during sequencer playback, following the internal tempo or the Ableton Link session. **Send transport** sends **Start** when playback begins and **Stop** when it ends; note and row previews do not start external gear. Each playback starts the receiver from its beginning; Continue and song-position pointers are not sent. Both outputs are suppressed while **Clock source** is **Midi Clock** to prevent feedback; the switches retain their settings. Enable external MIDI sync on the receiving device.
+- **MIDI delay**: delay the outgoing notes, controllers, clock and transport together by `0–200 ms` to align an external synth with ChooChooTracker's audio output. Start at `0 ms`, then increase it if the external synth sounds early. Compare short attacks recorded together and fine-tune in `1 ms` steps; larger edits move by `10 ms`. The setting is saved. Switching between the console jack and a USB audio interface may require a different value.
 - **MIDI clock sync**: with a MIDI In device selected, set the Project screen's **Clock source** to **Midi Clock** to follow an external sequencer. The tracker measures tempo from the incoming clock (24 pulses per quarter note) and shows it on the greyed-out **Tempo** row; **Start**, **Continue** and **Stop** messages control playback. The clock source is remembered in settings.txt.
 
 ## 15. Credits and licensing
@@ -1401,7 +1458,7 @@ the current screen.
 | Rotary | Speed, Depth, Drive, Mix |
 | Saturation | Drive, Tone, Level, Mix |
 | Bitcrusher | Bit depth, Rate reduction, Tone, Mix |
-| Destruction | Mode, Amount, Tone, Mix |
+| Destruction | Crush, Rate, Fold, Distort, Saturate, Tone, Mix, Input |
 | FORMANT | Mode, Vowel, First formant, Second formant, Resonance, Mix |
 
 Continuous controls use 00–FF, except FORMANT VOW (00–7F). Bipolar
@@ -1420,7 +1477,20 @@ control over slow LFO movement. New Rotary inserts default to **8F**, about
 and F11/F21 speed automation need retuning to the new scale (old Slow/Fast/Hyper/
 Chaos correspond approximately to **8F/CB/E7/FF**). Other parameters are unchanged.
 Bitcrusher bit depth ranges from 4 to 16 bits and
-rate reduction from 1x to 32x. Destruction modes are Fold, Clip and Crush.
+rate reduction from 1x to 32x. Destruction processes Crush and Rate first,
+then Fold, asymmetric Distort and hard-clip Saturate. The controls follow the
+audio chain: F11/F12 set Crush/Rate, so later stages reshape their digital
+grain. Each stage is off at `00`. Values
+`00-7F` cover the normal range and `80-FF` extend it: Fold, Distort and Saturate
+reach about 8x drive at `7F` and 32x at `FF`; Crush reaches 4 bits then 1 bit.
+Rate reduces the sample rate from 1x through 16x at `7F` to 128x at `FF`, and
+can be used independently of Crush's bit reduction. Input adds up to 12 dB at
+`7F` and 36 dB at `FF`. Tone is a post-effect low-pass filter, bypassed at
+`FF`. A shared stereo auto-level stage smooths level changes and limits its
+correction to -36/+18 dB; very quiet or strongly cancelled signals can still
+change in perceived loudness. Existing projects retain their Destruction bytes
+without conversion. Its old parameters are reinterpreted, so an old project
+can sound different or dry until Mix and the stages are edited.
 Saturation and distortion include output level or mix controls for balancing them
 against the unprocessed signal.
 
@@ -1660,6 +1730,20 @@ extensions, with stable slot/track tie breaking. This policy applies on every
 platform so the same song has the same bounded note allocation. It does not
 change other instruments' polyphony. Preset audition is disabled during playback.
 The limit was selected from R36H measurements and validated in mixed playback.
+
+#### FM operator editor
+
+Genesis FM, Arcade FM, OPL2, OPL3, OPLL and VRC7 instruments have an **EDIT**
+button to the right of Fine ct. It opens a table of the patch parameters:
+
+- Genesis FM / Arcade FM
+- OPL2 / OPL3: on OPL3 the mode (2op, 4op, dual) can be changed here.
+- OPLL / VRC7: editing a ROM preset turns it into "Custom".
+
+Left/Right and the usual edit keys change values; the instrument keeps playing
+as usual so you can hear changes. The status bar describes the parameter under
+the cursor. OPT or Left+Shift returns to the instrument screen. DX7 and SID
+have no operator editor.
 
 Genesis FM (YM2612) and Arcade FM (YM2151) now use the same FM Bank/Preset
 browser, EDIT+PLAY audition, confirm/cancel and fine-tune controls. Genesis now

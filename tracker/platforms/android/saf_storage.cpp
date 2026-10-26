@@ -10,6 +10,7 @@
 // private workspace and shows through as a read-only overlay: a path missing
 // from the picked folder falls back to the private copy, and the picked folder
 // wins when both exist. Writes always go to the picked folder.
+// Temporary files always go to the app's private cache.
 
 #include <SDL2/SDL.h>
 #include <jni.h>
@@ -254,6 +255,25 @@ FILE* openVirtual(const std::string& rel, const char* mode) {
 }  // namespace
 
 extern "C" {
+
+FILE* __wrap_tmpfile(void) {
+  // Bionic before Android 14 ignores TMPDIR and tries /data/local/tmp.
+  const char* directory = getenv("TMPDIR");
+  char fallback[1024];
+  if (!directory || !*directory) {
+    if (androidGetPrivateWorkspacePath(fallback, sizeof(fallback)) != 0) return NULL;
+    directory = fallback;
+  }
+  char path[1024];
+  int length = snprintf(path, sizeof(path), "%s/cct-XXXXXX", directory);
+  if (length < 0 || length >= (int)sizeof(path)) { errno = ENAMETOOLONG; return NULL; }
+  int fd = mkstemp(path);
+  if (fd < 0) return NULL;
+  if (unlink(path) != 0) { int error = errno; close(fd); errno = error; return NULL; }
+  FILE* file = fdopen(fd, "w+b");
+  if (!file) close(fd);
+  return file;
+}
 
 FILE* __wrap_fopen(const char* path, const char* mode) {
   std::string rel;

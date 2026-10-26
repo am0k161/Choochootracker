@@ -117,7 +117,7 @@ const MidiBackend kWebBackend = {
   openInput, closeInput, openOutput, closeOutput,
   pollInput, scheduleOutput, flushOutput, droppedCount, nowMicros,
   requestAccess, statusMessage,
-  1, 1, 0, 0,
+  1, 1, 0, 1,
 };
 
 } // namespace

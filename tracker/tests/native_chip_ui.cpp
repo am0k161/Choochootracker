@@ -17,6 +17,8 @@
 #include "selection_popup.h"
 #include "waveform_display.h"
 #include "monitor_display.h"
+#include "audio_input_manager.h"
+#include "screen_audio_input.h"
 #include "dx7_patch.h"
 #include "sid_patch.h"
 #include "project_utils.h"
@@ -36,6 +38,53 @@ static void tapEdit(){key(1,keyEdit);key(0,0);}
 int main(int argc,char** argv){
   if(argc!=2&&argc!=3)return 1;output=argv[1];initDefaultAppSettings();appSettings.screenWidth=640;appSettings.screenHeight=480;fontSetCurrent(fontGetDefault());require(!gfxSetup(&appSettings.screenWidth,&appSettings.screenHeight),"SDL dummy setup");
   chipnomadState=chipnomadCreate();require(chipnomadState,"state");require(!projectLoad(&chipnomadState->project,"projects/gm-midi-demo.cct"),"fixture");
+  if(argc==3 && !strcmp(argv[2],"--filter-only")) {
+    screensInitAll();waveformDisplayInit();monitorDisplayInit();cInstrument=0;
+    auto& instrument=chipnomadState->project.instruments[0];
+    getInstrumentFunctions(InstrumentType::Braids).init(&instrument);
+    screenSetup(&screenInstrument,0);appDraw();
+    require(instrument.chip.braids.filterCharacter==2,"default Classic");
+    for(int character=3;character<=7;++character) {
+      require(screenInstrumentBraids.onEdit(1,4,CellEditAction::increase),"filter type edit");
+      appDraw();
+      require(instrument.chip.braids.filterCharacter==character,"filter type selection");
+    }
+    auto before=instrument.chip.braids.filterColor;
+    require(screenInstrumentBraids.onEdit(1,6,CellEditAction::increase),"filter Color edit");
+    appDraw();
+    require(instrument.chip.braids.filterColor!=before,"filter Color changed");
+    printf("Standard filter UI selection passed\n");
+    chipnomadDestroy(chipnomadState);SDL_Quit();return 0;
+  }
+  if(argc==3 && !strcmp(argv[2],"--audio-in-only")) {
+    screensInitAll();waveformDisplayInit();monitorDisplayInit();cInstrument=0;
+    auto& instrument=chipnomadState->project.instruments[0];
+    getInstrumentFunctions(InstrumentType::AudioIn).init(&instrument);
+    screenSetup(&screenInstrument,0);appDraw();
+    require(screenTouchTap(12,8),"Audio in Device field selectable");
+    tapEdit();
+    require(currentScreen==&screenAudioInput,"Device opens Audio Input settings");
+    key(1,keyOpt);
+    require(currentScreen==&screenInstrument,"Audio Input returns to instrument");
+    require(!screenTouchTap(12,7),"SOURCE heading is not an editable field");
+    require(!screenTouchTap(12,11),"input meter is not an editable field");
+    require(screenTouchTap(26,11),"filter cutoff selectable at Plaits coordinates");
+    auto cutoff=instrument.chip.audioIn.filterCutoffHz;
+    key(1,keyEdit|keyLeft);key(0,0);
+    require(instrument.chip.audioIn.filterCutoffHz!=cutoff,"touch selected cutoff edits cutoff");
+    require(screenTouchTap(7,14),"ADSR attack selectable at Plaits coordinates");
+    key(1,keyEdit|keyRight);key(0,0);
+    require(instrument.chip.audioIn.attack>0,"touch selected attack edits attack");
+    AudioInputManagerTestPeer::captureOpenForTest(audioInputManager,true);
+    AudioInputManagerTestPeer::armSlotForTest(audioInputManager,0,0);
+    int16_t input[]={24000,-12000};audioInputManager.onCapture(input,1,2);
+    appDraw();capture("audio-in-layout");
+    require(!audioInputManager.monitor(),"meter does not enable dry monitoring");
+    AudioInputManagerTestPeer::captureOpenForTest(audioInputManager,false);
+    AudioInputManagerTestPeer::disarmSlotForTest(audioInputManager,0);
+    printf("Audio in source navigation, filter/ADSR touch editing and input meter passed\n");
+    chipnomadDestroy(chipnomadState);SDL_Quit();return 0;
+  }
   if(argc==3 && !strcmp(argv[2],"--live-waveform-only")) {
     screensInitAll();waveformDisplayInit();monitorDisplayInit();cInstrument=0;
     appSettings.waveformRefreshHz=1; // Exercise cached frames between refreshes.
@@ -251,6 +300,16 @@ int main(int argc,char** argv){
     screenSetup(&screenMixer,0);eventKey(keyShift,true);eventKey(keyUp,true);eventKey(keyUp,false);
     require(screenMixerGetPage()==1,"reverb page entered");eventKey(keyLeft,true);eventKey(keyLeft,false);eventKey(keyShift,false);
     require(currentScreen==&screenMixer&&screenMixerGetPage()==0,"left edge returns to mixer");
+    appSettings.mixVolume=chipnomadState->mixVolume=1.0f;projectModified=0;
+    require(screenTouchTap(29,12),"master level is selectable beside EDIT");
+    eventKey(keyEdit|keyDown,true);eventKey(keyEdit|keyDown,false);
+    require(std::abs(appSettings.mixVolume-0.9f)<0.001f&&
+            std::abs(chipnomadState->mixVolume-0.9f)<0.001f,"master level changes output gain");
+    require(!projectModified,"device volume does not modify the project");
+    capture("mixer-master-level");
+    require(screenTouchTap(12,12),"short master EDIT is selectable");
+    eventKey(keyEdit,true);eventKey(keyEdit,false);
+    require(currentScreen==&screenInsertFX,"master EDIT opens master effects");
     printf("Insert popup production UI and Shift spine navigation passed: all modules, both slots, active-only selection, waveform off/on\n");
     chipnomadDestroy(chipnomadState);SDL_Quit();return 0;
   }

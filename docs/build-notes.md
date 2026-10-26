@@ -261,13 +261,15 @@ uploading:
 
 Android has two Gradle flavors, selected by the task name:
 
-- `store` (`assembleStoreRelease`, `bundleStoreRelease`): the workspace is
-  private to the app, no storage permission. This is the Play Store build.
-- `direct` (`assembleDirectRelease`): for F-Droid and direct APK download. No
-  storage permission: on first launch the app opens the system folder picker
-  and keeps the chosen folder (persisted URI grant) as its workspace, then
-  restarts itself once. Until a folder is chosen it runs on the private
-  workspace.
+- `store` (`assembleStoreRelease`, `bundleStoreRelease`): private app storage
+  by default, with a picked SAF folder available in Settings. No storage
+  permission is needed. This is the Play Store build.
+- `direct` (`assembleDirectRelease`): for F-Droid and direct APK download.
+  Android 11+ defaults to `/sdcard/ChooChooTracker` with all-files access; the
+  Working folder setting can switch to a picked SAF folder or private storage.
+  Android 10 uses the system folder picker and a persisted SAF grant; on first
+  launch it asks for a working folder and restarts after one is chosen. Until
+  then it uses private app storage.
 
 The picked folder has no filesystem path, so the native engine reaches it
 through `platforms/android/saf_storage.cpp`: `Makefile.android` links with

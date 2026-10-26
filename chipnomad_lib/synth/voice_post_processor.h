@@ -16,10 +16,10 @@ class VoicePostProcessor {
     gain_ = gain < 0.0f ? 0.0f : (gain > 1.0f ? 1.0f : gain);
   }
   void setFilter(bool enabled, uint8_t character, uint8_t mode, bool slope24dB,
-                 float cutoffHz, float resonance) {
+                 float cutoffHz, float resonance, uint8_t color = 128) {
     if (resonance < 0.0f) resonance = 0.0f;
     if (resonance > 1.0f) resonance = 1.0f;
-    filter_.configure(enabled, character, mode, slope24dB, cutoffHz, resonance * resonance);
+    filter_.configure(enabled, character, mode, slope24dB, cutoffHz, resonance, color);
   }
   void setFilter(bool enabled, uint8_t mode, bool slope24dB,
                  float cutoffHz, float resonance) {
@@ -39,6 +39,11 @@ class VoicePostProcessor {
   float process(float sample, int channel = 0) {
     float envelope = envelopeEnabled_ ? envelope_.next() : 1.0f;
     return filter_.process(sample, channel) * envelope * gain_;
+  }
+  void processStereo(float* stereo) {
+    float envelope = envelopeEnabled_ ? envelope_.next() : 1.0f;
+    stereo[0] = filter_.process(stereo[0], 0) * envelope * gain_;
+    stereo[1] = filter_.process(stereo[1], 1) * envelope * gain_;
   }
   bool envelopeActive() const { return !envelopeEnabled_ || envelope_.active(); }
   float envelopeLevel() const { return envelopeEnabled_ ? envelope_.level() : 1.0f; }

@@ -7,6 +7,7 @@
 #include "corelib_file.h"
 #include "corelib_font.h"
 #include "corelib_gfx.h"
+#include "corelib_audio.h"
 #include "file_browser.h"
 #include "screens.h"
 #include "waveform_display.h"
@@ -28,7 +29,7 @@ static void drawAudioCpuLoad(void) {
   if (load == displayedCpuLoad) return;
   displayedCpuLoad = load;
   gfxSetFgColor(appSettings.colorScheme.textInfo);
-  gfxPrintf(23, 4, "%03d%%", load);
+  gfxPrintf(23, 5, "%03d%%", load);
 }
 
 static void audioStatic(void) { gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "AUDIO"); }
@@ -43,7 +44,8 @@ static int audioInputArmedCount(void) {
 static void audioCursor(int, int row) {
   if (row == 0) gfxCursor(23, 2, 6);
   else if (row == 1) gfxCursor(23, 3, appSettings.audioBufferSize == 1024 ? 4 : 3);
-  else if (row == 3) gfxCursor(23, 5, 3); // "OFF"/"ON" value width
+  else if (row == 2) gfxCursor(14, 4, 16);
+  else if (row == 4) gfxCursor(23, 6, 3); // "OFF"/"ON" value width
 }
 static void audioField(int, int row, CellState state) {
   const ColorScheme cs = appSettings.colorScheme;
@@ -56,13 +58,19 @@ static void audioField(int, int row, CellState state) {
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     gfxClearRect(23, 3, 4, 1);
     gfxPrintf(23, 3, "%d", appSettings.audioBufferSize);
-  } else if (row == 3) {
-    gfxSetFgColor(cs.textDefault); gfxPrint(0, 5, "Audio Input");
+  } else if (row == 2) {
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, 4, "Audio Output");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
-    gfxClearRect(23, 5, 3, 1);
-    gfxPrint(23, 5, audioInputArmedCount() > 0 ? "ON" : "OFF");
+    gfxClearRect(14, 4, 16, 1);
+    gfxPrintf(14, 4, "%.16s", appSettings.audioOutputDeviceName[0] ?
+      appSettings.audioOutputDeviceName : "Default");
+  } else if (row == 4) {
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, 6, "Audio Input");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
+    gfxClearRect(23, 6, 3, 1);
+    gfxPrint(23, 6, audioInputArmedCount() > 0 ? "ON" : "OFF");
   } else {
-    gfxSetFgColor(cs.textDefault); gfxPrint(0, 4, "CPU load");
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, 5, "CPU load");
     drawAudioCpuLoad();
   }
 }
@@ -72,9 +80,50 @@ static int audioBufferIndex(int value) {
   return 0;
 }
 static int audioEdit(int, int row, CellEditAction action) {
-  if (row == 3) {
+  if (row == 4) {
+    if (action == CellEditAction::clear || action == CellEditAction::decrease ||
+        action == CellEditAction::decreaseBig || action == CellEditAction::multiDecrease ||
+        action == CellEditAction::multiDecreaseBig) {
+      audioInputManager.disarmAll();
+      for (int i = 0; i < AUDIO_INPUT_MAX_ARMED; ++i) appSettings.audioInputArmed[i] = -1;
+      if (settingsSave()) screenMessage(MESSAGE_TIME_ERROR, "Could not save audio setting");
+      return 1;
+    }
     if (action != CellEditAction::tap) return 0;
     screenSetup(&screenAudioInput, 0);
+    return 1;
+  }
+  if (row == 2) {
+    int count = audioOutputDeviceCount();
+    if (count < 0) count = 0;
+    int current = 0;
+    char name[AUDIO_DEVICE_NAME_LENGTH + 1];
+    for (int i = 0; i < count; ++i)
+      if (!audioOutputDeviceName(i, name, sizeof(name)) &&
+          strcmp(name, appSettings.audioOutputDeviceName) == 0) { current = i + 1; break; }
+    int next = current;
+    if (action == CellEditAction::clear) next = 0;
+    else if (action == CellEditAction::tap || action == CellEditAction::increase ||
+             action == CellEditAction::increaseBig || action == CellEditAction::multiIncrease ||
+             action == CellEditAction::multiIncreaseBig) next = current < count ? current + 1 : 0;
+    else if (action == CellEditAction::decrease || action == CellEditAction::decreaseBig ||
+             action == CellEditAction::multiDecrease || action == CellEditAction::multiDecreaseBig)
+      next = current > 0 ? current - 1 : count;
+    else return 0;
+    char previous[AUDIO_DEVICE_NAME_LENGTH + 1];
+    strcpy(previous, appSettings.audioOutputDeviceName);
+    name[0] = 0;
+    if (next > 0 && audioOutputDeviceName(next - 1, name, sizeof(name))) return 1;
+    if (strcmp(previous, name) == 0) return 1;
+    audioOutputSelect(name);
+    if (!audioManager.restart || audioManager.restart()) {
+      audioOutputSelect(previous);
+      if (audioManager.restart) audioManager.restart();
+      screenMessage(MESSAGE_TIME_ERROR, "Audio output failed");
+      return 1;
+    }
+    strcpy(appSettings.audioOutputDeviceName, name);
+    if (settingsSave()) screenMessage(MESSAGE_TIME_ERROR, "Could not save audio setting");
     return 1;
   }
   if (row != 0 && row != 1) return 0;
@@ -108,10 +157,10 @@ static int audioEdit(int, int row, CellEditAction action) {
   if (settingsSave() != 0) screenMessage(MESSAGE_TIME_ERROR, "Could not save audio setting");
   return 1;
 }
-static int audioCellValid(int, int row) { return row == 0 || row == 1 || row == 3; }
-static ScreenData audioData = {4, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, audioStatic, audioCursor, NULL, noHeader, noHeader, audioField, audioEdit, NULL, NULL, audioCellValid, NULL};
+static int audioCellValid(int, int row) { return row == 0 || row == 1 || row == 2 || row == 4; }
+static ScreenData audioData = {5, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, audioStatic, audioCursor, NULL, noHeader, noHeader, audioField, audioEdit, NULL, NULL, audioCellValid, NULL};
 
-static void controlsStatic(void) { gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "CONTROLS"); }
+static void controlsStatic(void) { gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "CONTROLS"); gfxPrint(0, 2, "Keys repeat"); }
 #ifdef TOUCH_INPUT
 static const int controlsHapticsRow = 3;
 static const int controlsHidePadRow = 4;
@@ -120,24 +169,26 @@ static const int controlsKeyMappingRow = 5;
 static const int controlsKeyMappingRow = 3;
 #endif
 static const int controlsRows = controlsKeyMappingRow + 1;
+static int controlsRowY(int row) { return row < 2 ? 3 + row : row == 2 ? 6 : 5 + row; }
 static void controlsCursor(int, int row) {
-  if (row < 3) gfxCursor(23, 2 + row, row < 2 ? 3 : 6);
-  else if (row == controlsKeyMappingRow) gfxCursor(0, 2 + row, 11);
+  if (row < 3) gfxCursor(23, controlsRowY(row), row < 2 ? 3 : 6);
+  else if (row == controlsKeyMappingRow) gfxCursor(0, controlsRowY(row), 11);
 #ifdef TOUCH_INPUT
-  else gfxCursor(23, 2 + row, 3);
+  else gfxCursor(23, controlsRowY(row), 3);
 #endif
 }
 static void controlsField(int, int row, CellState state) {
   const ColorScheme cs = appSettings.colorScheme;
+  const int y = controlsRowY(row);
   gfxSetFgColor(cs.textDefault);
-  if (row == 0) { gfxPrint(0, 2, "Repeat delay"); gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrintf(23, 2, "%03d", appSettings.keyRepeatDelay); }
-  else if (row == 1) { gfxPrint(0, 3, "Repeat speed"); gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrintf(23, 3, "%03d", appSettings.keyRepeatSpeed); }
-  else if (row == 2) { gfxPrint(0, 4, "Stick live mode"); gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(23, 4, appSettings.stickLiveMode == StickLiveMode::free ? "FREE  " : appSettings.stickLiveMode == StickLiveMode::toggle ? "TOGGLE" : "HOLD  "); }
+  if (row == 0) { gfxPrint(0, y, " - Repeat delay"); gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrintf(23, y, "%03d", appSettings.keyRepeatDelay); }
+  else if (row == 1) { gfxPrint(0, y, " - Repeat speed"); gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrintf(23, y, "%03d", appSettings.keyRepeatSpeed); }
+  else if (row == 2) { gfxPrint(0, y, "Stick live mode"); gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(23, y, appSettings.stickLiveMode == StickLiveMode::free ? "FREE  " : appSettings.stickLiveMode == StickLiveMode::toggle ? "TOGGLE" : "HOLD  "); }
 #ifdef TOUCH_INPUT
-  else if (row == controlsHapticsRow) { gfxPrint(0, 5, "Touch haptics"); gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(23, 5, appSettings.touchHaptics ? "ON " : "OFF"); }
-  else if (row == controlsHidePadRow) { gfxPrint(0, 6, "Hide pad w/ gamepad"); gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(23, 6, appSettings.hideTouchPadWithGamepad ? "ON " : "OFF"); }
+  else if (row == controlsHapticsRow) { gfxPrint(0, y, "Touch haptics"); gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(23, y, appSettings.touchHaptics ? "ON " : "OFF"); }
+  else if (row == controlsHidePadRow) { gfxPrint(0, y, "Hide pad w/ gamepad"); gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(23, y, appSettings.hideTouchPadWithGamepad ? "ON " : "OFF"); }
 #endif
-  else if (row == controlsKeyMappingRow) { gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, 2 + row, "Key mapping"); }
+  else if (row == controlsKeyMappingRow) { gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, y, "Key mapping"); }
 }
 static int controlsEdit(int, int row, CellEditAction action) {
   if (row == 0) { uint8_t value = appSettings.keyRepeatDelay; int handled = edit8noLast(action, &value, 4, 4, 30); if (handled) appSettings.keyRepeatDelay = value; return handled; }
@@ -215,28 +266,42 @@ static int mixerEdit(int, int row, CellEditAction action) {
 static ScreenData mixerData = {2, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, mixerStatic, mixerCursor, NULL, noHeader, noHeader, mixerField, mixerEdit, NULL, NULL, NULL, NULL};
 
 static void graphicsStatic(void) { gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "GRAPHICS"); }
-static void graphicsCursor(int, int row) { gfxCursor(row == 2 || row >= 4 ? 23 : 0, 2 + row, row == 0 ? 16 : row == 1 ? 9 : row == 2 ? 3 : row == 3 ? 13 : row == 4 ? 6 : 8); }
+static int graphicsRowY(int row) { return 2 + row + (row >= 2) + (row >= 6) + (row >= 7); }
+static void graphicsCursor(int, int row) { gfxCursor(row == 2 || row >= 4 ? 23 : 0, graphicsRowY(row), row == 0 ? 16 : row == 1 ? 9 : row == 2 ? 3 : row == 3 ? 13 : row == 4 ? 6 : row == 7 ? 4 : row == 8 ? 2 : 3); }
 static void graphicsField(int, int row, CellState state) {
   const ColorScheme cs = appSettings.colorScheme;
+  const int y = graphicsRowY(row);
   if (row == 0) {
-    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, 2, "Edit color theme");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, y, "Edit color theme");
   } else if (row == 1) {
-    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, 3, "Load font");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, y, "Load font");
   } else if (row == 2) {
-    gfxSetFgColor(cs.textDefault); gfxPrint(0, 4, "Song waveform");
-    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(23, 4, appSettings.persistentWaveform ? "ON " : "OFF");
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, y, "Song waveform");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(23, y, appSettings.persistentWaveform ? "ON " : "OFF");
   } else if (row == 3) {
-    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, 5, "Track visuals");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, y, "Track visuals");
   } else if (row == 4) {
-    gfxSetFgColor(cs.textDefault); gfxPrint(0, 6, "Waveform FPS");
-    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrintf(23, 6, "%02d FPS", appSettings.waveformRefreshHz);
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, y, "Waveform FPS");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrintf(23, y, "%02d FPS", appSettings.waveformRefreshHz);
   } else if (row == 5) {
-    gfxSetFgColor(cs.textDefault); gfxPrint(0, 7, "Renderer");
-    gfxSetFgColor(cs.textInfo); gfxPrint(23, 7, gfxGetRendererType());
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, y, "Renderer");
+    gfxSetFgColor(cs.textInfo); gfxPrint(23, y, gfxGetRendererType());
   } else if (row == 6) {
-    gfxSetFgColor(cs.textDefault); gfxPrint(0, 8, "Boot screen");
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, y, "Boot screen");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
-    gfxPrint(23, 8, appSettings.bootScreenNight ? "Night   " : "Original");
+    gfxPrint(23, y, appSettings.bootScreenNight ? "Night   " : "Original");
+  } else if (row == 7) {
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, y, "Playback counter");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
+    gfxPrint(23, y, appSettings.playbackCounterMode ? "Time" : "Bars");
+  } else if (row == 8) {
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, y, " - Rows per bar");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
+    gfxPrintf(23, y, "%02u", appSettings.playbackBarRows);
+  } else if (row == 9) {
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, y, " - Ticks per row");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
+    gfxPrintf(23, y, "%03u", appSettings.playbackBarTicks);
   }
 }
 static void fontLoaded(const char* path) {
@@ -251,6 +316,18 @@ static void fontLoaded(const char* path) {
 }
 static void fontCancelled(void) { screenSetup(&screenGraphicsSettings, 0); }
 static int graphicsEdit(int, int row, CellEditAction action) {
+  if (row >= 7 && row <= 9) {
+    uint8_t value = row == 7 ? appSettings.playbackCounterMode :
+      row == 8 ? appSettings.playbackBarRows : appSettings.playbackBarTicks;
+    if (row == 7 && (action == CellEditAction::tap || action == CellEditAction::doubleTap)) value ^= 1;
+    else if (!edit8noLast(action, &value, 1, row == 7 ? 0 : 1,
+                          row == 7 ? 1 : row == 8 ? 16 : 254)) return 0;
+    if (row == 7) appSettings.playbackCounterMode = value;
+    else if (row == 8) appSettings.playbackBarRows = value;
+    else appSettings.playbackBarTicks = value;
+    if (settingsSave() != 0) screenMessage(MESSAGE_TIME, "Could not save counter setting");
+    return 1;
+  }
   if (row == 6) {
     uint8_t value = appSettings.bootScreenNight;
     if (action == CellEditAction::tap || action == CellEditAction::doubleTap) value ^= 1;
@@ -281,7 +358,7 @@ static int graphicsEdit(int, int row, CellEditAction action) {
   return 0;
 }
 static int graphicsCellValid(int, int) { return 1; }
-static ScreenData graphicsData = {7, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, graphicsStatic, graphicsCursor, NULL, noHeader, noHeader, graphicsField, graphicsEdit, NULL, NULL, graphicsCellValid, NULL};
+static ScreenData graphicsData = {10, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, graphicsStatic, graphicsCursor, NULL, noHeader, noHeader, graphicsField, graphicsEdit, NULL, NULL, graphicsCellValid, NULL};
 
 static int menuInput(ScreenData* data, int isKeyDown, int keys, int taps) { if (keys == keyOpt) { screenSetup(&screenSettings, 0); return 1; } return screenInput(data, isKeyDown, keys, taps); }
 static void audioRedraw(void) { displayedCpuLoad = -1; screenFullRedraw(&audioData); }

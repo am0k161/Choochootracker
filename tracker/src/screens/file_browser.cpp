@@ -3,6 +3,7 @@
 #include "corelib/corelib_file.h"
 #include "corelib_gfx.h"
 #include "screen_create_folder.h"
+#include <chrono>
 #include <string.h>
 #include <stdlib.h>
 
@@ -12,6 +13,7 @@
 #define MAX_DISPLAY_DIR 31
 #define MAX_DISPLAY_FILE 34
 #define BOUNDARY_WAIT_FRAMES (SCROLL_DELAY_FRAMES * 2)
+#define OPT_HOLD_MS 500
 
 struct ScrollState {
   int lastSelectedIndex;
@@ -35,6 +37,9 @@ static void (*onCancelled)(void);
 static void (*onPreview)(const char* path);
 static char pendingSavePath[2048];
 static ScrollState scrollState = {-1, 0, 0, 1};
+static bool optHeld = false;
+static bool optLongHandled = false;
+static std::chrono::steady_clock::time_point optPressedAt;
 
 static void fileBrowserRefreshWithSelection(const char* selectName);
 static void fileBrowserRefresh(void);
@@ -50,6 +55,7 @@ static void fileBrowserDrawEntry(int itemIndex);
 static void fileBrowserDraw(void);
 static int fileBrowserUpdate(void);
 static int fileBrowserInput(int keys, int tapCount);
+static void fileBrowserGoUp(void);
 
 // Helper: Trim trailing whitespace from a string
 static void trimTrailingWhitespace(char* str) {
@@ -124,6 +130,33 @@ static void fileBrowserRefreshWithSelection(const char* selectName) {
 static void fileBrowserRefresh(void) {
   fileBrowserRefreshWithSelection(NULL);
   resetScrollStateOnSelectionChange();
+}
+
+static void fileBrowserGoUp(void) {
+  size_t length = strlen(currentPath);
+  while (length > 1 && currentPath[length - 1] == PATH_SEPARATOR) {
+#ifdef _WIN32
+    if (length == 3 && currentPath[1] == ':') break;
+#endif
+    currentPath[--length] = 0;
+  }
+  char* lastSeparator = strrchr(currentPath, PATH_SEPARATOR);
+#ifdef _WIN32
+  if (lastSeparator == currentPath + 2 && currentPath[1] == ':') {
+    if (currentPath[3] == 0) return;
+    currentPath[3] = 0;
+  } else
+#endif
+  if (lastSeparator && lastSeparator != currentPath) {
+    *lastSeparator = 0;
+  } else if (strlen(currentPath) > 1) {
+    strcpy(currentPath, PATH_SEPARATOR_STR);
+  } else {
+    return;
+  }
+  fileBrowserRefreshWithSelection("..");
+  resetScrollStateOnSelectionChange();
+  fileBrowserDraw();
 }
 
 void fileBrowserSetup(const char* title, const char* extension, const char* startPath, void (*fileCallback)(const char*), void (*cancelCallback)(void)) {
@@ -510,20 +543,8 @@ static int fileBrowserInput(int keys, int tapCount) {
     if (entryIdx >= 0 && entryIdx < entryCount && entries[entryIdx].isDirectory) {
       // Enter directory
       if (strcmp(entries[entryIdx].name, "..") == 0) {
-        // Go up one level - stay on [..] entry
-        char* lastSeparator = strrchr(currentPath, PATH_SEPARATOR);
-        if (lastSeparator && lastSeparator != currentPath) {
-          *lastSeparator = 0;
-          fileBrowserRefreshWithSelection("..");
-          fileBrowserDraw();
-          return 1;
-        } else if (strlen(currentPath) > 1) {
-          // Go to root
-          strcpy(currentPath, PATH_SEPARATOR_STR);
-          fileBrowserRefreshWithSelection("..");
-          fileBrowserDraw();
-          return 1;
-        }
+        fileBrowserGoUp();
+        return 1;
       } else {
         // Enter subdirectory
         int len = strlen(currentPath);
@@ -553,12 +574,6 @@ static int fileBrowserInput(int keys, int tapCount) {
       onPreview(fullPath);
     }
     return 1;
-  } else if (keys == keyOpt) {
-    if (onCancelled) {
-      onCancelled();
-      return 0;
-    }
-    return 1;
   }
 
   return 0;
@@ -573,6 +588,8 @@ void fileBrowserSetPath(const char* path) {
 // AppScreen interface
 
 static void setup(int input) {
+  optHeld = false;
+  optLongHandled = false;
 }
 
 static void fullRedraw(void) {
@@ -580,12 +597,37 @@ static void fullRedraw(void) {
 }
 
 static void draw(void) {
+  if (optHeld && !optLongHandled &&
+      std::chrono::steady_clock::now() - optPressedAt >= std::chrono::milliseconds(OPT_HOLD_MS)) {
+    fileBrowserGoUp();
+    optLongHandled = true;
+  }
   if (fileBrowserUpdate()) {
     fileBrowserDrawEntry(selectedIndex);
   }
 }
 
 static int onInput(int isKeyDown, int keys, int tapCount) {
+  if (isKeyDown && keys == keyOpt) {
+    if (!optHeld) {
+      optHeld = true;
+      optLongHandled = false;
+      optPressedAt = std::chrono::steady_clock::now();
+    }
+    return 1;
+  }
+  if (!isKeyDown) {
+    if (optHeld && !(keys & keyOpt)) {
+      optHeld = false;
+      if (!optLongHandled &&
+          std::chrono::steady_clock::now() - optPressedAt >= std::chrono::milliseconds(OPT_HOLD_MS)) {
+        fileBrowserGoUp();
+        optLongHandled = true;
+      }
+      if (!optLongHandled && onCancelled) onCancelled();
+    }
+    return 1;
+  }
   return fileBrowserInput(keys, tapCount);
 }
 

@@ -13,6 +13,7 @@ ChooChooTracker 是一款适用于掌机的 8 轨音乐追踪器。
 - PCM 采样、单周期波形和波表振荡器，带多模式滤波器
 - aChChid，多功能基于 Open303 的酸性合成器
 - Bogie，本机 12 模式鼓合成器，带多模式滤波器
+- MonkSynth，人声合成器，带十声部齐奏和立体声延迟
 - MME，双振荡器多调制合成器，带多模式滤波器
 - Sintered，本机六模式实验数字鼓合成器
 
@@ -25,6 +26,12 @@ ChooChooTracker 是一款适用于掌机的 8 轨音乐追踪器。
 ### Miyoo Mini / Mini Plus (Onion OS)
 
 解压 MiyooPorts 压缩包到 SD 卡根目录，使其 `Roms/PORTS/` 文件夹与 Onion 系统的文件夹合并。刷新收藏后从 Ports 菜单启动 **ChooChooTracker**。替换已安装版本前，请备份应用的 `projects/` 文件夹。
+
+项目的加载时间可能因歌曲中使用的乐器类型而异。如果启动或加载项目异常缓慢，请说明每次所需时间，并附上主机型号和 Onion OS 版本。
+
+### Raspberry Pi OS 64 位
+
+解压 Raspberry Pi AArch64 压缩包，安装 SDL2 运行库（`sudo apt install libsdl2-2.0-0`），然后在解压目录中运行 `./chipnomad.sh`。请将内置乐器和其他资源放在可执行文件旁边。
 
 ### Windows
 
@@ -39,8 +46,6 @@ Windows 支持键盘输入（详情见 Jazz 模式部分）或手柄。
 可使用键盘、移动设备上的屏幕控件或游戏手柄控制。
 
 保存的设置、采样、主题、项目等存储在浏览器本地。
-
-锁屏或切换应用后，点击任意控件以恢复音频。**Restart audio** 会重新打开音频输出，且不丢失项目。**Reload app** 先保存当前工作到 **Continue**，保存设置，然后重新加载。
 
 使用 **Download .cct** 导出项目。
 
@@ -77,7 +82,7 @@ ChooChooTracker 最适合使用配备方向键、2 个模拟摇杆和 7 个按�
 | **MOTION RECORD** | L2 | W |
 | **MOTION ERASE** | R2 | E |
 
-映射可在 **Settings > Key mapping** 中更改。保存映射请点击 **Done**，然后先释放按键，再继续操作设置。
+映射可在 **Settings > Controls > Key mapping** 中更改，Android 上连接外部手柄时同样适用。在 PortMaster 上，保存映射请点击 **Done**，然后先释放按键，再继续操作设置。
 
 ### 导航
 
@@ -195,6 +200,8 @@ Song 界面包含 8 列，对应 8 个音轨。每个单元格指代一个链条
 - **OPT + PLAY**：独奏当前轨道或选中列（先释放 **OPT** 保持独奏状态）
 - **OPT + [LEFT/RIGHT]**：独奏当前轨道左侧或右侧所有轨道
 - 选中范围后，双击 **EDIT**：打开 BOUNCE TO SAMPLE 界面（见 Song 中的合成采样）
+
+停止播放以及更改静音或独奏会使用 3 ms 的短暂输出修正以减少爆音。这也包括在播放期间取消静音和移除独奏。
 
 ### Chain
 
@@ -335,6 +342,16 @@ Preset 右侧的 **Edit** 打开实验性 SoundFont 编辑器：调整调音（�
 
 选库时，优先以采样映射、循环和静态包络为主。依赖控制器发音、动画滤波器或编程 LFO 的声音需用完整 SoundFont 播放器进一步比较。**加载并播放**不等于**完全还原预设**。比较不同音符和力度，以及持续音和音符 OFF。将 SF2 转为 SF3（或反向）并不自动移除调制需求。转换须将映射与行为转为引擎支持的特性；渲染效果为采样仅保留最终结果，不含交互控制响应。选择或转换银行前请参阅[格式覆盖与限制](soundbanks/README.md#format-coverage)及[验证说明](soundbanks/validation.md)。这些限制描述当前实验性实现，不是所有 SoundFont 播放器的固有限制。
 
+#### 浏览 SoundFont 合集
+
+在 SAMPLE → SOUNDFONT 中，**Preset** 打开你的合集。**Right** 或 **EDIT/A** 直接进入文件夹。在末级合集中，Right 进入其预设；再按一次 Right 会跳过 15 项而不加载。EDIT/A 加载高亮的预设。Left 返回合集，再返回上级文件夹；OPT 同样后退。浏览时 PLAY 开始/停止歌曲。
+
+文件夹图标和声音图标用于区分条目。合集使用面板的整个高度。所选预设保持在八个轨道预览之下；长名称在选择停留一秒后滚动，移动时重置。乐器页面上的 EDIT+Left/Right 遵循相同的嵌套文件夹顺序，使每个合集的声音保持在一起。EDIT+PLAY 试听。
+
+第三行报告 Reading preset、Finding samples、Unzipping、Checking samples 或 Loading samples。内嵌名称为空或为 `(null)` 的 EXS 乐器使用其文件名。源音色库和音频不会改变。修改资料库文件后请使用 **Rescan**。
+
+有关受支持的采样器行为和采样格式，请参阅[格式覆盖与限制](soundbanks/README.md#format-coverage)。
+
 ### AY Classic、AY Plus 和 AY Sample
 
 它们为原始 ChipNomad AY/YM 引擎。AY Classic 提供硬件风格音调、噪声和包络控制。AY Plus 增加软件振荡器与更丰富的调制。AY Sample 通过 AY 风格音量级别播放采样，与 Sampler 引擎不同。
@@ -472,6 +489,16 @@ Braids 使用标准的 ChooChooTracker 多模滤波器和 ADSR 包络。
 
 Motion 是内部宏包络：值低于 `80` 使用 AD 形状，`80` 禁用，超过 `80` 使用衰退形状。越远离中心，包络越快。目标固定分配，确保 Sintered 在 tracker 模式中表现可预测：Knot 动画 Mod/Fold；Shard 动画 Feedback/Bite；Burst 动画 Noise/Color/Feedback；Comb 动画 Damping/Regen；Logic 动画 Rate/Crush；Melt 动画 Chaos/Drive。所有模型在音符触发时重置状态，内部反馈界限固定，确保击打可重复。
 
+### MonkSynth
+
+MonkSynth 是人声合成器。在 Instrument 页面中可调节元音、嗓音特性、气息、滑音、颤音、齐奏和延迟。EDIT 打开所有控件和补丁名称。
+
+在 VOICE 控件上选择音色库和预设。ALL 包含 FACTORY 和 USER；EDIT+PLAY 试听高亮的预设，EDIT 则选中它。将自己的音色保存在 `instruments/USER/monk/`。已保存的乐器和歌曲会保留其 MonkSynth 设置。
+
+数值为十六进制 `00..FF`，Voices 除外（`01..0A`，一到十个声部）。Attack、decay 和 release 覆盖 0..5 秒；detune 为 0..50 音分，声部展开为 0..0.5。Volume、Pitch 和六个主要嗓音控件可用作调制目标和动作录制目标。
+
+十六个控件集中在 **MonkSynth FX** 中：`MWV`（元音）、`MIN`（嗓音）、`MAM`（气息）、`MFL`（滑音）、`MFB`（颤音深度）、`MSH`（颤音速度）、`MUV`（声部）、`MDT`（detune）、`MVS`（展开）、`MDM`（延迟混合）、`MDR`（延迟速度）、`MLV`（电平）以及 `EAT`/`EDC`/`ESU`/`ERL`（ADSR）。这些含义在 MONK 为当前乐器时生效；MME 命令的现有含义不变。共享的 Trigger FX 组保留 TDC/TCL，且没有重复的包络项。
+
 ### MME
 
 **MME**（多调制引擎）是一个两振荡器合成器，专注于振荡器间交互。模型包括 `Ring`、`Fold`、`Cross`、`VPM`、`Sync`、`Logic` 和 `Vocode`。两个振荡器均为内部，并跟随 tracker 音符；`Interval` 设定它们间的关系。
@@ -586,6 +613,24 @@ Classic、Aggro 和 Acid 可产生强烈共振。建议先低开慢调。
 - **Loop** 选择关闭、循环或乒乓循环模式。
 - **Speed** 控制颗粒时间伸缩，范围为 `0%` 到 `500%`（`100%` 为正常速度）。不支持的 WAV 格式会显示错误。导入前请将不常见的文件转换为 `PCM8`、`PCM16` 或 `PCM24` WAV 格式。
 
+##### 音频输入
+
+录制麦克风或 USB 音频接口之前，请先打开 **Settings → Audio → Audio Input**。列表显示设备上当前可用的输入。如果已启用的接口被拔出，捕获会中断，音频管理器会重新启动，使应用继续运行。如果当时正在录音，请按 **STOP** 结束被中断的录音。重新连接后，请选择 **[Refresh]** 并确认所需输入已启用，再重新录音；仅重新连接并不能可靠地重新启用它。**[List]** 会重新读取当前输入列表而不重启音频。
+
+勾选输入的 **ARM** 复选框，使其可供 Sampler 录音器使用；其小电平表显示输入电平。一次只启用一个接口：此版本只会打开第一个已启用的接口，即使勾选了多个。你的选择按设备名称记忆，因此不可用的接口保持未启用，而不会被其他输入取代。按 **OPT** 返回 Audio 设置。
+
+##### 录制音频输入
+
+在 Sample 乐器界面中，**REC**（已加载采样时为 **EDIT/REC**）打开采样编辑器，将录音和编辑整合在同一界面。请先在 **Settings → Audio → Audio Input** 界面启用输入（见[音频输入](#音频输入)）。编辑器上方几行控制录音：
+
+- **Input** 循环选择录音来源：`T1`..`T8` 录制八条 tracker 轨道，之后是已启用的麦克风或 USB 接口。要录制外部来源，请继续越过 `T8`，直到出现设备名称。`-` 表示未明确选择来源；此时 **REC** 使用第一个已启用的输入并显示其名称。按住 **EDIT** 并按 **LEFT**/**RIGHT** 后退/前进，或按 **EDIT+OPT** 回到 `-`。点击 Input 会直接前进。
+- **Input** 旁的电平表显示已启用输入的实时电平（仅外部来源）。**MON** 切换输入监听：已启用的输入以 -6 dB 送至输出以减少反馈。该设置保存在设置文件中。
+- **REC** 开始录音。外部来源立即录音；轨道来源显示 **ARMED**，播放开始时（按 **PLAY**）才开始录音。**STOP** 结束录音：WAV 写入项目的导出文件夹（`recNNN.wav`），加载到当前 Sampler 乐器，Region 恢复为整个采样。录音进行中按 **OPT** 退出界面，同样会结束录音。
+- **PLAY**（录音后显示）试听该录音；预览播放时变为 **STOP**。旁边的 **CLEAR** 删除 WAV 文件并从乐器卸载采样；删除后 **REC** 回到原位。
+- 波形在录音期间显示实时输入，结束后显示完整波形。状态行在录音期间显示文件名，之后显示帧数；外部录音在未丢失任何音频帧时还会显示 `drop 0`。录制的采样完全可编辑：循环区域、选择、切片、处理和保存与任何已加载文件相同。
+
+录音以所选音频采样率写为 16 位立体声 WAV。轨道来源捕获轨道乐器渲染的内容（经过 FX 之后）；外部来源直接捕获设备输入。
+
 #### 2xSCWF
 
 2xSCWF 是一个双单周期波形振荡器。每个振荡器加载一个包含恰好 1 个周期的单声道 WAV。两个振荡器均向前读取，且在周期末尾循环。
@@ -644,9 +689,9 @@ DX7 限制歌曲内最多 **16 个活动音符**，包括和弦音和释放尾�
 
 Genesis FM、Arcade FM、OPL2、OPL3、OPLL 和 VRC7 乐器在 Fine ct 右侧有 **EDIT** 按钮，打开补丁参数表：
 
-- Genesis FM / Arcade FM：算法、反馈、声像、AMS、PMS、算符掩码及 LFO 设置，随后为四个算符的 MUL、DT、TL、KS、AR、D1R、D2R、RR 和 D1L，另加 SSG（Genesis）或 DT2 与 AM（Arcade）。
-- OPL2 / OPL3：每声道反馈、连接和声像，深度颤音和震音，再为每算符 MUL、TL、AR、DR、SL、RR、波形、KSL、VIB、TRM、SUS 和 KSR。OPL3 可更改模式（2op、4op、双声道）。
-- OPLL / VRC7：自定义音色寄存器（反馈、MUL、TL、KSL、AR、DR、SL、RR、波形、AM、VIB、EG、KSR）。编辑 ROM 预设会转为“Custom”。
+- Genesis FM / Arcade FM
+- OPL2 / OPL3：在 OPL3 上可在此更改模式（2op、4op、双声道）。
+- OPLL / VRC7：编辑 ROM 预设会转为“Custom”。
 
 使用左右键和常用编辑键更改数值；乐器持续播放以便监听修改。状态栏显示光标下参数说明。按 OPT 或 左+Shift 返回乐器界面。DX7 与 SID 无算符编辑器。
 
@@ -751,10 +796,12 @@ USER 预设循环包括文件、文件夹、库和 ZIP 包，双向循环，末�
 - ADSR – 经典攻击-衰减-保持-释放包络
 - AHD – 攻击-保持-衰减包络
 - LFO – 多种波形的低频振荡器
-- SLFO – 周期乘法器模式的慢速 LFO
+- syncLFO（原 SLFO）– 带每单位 tick 设置和周期乘数的 LFO
+- slowLFO – 带比例周期控件的长周期，起点紧接在普通 LFO 范围之外
 - FLFO – 高频 LFO，可达千赫兹以上；FLFO 占用较多 CPU 资源
 - SLIN – 线性操纵杆控制
 - SRAT – 速率基操纵杆控制
+- Sequence – 将 tracker 序列读作调制信号：**PITCH** 是最终排序后的音高，**VOL** 是最终排序后的音量，**TRANCE GATE** 是独立的节奏调制器。Motif、Rate 和 Length 选择门限图案；Trigger 选择自由运行、逐音符重新触发，或在 phrase 或 chain 边界重置。关闭的门限输出零，开启的输出半电平，Accents 在活动门限中按欧几里得方式分配满电平门限。它不使用也不更改任何轨道插入。
 
 可用调制目标取决于音色类型。
 
@@ -762,7 +809,13 @@ USER 预设循环包括文件、文件夹、库和 ZIP 包，双向循环，末�
 
 调制量可正可负。范围依目标而定。绝大多数参数全范围 ≤127 时，调制量定义绝对范围。音高等较宽范围参数使用缩放量。
 
+Sequence 的 PITCH 和 VOL 来源带有 **Mode**。**Normal** 使 tracker 数值保持可听，同时将其用作调制。**Bypass** 使其仅作为来源：PITCH 在上一个音高（首个音符时为 C-4）上重新触发，VOL 保持上一个可听电平。Trance Gate 本来就只是来源。若任何活动的 Sequence 插槽将 PITCH 或 VOL 设为 bypass，则 bypass 优先。为避免反馈，PITCH 和 VOL 不能指向 Pitch 或 Volume。
+
 所有持续时间参数（攻击、保持、衰减、周期）均以音符时钟步长（ticks）计。
+
+**syncLFO** 即原来的 SLFO：设置其 ticks 和乘数，可获得与速度同步的运动。现有的 SLFO 设置和歌曲保持相同的时序。
+
+需要比普通 LFO 更长的扫频时，请使用 **slowLFO**。其 Period 控件范围为 256 到 131,072 ticks。所有基于 tick 的 LFO 都跟随歌曲速度，并共用相同的波形、波表选择和触发模式。选择 Free 可让扫频在音符之间持续；Retrig、Phrase 和 Chain 会在各自边界重新启动它。
 
 LFO 波形：
 
@@ -782,8 +835,8 @@ LFO 触发类型：
 
 - Free – 仅在音色变更时重启 LFO
 - Retrig – 每个音符重启 LFO
-- Phrase – 进入新 phrase 时重启 LFO 和 SLFO
-- Chain – 进入新 chain 时重启 LFO 和 SLFO
+- Phrase – 进入新 phrase 时重启 LFO、syncLFO 和 slowLFO
+- Chain – 进入新 chain 时重启 LFO、syncLFO 和 slowLFO
 - Hold – 运行 1 周期后停止并保持最后值
 - Once – 运行 1 周期后停止并回归零点
 
@@ -819,17 +872,15 @@ LFO 触发类型：
 | Saturation | Drive, Tone, Level, Mix |
 | Bitcrusher | Bit depth, Rate reduction, Tone, Mix |
 | Destruction | Mode, Amount, Tone, Mix |
-| Parametric EQ | Low gain, Low frequency, Mid gain, Mid frequency, High gain, High frequency |
+| FORMANT | Mode, Vowel, First formant, Second formant, Resonance, Mix |
 | Trance Gate | Pattern, Rate, Length, Gate, Phase, Mode, Smooth, Mix |
 | Beads (Mutable Instruments) | Time, Size, Density, Pitch, Scatter, Feedback, Shape/Freeze, Mix |
 
-连续控制使用 00–FF 范围，包括有效的零和最大值 FF。双极控件在 80 处有精确的中性点。失真模式为 00 Density，01 Drive，02 Spiral，03 Mojo，04 Dyno。压缩器比率 00–07 分别为 1.5、2、3、4、6、8、16、20:1；检测器来源 00–02 分别为立体声输入、左声道、右声道。检测器滤波器 80 为中性，低于它为低通，高于它为高通。不支持外部或跨轨边链。任意插槽均可包含任意模块；重复模块相互独立。Chorus 和 Phaser 起始时有明显但受控的调制。减小 Mix、Depth 或 Feedback 以获得近乎透明的效果；高 Depth、Feedback 和 Mix 设置则刻意制造极端效果。Flanger 和 Rotary 使用较柔和的调制默认值。Rotary Speed 使用完整 **00-FF** 范围：**00 = 0.01 Hz**（每 100 秒转一圈），**FF = 25 Hz**（前 Chaos 最大值）。指数分布提供对低速 LFO 运动的更细腻控制。新加入的 Rotary 默认值为 **8F**，大约 0.8 Hz。该方式替代了旧的四个离散速度值；现有 Rotary 设置及 F11/F21 速度自动化需根据新刻度重新调整（旧的 Slow/Fast/Hyper/Chaos 大致对应 **8F/CB/E7/FF**）。其他参数保持不变。Bitcrusher 位深范围为 4 至 16 位，速率衰减范围为 1x 至 32x。Destruction 模式有 Fold、Clip 和 Crush。Saturation 和失真包括输出电平或混合控件，用以平衡未处理信号。
-
-Parametric EQ 在 60–500 Hz 和 2–14 kHz 之间提供 24 dB 提升/削减的架构滤波器，加上 250 Hz–5 kHz 之间固定 Q 值为 0.9 的钟形滤波。其增益控件中性点为 80；当三段均为中性时，等同旁通。主动 EQ 在满刻度以上采用透明软膝，最大放大至 1.5，以控制极端提升。
+连续控制使用 00–FF 范围，包括有效的零和最大值 FF，FORMANT VOW 除外（00–7F）。双极控件在 80 处有精确的中性点。失真模式为 00 Density，01 Drive，02 Spiral，03 Mojo，04 Dyno。压缩器比率 00–07 分别为 1.5、2、3、4、6、8、16、20:1；Compressor Detect 00–02 监听自身的立体声输入、左声道或右声道；03–0A 则监听轨道 1–8。检测器滤波器 80 为中性，低于它为低通，高于它为高通。轨道来源取自其音量、声像和 Tilt EQ 之后、插入之前；静音或缺失的来源贡献静音。任意插槽均可包含任意模块；重复模块相互独立。Chorus 和 Phaser 起始时有明显但受控的调制。减小 Mix、Depth 或 Feedback 以获得近乎透明的效果；高 Depth、Feedback 和 Mix 设置则刻意制造极端效果。Flanger 和 Rotary 使用较柔和的调制默认值。Rotary Speed 使用完整 **00-FF** 范围：**00 = 0.01 Hz**（每 100 秒转一圈），**FF = 25 Hz**（前 Chaos 最大值）。指数分布提供对低速 LFO 运动的更细腻控制。新加入的 Rotary 默认值为 **8F**，大约 0.8 Hz。该方式替代了旧的四个离散速度值；现有 Rotary 设置及 F11/F21 速度自动化需根据新刻度重新调整（旧的 Slow/Fast/Hyper/Chaos 大致对应 **8F/CB/E7/FF**）。其他参数保持不变。Bitcrusher 位深范围为 4 至 16 位，速率衰减范围为 1x 至 32x。Destruction 模式有 Fold、Clip 和 Crush。Saturation 和失真包括输出电平或混合控件，用以平衡未处理信号。
 
 Trance Gate 是一个节拍同步的幅度序列器，适用于 Pads、Leads 和 Stabs。Pattern 取值 00–3F 选择命名的音乐动机；00–1F 是核心律动，20–3F 是实验性变体。Rate 提供直音符、三连音和附点值，从 1/2 至 1/32 不等。Length 将独立旋转的 16 步动机截断为 1–16 步。每个轨道按键触发都会重启序列；松开按键则让序列在释放阶段继续运行。Forward、Reverse 和 Ping-Pong 定义遍历方向；Chaos 每四次循环进行一次可重复的、保持密度的变异。作为主插入效果时，跟随播放头时间而不重触发按键。Gate 设定每个开启步的宽度，Smooth 平滑边缘同时保持防止点击的最小渐变，Mix 在原音和闸音间交叉渐变。
 
-**Beads** 使用原始 Mutable Instruments 颗粒 DSP 作为立体声插入。可在任意轨道或母线插槽中选择 Beads。其八个控件也支持现有 F11–F18 / F21–F28 命令和插入 MOD 目标，无需新增 FX ID 或工程格式。颗粒持续运行，无需额外事件。
+**Beads** 使用原始 Mutable Instruments 颗粒 DSP 作为立体声插入。可在轨道插入插槽中选择 Beads。其八个控件也支持现有 F11–F18 / F21–F28 命令和插入 MOD 目标，无需新增 FX ID 或工程格式。颗粒持续运行，无需额外事件。
 
 - **Time:** 录音缓冲区的四秒内位置。
 - **Size:** 00 为长反向颗粒，55 附近为最短颗粒，随后逐步变成长正向颗粒。FF 在其过渡后进入原始延迟模式。
@@ -841,6 +892,18 @@ Trance Gate 是一个节拍同步的幅度序列器，适用于 Pads、Leads 和
 - **Mix:** 00 为完全干声，FF 为完全处理。变化平滑。
 
 冻结功能保持当前效果捕捉的音频；更换模块或重置 Beads 会清除冻结内容。轨道混响发送保持可用。
+
+### 让底鼓抽吸混音或其他轨道
+
+要得到抽吸感的母线，请将底鼓放在轨道 1，在 MASTER FX 中选择 Compressor，将 Detect 设为 03（Track 1），Ratio 设为 04（6:1），Attack 接近 60（约 1.6 ms），Release 接近 C0（约 115 ms），Makeup 设为 00，Mix 设为 FF。降低 Threshold，直到其他声音在每次底鼓时下沉，然后调整 Release，使它们在下一次底鼓前恢复。底鼓的直达声保留自己的轨道插入，但绕过两个母线插入插槽；它的混响和延迟返回仍会抽吸。
+
+若只想压低贝斯、pad 或合成器，请将 Compressor 放在该轨道上，并用 Detect 选择底鼓轨道。源底鼓仍然可听，其音量不会被该轨道的压缩器改变。合并在同一轨道上的底鼓和贝斯无法用这种路由分开。
+
+### FORMANT
+
+在 TF1 或 TF2 上选择 **FORMANT**，可将声音塑造成类似元音的音色。最适合持续且谐波丰富的来源，例如锯齿波。
+
+将 MODE 设为 `00` VOW，用 **VOW** 从 A（`00`）扫到 U（`7F`），途经 E、I 和 O。将 MODE 设为 `01` CUSTOM 可自行调节 **F1** 和 **F2**。**RES** 收窄或加宽元音特性；**MIX** 将效果与原始信号混合。使用 MOD → INSERT FX 来移动活动控件。MODE 不是 MOD 目标。
 
 ### 插入轨道 FX
 
@@ -944,6 +1007,7 @@ AY 音量非线性，Standard 视图波形绘制根据实际输出电平调整�
 | `SNG` | 带符号的 `XX` | 在歌曲中移动播放位置 `XX` 行。 |
 | `PRO` | `00-64` | 绝对触发概率，`0%` 到 `100%`。 |
 | `MOD` | `AB` | 在 `B` 轮循环的第 `A` 轮触发。 |
+| `RNN` | `MX` | 播放随机音符。`M` 选择模式：`0` 始终随机，`1` 每次 PLAY 随机，`2` 选定后保持直到数值改变。`X` 选择范围：`0` 任意音符，`1` +3 半音，`2` +6 半音，`3` +12 半音，`4` -3 半音，`5` -6 半音，`6` -12 半音，`7` +/-3 半音，`8` +/-6 半音，`9` +/-12 半音。当音阶引擎应用于该轨道时，随机选择遵循工程音阶。 |
 | `SPD` | 带符号的 `XX` | 选择持续的每轨时钟比例；详见速度表。 |
 | `SLE` | `00-FF` ticks | 持续轨道滑音时间，用于持续引擎 FX。`00` 立即。停止播放时重置为 `00`。 |
 
@@ -1027,7 +1091,8 @@ AY 音量非线性，Standard 视图波形绘制根据实际输出电平调整�
 | ADSR | 攻击 | 衰减 | 维持 | 释放 | 未使用 |
 | AHD | 攻击 | 保持 | 衰减 | 未使用 | 未使用 |
 | LFO | 形状 | 触发模式 | 周期 | 未使用 | AY 波表索引 |
-| SLFO | 形状 | 触发模式 | Ticks | 倍数 | AY 波表索引 |
+| syncLFO | 形状 | 触发模式 | Ticks | 倍数 | AY 波表索引 |
+| slowLFO | 形状 | 触发模式 | 周期步进（00–FF） | - | AY 波表索引 |
 | FLFO | 形状 | 触发模式 | 频率（`1 Hz` 到 `20 kHz`） | 未使用 | AY 波表索引 |
 
 ### Braids FX
@@ -1102,6 +1167,7 @@ AY 音量非线性，Standard 视图波形绘制根据实际输出电平调整�
 | `SCF` | `00-FF` | 指数截止，`20 Hz` 到 `20 kHz` |
 | `SRS` | `00-FF` | 指数滤波共振 |
 | `SSP` | `00-FF` | 采样速度，从 `0%` 到 `500%` 映射 |
+| `RNS` | `M0` | 播放已切片采样的随机切片，而不是分配给该音符的切片。`M` 选择模式：`0` 始终随机，`1` 每次 PLAY 随机，`2` 选定后保持直到数值改变。需要乐器启用 slice 模式；低半字节未使用。 |
 
 ### AY 乐器共享 AY FX
 
@@ -1171,11 +1237,9 @@ FX 选择器过滤为常用命令加上当前激活乐器支持的指令组。�
 
 混音器基于轨道而非乐器。如果轨道更换乐器，其音量、PAN、Tilt 和发送设置保留在轨道上。乐器本身在 Instrument 屏幕顶行也有独立的 `00-FF` **Vol** 和 **Pan**。乐器 PAN 先应用，然后是轨道 PAN。两者在中心位置保持原有立体声像，左或右偏移时逐渐削弱对侧声音。
 
-### 主控 FX
+### Auto Mix
 
-**MASTER FX** 入口打开一个两个位插入 FX 子菜单，全混音处理。效果在混响和延迟返回后，主音量前运行。选择模块，像轨道插入一样编辑参数或绕过；按 **OPT** 返回混音器。主控 FX 设置随项目保存，不会被短语、表格或调制自动化。
-
-此类效果与插入 FX 屏幕上的相同。
+Mixer 包含一个 **AUTO MIX** 按钮。它离线渲染 `6 秒`，平衡轨道音量，然后将 8 个八度频段与粉红噪声曲线比较，并轻轻压低使这些频段过载的轨道。它给出审慎的电平调整建议，保留一些峰值余量，并开始临时预览。**Apply** 保留建议的电平，**Cancel** 则恢复之前的 8 个电平。这是一个不错的起点，但你可能仍想微调结果。
 
 ### 混响
 
@@ -1236,11 +1300,41 @@ FX 选择器过滤为常用命令加上当前激活乐器支持的指令组。�
 调音屏幕控制全局 12-TET 调音引擎。**Mode** 行选择两种模式：- **量化器**（默认）：短语输入保持半音阶模式；启用时，音符在送入声音引擎前立即向下取整，因此改变根音或音阶可以重新和声，而无需编辑短语。
 - **音符锁定**：输入的音符会立即被吸附到音阶上最近的音符，只能写入音阶内的音符。新输入和降音会向下吸附；`EDIT + RIGHT` / `EDIT + UP` 可将音符提高到音阶上的下一个音高。此屏幕上输入始终按照工程音阶执行：更改根音或音阶会立即影响启用轨道的新音符，已有音符不受影响。此模式下不可用 `SCL` FX，且已写入的 `SCL` 会被忽略。纯音播放时跳过音符量化（输入已锁定）；和弦量化通过 `CRD` 仍然生效。
 
-#TODO: 解释节拍、MIDI 同步和 Link
+- **Clock source** 在 **Internal**（项目自身速度）、**Midi Clock**（音序器跟随传入的 MIDI 时钟）和 **Ableton Link**（音序器跟随本地网络上 Link 会话的速度）之间选择。使用 **Midi Clock** 时，**Tempo** 行变暗并显示测得的传入时钟速度；传输（play/stop）由发送方的 Start/Continue/Stop 消息控制，因此不需要应用内的 PLAY 控件。使用 **Ableton Link** 时，该行变为 **Link** 行：其中是加入/离开会话的开关，而不是速度字段（见下文）。时钟来源保存在 settings.txt 中，适用于所有项目。
+- **Tempo** 以整数 BPM（`3-500`）设置项目速度。内部 tracker 仍以 Hz 保存其 tick rate（`tick rate = BPM x 0.4`），因此现有项目的加载和保存不变；带小数速度的项目会四舍五入显示，并在首次编辑速度时吸附到整数 BPM。粗调以 5 BPM 步进，细调以 1 BPM 步进；清除则恢复默认的 125 BPM。
 
 ChooChooTracker 保存项目为 `.cct` 格式。这是一个专有格式，即使是人类也能轻松阅读。
 
 在更改乐器类型或加载其他项目之前，请使用 **Save**。
+
+### Ableton Link
+
+Ableton Link 让 ChooChooTracker 跟随同一本地网络（Wi-Fi 或以太网）中其他支持 Link 的应用（Ableton Live、LinkHut 等）的速度。它只是接收端：tracker 将自己的速度调整到会话速度，绝不会向其他参与者发送速度或传输信息。
+
+**会同步的内容：**
+
+- 会话速度 - tracker 持续跟随 Link 会话速度（在 tracker 的 3-500 BPM 范围内）。
+- 节拍相位 - 按 PLAY 会使播放对齐到会话的节拍网格：歌曲从下一小节开始（4 拍量化）。
+
+**不会同步的内容：**
+
+使用 Link 播放期间，ChooChooTracker 每个 4/4 小节检查一次共享节拍相位，并在需要时轻微调整自己的 tick rate。这样可补偿设备之间的细微时钟差异，而不会跳过或重复 tracker tick，也绝不会改变其他参与者的 Link 会话。
+
+- 律动以及 `SPD` 和 `DELAY` 值不受影响 - 它们仍相对于被跟随的速度。
+- song/chain/phrase 中的光标位置和混音器设置从不共享。
+
+**使用方法：**
+
+1. 打开 Project 界面，将 **Clock source** 设为 **Ableton Link**。下方一行变为 **Link** 行。
+2. 在 **[Connect]** 上按 EDIT 加入会话。右侧的状态消息显示进度：连接时为 `Wait...`，无网络时为 `No net`，未找到会话时为 `No sess`，内部故障时为 `Err`。连接期间，按钮显示 **[Disconnect]**，状态大约每秒在 `connected` 和 `Peers: N`（N = 对等端数量）之间交替。
+3. 等待 `connected`，然后按 PLAY - 播放将对齐到会话的下一小节开始。
+4. 在 **[Disconnect]** 上按 EDIT（或将时钟来源改回 Internal）即可离开会话。
+
+在 Link 模式下，速度由会话掌控：该行不显示 BPM 字段，会话速度会自动应用到项目（在 tracker 的 3-500 BPM 范围内）。
+
+**各平台可用性：** 支持 PortMaster（主要目标）、Windows、Linux、macOS 和 Android。Web 版本和 Miyoo 版本不包含 Link。
+
+**PortMaster 说明：** 在 PortMaster 设备上音频缓冲区较大（48 kHz 下 512 帧），因此节拍对齐是近似的，约在 10-15 ms 以内，而非采样级精确。速度同步本身不受影响。
 
 ## 13. 设置
 
@@ -1253,6 +1347,8 @@ ChooChooTracker 保存项目为 `.cct` 格式。这是一个专有格式，即�
 - **按键映射** 分配键盘或控制器按键。选中命令后按下新按键，点击 **Done** 保存映射。
 
 ### 音频
+
+**Sample rate** 提供 `32 kHz` 或 `48 kHz`（默认）。更改立即生效并被保存。更改采样率会停止播放和采样预览，同时声音引擎和任何已启用的音频输入会以新采样率重新打开。如果设备拒绝新采样率，则保留之前的设置。`32 kHz` 减少处理量，并将可播放的最高频率限制为 16 kHz。CPU 负载指示器显示音频渲染的开销。
 
 **缓冲区大小** 在响应速度和稳定性之间权衡。实时演奏需较小值；发现音频断裂或CPU负载持续高时请调大。可选值为 `32`、`64`、`128`、`256`、`512` 和 `1024` 样本。CPU负载显示有助于选择稳定设置。
 
@@ -1276,7 +1372,7 @@ ChooChooTracker 保存项目为 `.cct` 格式。这是一个专有格式，即�
 - **歌曲波形** 显示或隐藏歌曲页的混音波形，详见 [Song waveform](#song-waveform)。
 - **轨道视觉效果** 为每个轨道选择 **详细**（乐器波形及叠加图形）或 **音频波形**（轨道的最终音频波形）。用 **全部详细** 或 **全部音频** 一键更改所有轨道。
 - **波形帧率** 设置仪表和混音视觉的刷新频率，范围 `1` 到 `60` 帧每秒。降低可减少干扰或释放资源。
-- **渲染器** 显示当前使用 `GPU` 还是 `Software` 渲染。**启动画面** 选择 `Original` 或 `Night` 标题屏。
+- **渲染器** 显示当前使用 `GPU` 还是 `Software` 渲染。
 
 ### 支持报告与退出
 
@@ -1311,8 +1407,9 @@ ArkOS 上，按 **MENU + L3** 切换系统静音。如无效，重启设备并�
 - **MIDI 键盘音色预览**：选定 MIDI 输入设备后，在任意屏幕上演奏键盘音符即可试听乐器，类似 [Instrument](#5-instruments) 页的屏幕快捷键 **EDIT + PLAY**。此为试听功能，不会插入音符。
 - **通道映射**：打开16个MIDI通道列表；为每个通道分配乐器（默认 `OFF`）。此通道接收音符均预览对应乐器，无论 Instrument 页当前选中哪一个。如通道留 `OFF`，则回退至选中乐器，即原行为。映射保存到 settings.txt。
 - **MIDI CC映射**：将控制器映射至乐器参数（含 **Volume**）或全局控制。全局栏显示 `TRK 1` 至 `TRK 8`，提供轨道的**静音**、**独奏**、**音量**、**混响发送**和**延迟发送**控制；**歌曲播放/停止**不设目标。新映射会忽略初始化时学到的CC值，以物理控制下一次动作生效，不支持播放中复位补丁。静音和独奏用 `0-63` 为关，`64-127` 为开。
+- **MIDI 时钟同步**：选定 MIDI In 设备后，将 Project 界面的 **Clock source** 设为 **Midi Clock**，即可跟随外部音序器。tracker 测量传入时钟的速度（每四分音符 24 个脉冲）并显示在变暗的 **Tempo** 行中；**Start**、**Continue** 和 **Stop** 消息控制播放。时钟来源记忆于 settings.txt。
 - **外接MIDI设备驱动**：给轨道指定 [MIDI Out](#midi-out) 乐器类型并设定通道后，该轨道发送的音符会发至选定MIDI输出设备，不再在 ChooChooTracker 内产生声音。
 
 ## 16. 制作与授权
 
-ChooChooTracker 是 ChipNomad 的分支，维持其 MIT 许可方式。Braids、Plaits、Plaits-Alt、Clouds DSP、Warps 派生 MME DSP 及 stmlib 代码均源于 Mutable Instruments 开源项目，遵守其 MIT 许可。Plaits-Alt 来自 lylepmills/eurorack Plaits Lab 分支，保留原作者声明。aChChid 引擎基于 Robin Schmidt 的 Open303，版权2009年，MIT许可。Bogie 和 Sintered 为原创本地实现。MIDI I/O 使用 Gary P. Scavone 的 RtMidi，MIT风格许可。详细授权见随包附带的许可证文件。Ableton Link 由 Ableton 提供特殊授权，不属于 MIT 许可，本项目授权不适用于您的分支或其他项目，仅限 ChooChooTracker。
+ChooChooTracker 是 ChipNomad 的分支，维持其 MIT 许可方式。Braids、Plaits、Plaits-Alt、Clouds DSP、Warps 派生 MME DSP 及 stmlib 代码均源于 Mutable Instruments 开源项目，遵守其 MIT 许可。Plaits-Alt 来自 lylepmills/eurorack Plaits Lab 分支，保留原作者声明。aChChid 引擎基于 Robin Schmidt 的 Open303，版权2009年，MIT许可。MonkSynth 使用 JonET 的原生 DSP，MIT 许可；见 `LICENSE.monksynth.txt`。Bogie 和 Sintered 为原创本地实现。MIDI I/O 使用 Gary P. Scavone 的 RtMidi，MIT风格许可。详细授权见随包附带的许可证文件。Ableton Link 由 Ableton 提供特殊授权，不属于 MIT 许可，本项目授权不适用于您的分支或其他项目，仅限 ChooChooTracker。

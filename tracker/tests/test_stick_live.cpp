@@ -4,7 +4,10 @@
 #include "app_ui_mock.h"
 #include "chipnomad_lib_live_stick.h"
 #include "corelib_file.h"
+#include "corelib_gfx.h"
+#include "corelib_audio.h"
 #include "project_utils.h"
+#include "screen_audio_input.h"
 
 #include <chrono>
 #include <cstring>
@@ -12,6 +15,8 @@
 #include <fstream>
 #include <string>
 
+extern int mockAudioOutputDeviceCount;
+extern char mockSelectedAudioOutput[128];
 namespace {
 const InputCode keyboardLive = {InputDeviceType::keyboard, 1001};
 const InputCode gamepadLive = {InputDeviceType::gamepad, 1002};
@@ -62,6 +67,11 @@ struct StickLiveFixture {
     mockAudioReconfigureRate = 0;
     mockAudioReconfigureSize = 0;
     mockAudioCpuLoad = 0;
+    mockAudioOutputDeviceCount = 0;
+    mockAudioRestartResult = 0;
+    mockAudioRefreshResult = 0;
+    mockAudioRefreshCalls = 0;
+    mockSelectedAudioOutput[0] = 0;
     appSettings.keyMapping.keyMotionLive[0] = keyboardLive;
     appSettings.keyMapping.keyMotionLive[1] = gamepadLive;
     inputRawCallback = nullptr;
@@ -377,15 +387,26 @@ TEST_CASE_FIXTURE(StickLiveFixture, "Settings menus and audio controls align") {
   screenControlsSettings.fullRedraw();
   screen = mockScreenData;
   CHECK(screen->rows == 4);
+  gfxClear();
+  screen->drawStatic();
+  for (int row = 0; row < screen->rows; ++row) screen->drawField(0, row, CellState::normal);
+  CHECK(std::string(mockGfxCells[2], 11) == "Keys repeat");
+  CHECK(std::string(mockGfxCells[3], 15) == " - Repeat delay");
+  CHECK(std::string(mockGfxCells[4], 15) == " - Repeat speed");
+  CHECK(std::string(mockGfxCells[5], 31) == std::string(31, ' '));
+  CHECK(std::string(mockGfxCells[7], 31) == std::string(31, ' '));
+  CHECK(std::string(mockGfxCells[8], 11) == "Key mapping");
+  screen->drawCursor(0, 2);
+  CHECK(mockCursorY == 6);
   screen->drawField(0, 2, CellState::focus);
-  CHECK(std::string(mockGfxCells[4], 15) == "Stick live mode");
+  CHECK(std::string(mockGfxCells[6], 15) == "Stick live mode");
   REQUIRE(screen->onEdit(0, 2, CellEditAction::increase) == 1);
   CHECK(appSettings.stickLiveMode == StickLiveMode::toggle);
 
   mockAudioCpuLoad = 37;
   screenAudioSettings.fullRedraw();
   screen = mockScreenData;
-  CHECK(screen->rows == 4);
+  CHECK(screen->rows == 5);
   screen->drawField(0, 0, CellState::focus);
   CHECK(std::string(mockGfxCells[2], 11) == "Sample rate");
   CHECK(std::string(mockGfxCells[2] + 23, 6) == "48 kHz");
@@ -405,15 +426,19 @@ TEST_CASE_FIXTURE(StickLiveFixture, "Settings menus and audio controls align") {
   screen->drawField(0, 1, CellState::focus);
   CHECK(std::string(mockGfxCells[3] + 23, 4) == "64  ");
   appSettings.audioBufferSize = 256;
-  screen->drawField(0, 2, CellState::normal);
-  CHECK(std::string(mockGfxCells[4], 8) == "CPU load");
-  CHECK(std::string(mockGfxCells[4] + 23, 4) == "037%");
-  CHECK_FALSE(screen->isCellValid(0, 2));
-  screen->drawField(0, 3, CellState::focus);
-  CHECK(std::string(mockGfxCells[5], 11) == "Audio Input");
-  CHECK(std::string(mockGfxCells[5] + 23, 3) == "OFF");
-  CHECK(screen->isCellValid(0, 3));
-  REQUIRE(screen->onEdit(0, 3, CellEditAction::tap) == 1);
+  screen->drawField(0, 2, CellState::focus);
+  CHECK(std::string(mockGfxCells[4], 12) == "Audio Output");
+  CHECK(std::string(mockGfxCells[4] + 14, 7) == "Default");
+  CHECK(screen->isCellValid(0, 2));
+  screen->drawField(0, 3, CellState::normal);
+  CHECK(std::string(mockGfxCells[5], 8) == "CPU load");
+  CHECK(std::string(mockGfxCells[5] + 23, 4) == "037%");
+  CHECK_FALSE(screen->isCellValid(0, 3));
+  screen->drawField(0, 4, CellState::focus);
+  CHECK(std::string(mockGfxCells[6], 11) == "Audio Input");
+  CHECK(std::string(mockGfxCells[6] + 23, 3) == "OFF");
+  CHECK(screen->isCellValid(0, 4));
+  REQUIRE(screen->onEdit(0, 4, CellEditAction::tap) == 1);
   REQUIRE(screen->onEdit(0, 1, CellEditAction::increase) == 1);
   CHECK(mockAudioReconfigureSize == 512);
   CHECK(appSettings.audioBufferSize == 512);
@@ -441,6 +466,30 @@ TEST_CASE_FIXTURE(StickLiveFixture, "audio buffer settings use supported sizes")
   }
 }
 
+TEST_CASE_FIXTURE(StickLiveFixture, "audio output selection saves and restores the device") {
+  mockAudioOutputDeviceCount = 1;
+  mockAudioRestartResult = 0;
+  mockAudioRestartCalls = 0;
+  screenAudioSettings.fullRedraw();
+  auto* screen = mockScreenData;
+  REQUIRE(screen->onEdit(0, 2, CellEditAction::increase) == 1);
+  CHECK(std::strcmp(appSettings.audioOutputDeviceName, "ROCCAT Juke") == 0);
+  CHECK(std::strcmp(mockSelectedAudioOutput, "ROCCAT Juke") == 0);
+  CHECK(mockAudioRestartCalls == 1);
+  appSettings.audioOutputDeviceName[0] = 0;
+  REQUIRE(settingsLoad() == 0);
+  CHECK(std::strcmp(appSettings.audioOutputDeviceName, "ROCCAT Juke") == 0);
+  mockAudioRestartResult = 1;
+  REQUIRE(screen->onEdit(0, 2, CellEditAction::clear) == 1);
+  CHECK(std::strcmp(appSettings.audioOutputDeviceName, "ROCCAT Juke") == 0);
+  CHECK(std::strcmp(mockSelectedAudioOutput, "ROCCAT Juke") == 0);
+  mockAudioRestartResult = 0;
+  REQUIRE(screen->onEdit(0, 2, CellEditAction::clear) == 1);
+  CHECK(appSettings.audioOutputDeviceName[0] == 0);
+  CHECK(mockSelectedAudioOutput[0] == 0);
+  mockAudioOutputDeviceCount = 0;
+}
+
 TEST_CASE_FIXTURE(StickLiveFixture, "audio sample rate settings accept only 32 or 48 kHz") {
   struct StoredSetting { const char* text; int expected; };
   for (const auto& setting : {StoredSetting{"audioSampleRate: 32000\n", 32000},
@@ -459,7 +508,7 @@ TEST_SUITE("MIDI settings") {
 TEST_CASE_FIXTURE(StickLiveFixture, "screenMidi shows device rows and links to channel mapping") {
   screenMidi.fullRedraw();
   REQUIRE(mockScreenData != nullptr);
-  CHECK(mockScreenData->rows == 4);
+  CHECK(mockScreenData->rows == 7);
   auto* screen = mockScreenData;
 
   screen->drawField(0, 0, CellState::focus);
@@ -486,6 +535,24 @@ TEST_CASE_FIXTURE(StickLiveFixture, "screenMidi shows device rows and links to c
   CHECK(std::string(mockGfxCells[6], 15) == "MIDI CC mapping");
   screen->onEdit(0, 3, CellEditAction::tap);
   CHECK(currentScreen == &screenMidiCC);
+
+  CHECK(appSettings.midiSendClock == 0);
+  CHECK(appSettings.midiSendTransport == 0);
+  CHECK(screen->onEdit(0, 4, CellEditAction::tap) == 1);
+  CHECK(appSettings.midiSendClock == 1);
+  CHECK(appSettings.midiSendTransport == 0);
+  CHECK(screen->onEdit(0, 5, CellEditAction::tap) == 1);
+  CHECK(appSettings.midiSendTransport == 1);
+  screen->drawField(0, 4, CellState::focus);
+  CHECK(std::string(mockGfxCells[8], 10) == "Send clock");
+  CHECK(std::string(mockGfxCells[8] + 16, 2) == "ON");
+  appSettings.clockSource = ClockSource::midiClock;
+  screen->drawField(0, 5, CellState::focus);
+  CHECK(std::string(mockGfxCells[9] + 20, 12) == "(MIDI slave)");
+  screen->drawField(0, 6, CellState::focus);
+  CHECK(std::string(mockGfxCells[10], 10) == "MIDI delay");
+  CHECK(screen->onEdit(0, 6, CellEditAction::increaseBig) == 1);
+  CHECK(appSettings.midiOutputDelayMs == 10);
 
   currentScreen = &screenMidi;
   CHECK(screenMidi.onInput(1, keyOpt, 0) == 1);
@@ -525,13 +592,23 @@ TEST_CASE_FIXTURE(StickLiveFixture, "MIDI clock mode round-trips through setting
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.clockSource == ClockSource::midiClock);
 
+  appSettings.midiSendClock = 1;
+  appSettings.midiSendTransport = 1;
+  REQUIRE(settingsSave() == 0);
+  initDefaultAppSettings();
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.midiSendClock == 1);
+  CHECK(appSettings.midiSendTransport == 1);
+
   // Invalid values fall back to the default rather than being trusted.
   FILE* file = fopen(realSettingsPath.c_str(), "w");
   REQUIRE(file != nullptr);
-  fprintf(file, "midiClockMode: 7\n");
+  fprintf(file, "midiClockMode: 7\nmidiSendClock: 7\nmidiSendTransport: -1\n");
   fclose(file);
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.clockSource == ClockSource::internal);
+  CHECK(appSettings.midiSendClock == 0);
+  CHECK(appSettings.midiSendTransport == 0);
 }
 
 TEST_CASE_FIXTURE(StickLiveFixture, "screenMidiChannelMap cycles channel-to-instrument assignment") {
@@ -597,9 +674,9 @@ TEST_CASE_FIXTURE(StickLiveFixture, "Persistent waveform is opt-in and its Setti
   REQUIRE(mockScreenData != nullptr);
   auto* screen = mockScreenData;
   int modified = projectModified;
-  CHECK(screen->rows == 7);
+  CHECK(screen->rows == 10);
   screen->drawField(0, 2, CellState::focus);
-  CHECK(std::string(mockGfxCells[4] + 23, 3) == "OFF");
+  CHECK(std::string(mockGfxCells[5] + 23, 3) == "OFF");
   REQUIRE(screen->onEdit(0, 2, CellEditAction::tap) == 1);
   CHECK(appSettings.persistentWaveform == 1);
   REQUIRE(settingsLoad() == 0);
@@ -632,10 +709,10 @@ TEST_CASE_FIXTURE(StickLiveFixture, "Personal visual settings coexist and surviv
 
 TEST_CASE_FIXTURE(StickLiveFixture, "audio device removal restarts the audio handler and shows the notice") {
   // The disconnect path rebuilds everything audio: the output device is
-  // reopened through AudioManager::restart, capture is torn down and
+  // reopened through AudioManager::refreshDevices, capture is torn down and
   // re-enumerated, and the helper box shows the animated notice.
-  mockAudioRestartResult = 0;
-  mockAudioRestartCalls = 0;
+  mockAudioRefreshResult = 0;
+  mockAudioRefreshCalls = 0;
   mockAudioRestartNotificationFrames = 0;
 
   MainLoopEventData event = {};
@@ -643,7 +720,7 @@ TEST_CASE_FIXTURE(StickLiveFixture, "audio device removal restarts the audio han
   event.data.value = 1; // capture device removed
   appOnEvent(event);
 
-  CHECK(mockAudioRestartCalls == 1);
+  CHECK(mockAudioRefreshCalls == 1);
   CHECK(mockAudioRestartNotificationFrames > 0);
   CHECK(screenAudioRestartActive());
 
@@ -655,5 +732,12 @@ TEST_CASE_FIXTURE(StickLiveFixture, "audio device removal restarts the audio han
 
   // A second disconnect restarts again (hot-unplug/replug cycles).
   appOnEvent(event);
-  CHECK(mockAudioRestartCalls == 2);
+  CHECK(mockAudioRefreshCalls == 2);
+}
+
+TEST_CASE_FIXTURE(StickLiveFixture, "audio input Refresh restarts the output through AudioManager") {
+  screenAudioInput.fullRedraw();
+  REQUIRE(mockScreenData != nullptr);
+  CHECK(mockScreenData->onEdit(1, 0, CellEditAction::tap) == 1);
+  CHECK(mockAudioRefreshCalls == 1);
 }

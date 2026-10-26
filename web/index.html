@@ -165,7 +165,8 @@
         send(statusByte, data1, data2, dueTime) {
           if (!outputPort) return;
           const message = [statusByte, data1];
-          if ((statusByte & 0xe0) !== 0xc0) message.push(data2);
+          if (statusByte >= 0xf8) message.length = 1;
+          else if ((statusByte & 0xe0) !== 0xc0) message.push(data2);
           try { outputPort.send(message, dueTime); } catch (_) { state = 4; }
         },
       };

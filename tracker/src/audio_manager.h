@@ -17,10 +17,13 @@ struct AudioManager {
   // Reopens the output device at the current rate/size (device lost, driver
   // reset). Buffers and engine state are preserved; returns 0 on success.
   int (*restart)(void);
+  // Close output before SDL audio re-enumeration, then reopen it.
+  int (*refreshDevices)(void);
   void (*pause)(void);
   void (*resume)(void);
   void (*replaceProject)(Project* replacement);
   void (*reinitializeChips)(void);
+  void (*ensureInstrumentVoices)(InstrumentType type);
   int (*mutateProject)(ProjectMutation* mutation, void* userdata);
   void (*stop)();
   void (*toggleTrackMute)(int trackIdx);

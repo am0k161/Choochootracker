@@ -13,4 +13,5 @@ extern int mockEnvelopePreviewCount;
 extern int mockBitmapDrawCount, mockBitmapDrawRow;
 extern int mockAudioReconfigureResult, mockAudioReconfigureCalls, mockAudioReconfigureRate, mockAudioReconfigureSize, mockAudioCpuLoad;
 extern int mockAudioRestartResult, mockAudioRestartCalls;
+extern int mockAudioRefreshResult, mockAudioRefreshCalls;
 extern int mockAudioRestartNotificationFrames;

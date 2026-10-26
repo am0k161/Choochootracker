@@ -3,6 +3,7 @@
 #include "beads_insert.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -93,11 +94,15 @@ static const InsertDescriptor descriptors[] = {
       {"Tone", "Tone", "Hz", 600, 18000, 220, M::exponential},
       {"Mix", "Mix", "%", 0, 1, 192, M::linear}}},
     {"Destruction",
-     4,
-     {{"Mode", "Mode", "", 0, 2, 0, M::discrete},
-      {"Amount", "Amount", "%", 0, 1, 64, M::linear},
-      {"Tone", "Tone", "Hz", 500, 18000, 220, M::exponential},
-      {"Mix", "Mix", "%", 0, 1, 160, M::linear}}},
+     8,
+     {{"Crush", "Crush", "%", 0, 2, 0, M::linear},
+      {"Rate", "Rate reduction", "x", 1, 128, 0, M::linear},
+      {"Fold", "Fold", "%", 0, 2, 0x18, M::linear},
+      {"Distort", "Distort", "%", 0, 2, 0x24, M::linear},
+      {"Saturate", "Saturate", "%", 0, 2, 0, M::linear},
+      {"Tone", "Tone", "Hz", 500, 18000, 255, M::exponential},
+      {"Mix", "Mix", "%", 0, 1, 255, M::linear},
+      {"Input", "Input", "dB", 0, 36, 0, M::linear}}},
     {"Parametric EQ",
      6,
      {{"Low G", "Low gain", "dB", -24, 24, 128, M::bipolar},
@@ -158,6 +163,14 @@ float insertMap(int m, int p, int v) {
   if (p < 0 || p >= d.count) return 0;
   const auto& a = d.parameters[p];
   v = insertClamp(m, p, v);
+  if (m == insertDestruction && (p == 0 || (p >= 2 && p <= 4)))
+    return v <= 127 ? v / 127.0f : 1.0f + (v - 127) / 128.0f;
+  if (m == insertDestruction && p == 1)
+    return v <= 127 ? 1.0f + 15.0f * v / 127.0f
+                    : 16.0f + 112.0f * (v - 127) / 128.0f;
+  if (m == insertDestruction && p == 7)
+    return v <= 127 ? 12.0f * v / 127.0f
+                    : 12.0f + 24.0f * (v - 127) / 128.0f;
   float x = v / float(std::max(1, insertParameterMaximum(m, p)));
   if (a.mapping == M::discrete) return v;
   if (a.mapping == M::exponential) return a.minimum * powf(a.maximum / a.minimum, x);
@@ -218,9 +231,8 @@ void insertDescribe(char* text, size_t size, int m, int p, int value) {
     snprintf(text, size, "%dx", (int)v + 1);
   } else if (m == insertPhaser && p == 4) {
     snprintf(text, size, "%d stages", (int)v + 4);
-  } else if (m == insertDestruction && p == 0) {
-    static const char* n[] = {"Fold", "Clip", "Crush"};
-    snprintf(text, size, "%s", n[(int)v]);
+  } else if (m == insertDestruction && p == 1) {
+    snprintf(text, size, "%dx", (int)roundf(v));
   } else if (m == insertCompressor && p == 4) {
     static const float n[] = {1.5f, 2, 3, 4, 6, 8, 16, 20};
     snprintf(text, size, "%.1f:1", n[(int)v]);
@@ -379,6 +391,8 @@ struct InsertChain::Impl {
     double gateFrames = 0;
     float gateLevel = 0;
     float feedback[2]{}, held[2]{};
+    float destructionDcInput[2]{}, destructionDcOutput[2]{};
+    float destructionDryPower = 0, destructionWetPower = 0, destructionGain = 1;
     Biquad eq[2][3];
     int delayWrite = 0, holdCounter = 0;
     float toneCoefficient = 1;
@@ -433,6 +447,10 @@ struct InsertChain::Impl {
     memset(s.phaserFeedback, 0, sizeof(s.phaserFeedback));
     memset(s.feedback, 0, sizeof(s.feedback));
     memset(s.held, 0, sizeof(s.held));
+    memset(s.destructionDcInput, 0, sizeof(s.destructionDcInput));
+    memset(s.destructionDcOutput, 0, sizeof(s.destructionDcOutput));
+    s.destructionDryPower = s.destructionWetPower = 0;
+    s.destructionGain = 1;
     for (auto& channel : s.eq) for (auto& band : channel) band.reset();
     s.eqNeutral = true;
     s.phase = 0;
@@ -534,7 +552,15 @@ struct InsertChain::Impl {
         s.toneCoefficient = coefficient(p[s.module == insertChorus ? 2 : 1], rate);
         break;
       case insertDestruction:
-        s.toneCoefficient = coefficient(p[2], rate);
+        if (!s.dirty) {
+          for (int parameter = 0; parameter < 8; ++parameter)
+            if (std::abs((int)v[parameter] - (int)s.previous[parameter]) >= 32) {
+              s.destructionDryPower = s.destructionWetPower = 0;
+              s.destructionGain = 1;
+              break;
+            }
+        }
+        s.toneCoefficient = coefficient(p[5], rate);
         break;
       case insertBitcrusher:
         s.toneCoefficient = coefficient(p[2], rate);
@@ -717,26 +743,77 @@ struct InsertChain::Impl {
           break;
         }
         case insertDestruction: {
-          int mode = (int)p[0];
-          float amount = p[1];
-          float drive = 1.0f + amount * 15.0f;
-          float levels = (float)((1 << (16 - (int)roundf(amount * 12.0f))) - 1);
+          const auto drive = [](float amount) {
+            return amount <= 1.0f ? 1.0f + 7.0f * amount : 8.0f + 24.0f * (amount - 1.0f);
+          };
+          const float foldDrive = drive(p[2]), distortDrive = drive(p[3]);
+          const float saturateDrive = drive(p[4]);
+          const int bits = std::max(1, (int)roundf(p[0] <= 1.0f
+              ? 16.0f - 12.0f * p[0] : 4.0f - 3.0f * (p[0] - 1.0f)));
+          const float levels = (float)((1 << (bits - 1)) - 1);
+          const int hold = (int)roundf(p[1]);
+          const float inputGain = powf(10.0f, p[7] / 20.0f);
+          const float dcPole = expf(-6.28318530718f * 20.0f / rate);
+          const float meter = coefficient(3.2f, rate);       // ~50 ms RMS window
+          const float gainDown = coefficient(32.0f, rate);   // ~5 ms attenuation
+          const float gainUp = coefficient(2.0f, rate);      // ~80 ms recovery
           for (int i = 0; i < n; ++i) {
             float dry[2] = {l[i], r[i]};
-            for (int ch = 0; ch < 2; ++ch) {
-              float x = dry[ch];
-              if (mode == 0) {
-                x *= drive;
-                x = 1.0f - fabsf(fmodf(x + 1.0f, 4.0f) - 2.0f);
-              } else if (mode == 1) {
-                x = tanhf(x * drive) / drive;
-              } else {
-                x = roundf(std::max(-1.0f, std::min(1.0f, x)) * levels) / levels;
+            float wet[2];
+            wet[0] = dry[0] * inputGain;
+            wet[1] = dry[1] * inputGain;
+            if (values[0] || values[1]) {
+              if (s.holdCounter == 0) {
+                for (int ch = 0; ch < 2; ++ch) {
+                  float x = std::clamp(wet[ch], -1.0f, 1.0f);
+                  s.held[ch] = !values[0] ? x : bits == 1
+                      ? (x > 0 ? 1.0f : x < 0 ? -1.0f : 0.0f)
+                      : roundf(x * levels) / levels;
+                }
+                s.holdCounter = hold;
               }
-              x = lowpass(s, ch, x);
-              if (ch) r[i] = dry[ch] + p[3] * (x - dry[ch]);
-              else l[i] = dry[ch] + p[3] * (x - dry[ch]);
+              wet[0] = s.held[0]; wet[1] = s.held[1];
+              --s.holdCounter;
+            } else s.holdCounter = 0;
+            for (int ch = 0; ch < 2; ++ch) {
+              float x = wet[ch];
+              if (values[2]) {
+                float wrapped = fmodf(x * foldDrive + 1.0f, 4.0f);
+                if (wrapped < 0) wrapped += 4.0f;
+                x = 0.95f * (1.0f - fabsf(wrapped - 2.0f))
+                    + 0.05f * std::clamp(x, -1.0f, 1.0f);
+              }
+              if (values[3]) {
+                float ceiling = 1.0f - 0.45f * std::min(p[3], 1.0f)
+                                      - 0.35f * std::max(p[3] - 1.0f, 0.0f);
+                x = std::clamp(x * distortDrive, -1.0f, ceiling);
+                float dc = x - s.destructionDcInput[ch] + dcPole * s.destructionDcOutput[ch];
+                s.destructionDcInput[ch] = x;
+                s.destructionDcOutput[ch] = dc;
+                x = dc;
+              } else {
+                s.destructionDcInput[ch] = x;
+                s.destructionDcOutput[ch] = x;
+              }
+              if (values[4]) x = std::clamp(x * saturateDrive, -1.0f, 1.0f);
+              if (values[5] == 255) s.filter[ch] = x;
+              wet[ch] = values[5] == 255 ? x : lowpass(s, ch, x);
             }
+            float dryPower = 0.5f * (dry[0] * dry[0] + dry[1] * dry[1]);
+            float wetPower = 0.5f * (wet[0] * wet[0] + wet[1] * wet[1]);
+            float previousDryPower = s.destructionDryPower;
+            s.destructionDryPower += meter * (dryPower - s.destructionDryPower);
+            s.destructionWetPower += meter * (wetPower - s.destructionWetPower);
+            float targetGain = s.destructionDryPower < 1.0e-6f ? 1.0f :
+                sqrtf(s.destructionDryPower / std::max(s.destructionWetPower, 1.0e-8f));
+            targetGain = std::clamp(targetGain, 0.015849f, 7.94328f);
+            float speed = targetGain < s.destructionGain ? gainDown : gainUp;
+            if (previousDryPower < 1.0e-6f && s.destructionDryPower >= 1.0e-6f)
+              s.destructionGain = targetGain;
+            else
+              s.destructionGain += speed * (targetGain - s.destructionGain);
+            l[i] = dry[0] + p[6] * (wet[0] * s.destructionGain - dry[0]);
+            r[i] = dry[1] + p[6] * (wet[1] * s.destructionGain - dry[1]);
           }
           break;
         }

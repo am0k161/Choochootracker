@@ -61,6 +61,47 @@ TEST_CASE("SampleVoice renders PCM16 with envelope and every filter mode") {
   }
 }
 
+TEST_CASE("SampleVoice smooths the first trigger and retrigger without shifting stereo envelopes") {
+  int16_t pcm[512];
+  for (int i = 0; i < 512; ++i) pcm[i] = i < 256 ? 16000 : -16000;
+  InstrumentSample sample{};
+  sample.sampleRate = 48000;
+  sample.frameCount = 512;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255;
+  sample.sustain = 255;
+
+  SampleVoice voice;
+  voice.init(48000.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, 0, 255, 1, 20000, 0);
+  voice.noteOn();
+  float output[300 * 2];
+  voice.render(output, 300);
+  CHECK(std::fabs(output[0]) < 0.01f);
+  CHECK(output[2 * 95] == doctest::Approx(16000.0f / 32768.0f));
+  CHECK(output[2 * 299] == doctest::Approx(-16000.0f / 32768.0f));
+
+  voice.noteOn();
+  voice.render(output, 96);
+  CHECK(std::fabs(output[0] + 16000.0f / 32768.0f) < 0.02f);
+  CHECK(output[2 * 95] == doctest::Approx(16000.0f / 32768.0f));
+  for (int i = 0; i < 96; ++i) CHECK(output[2 * i] == doctest::Approx(output[2 * i + 1]));
+
+  sample.attack = 64;
+  voice.kill();
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, 0, 255, 1, 20000, 0);
+  voice.noteOn();
+  voice.render(output, 96);
+  CHECK(output[2 * 95] > 0.0f);
+  CHECK(output[2 * 95] < 0.1f);
+  for (int i = 0; i < 96; ++i) CHECK(output[2 * i] == doctest::Approx(output[2 * i + 1]));
+  const float firstAttackEnd = output[2 * 95];
+  voice.noteOn();
+  voice.render(output, 96);
+  CHECK(output[2 * 95] == doctest::Approx(firstAttackEnd).epsilon(0.05));
+}
+
 TEST_CASE("SampleVoice start and end delimit playback") {
   int16_t pcm[64];
   for (int i = 0; i < 64; ++i) pcm[i] = 12000;
@@ -83,6 +124,8 @@ TEST_CASE("SampleVoice start and end delimit playback") {
                   sample.filterCutoffHz, sample.filterResonance);
   voice.noteOn();
   voice.render(output, 128);
+  // The exhaustion kill arms a short de-click tail; render until it drains.
+  for (int i = 0; i < 8 && voice.active(); ++i) voice.render(output, 128);
   CHECK_FALSE(voice.active());
 }
 
@@ -178,34 +221,34 @@ TEST_CASE("SampleVoice Off uses Start/End and sliced notes use even windows") {
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == (uint32_t)sample.start * 31 / 255);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[(uint32_t)sample.start * 31 / 255] / 32768.0f) < 0.01f);
 
   // Slices divide the Start/End loop region (frames [7,16) here), not the
   // whole sample: 9 frames / 4 slices -> windows [7,9) [9,11) [11,13) [13,16).
   voice.configure(&sample, 1200.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 4, 1);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 9);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[9] / 32768.0f) < 0.01f);
 
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 4, 0);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 7);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[7] / 32768.0f) < 0.01f);
 
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 4, 3);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 13);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[13] / 32768.0f) < 0.01f);
 
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 4, 9);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 13);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[13] / 32768.0f) < 0.01f);
 }
 
 TEST_CASE("Sample loader accepts unsigned PCM8 WAV") {
@@ -284,9 +327,11 @@ TEST_CASE("SampleVoice stretch mode 0 keeps plain playback behavior") {
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 0, 0, 0, 50.0f);
   voice.noteOn();
   voice.render(output, 128);
-  // One-shot: 64 source frames at 1:1 rate, so the voice must stop.
-  CHECK_FALSE(voice.active());
   CHECK(std::fabs(output[0] - pcm[0] / 32768.0f) < 0.01f);
+  // One-shot: 64 source frames at 1:1 rate, so the voice must stop. The
+  // exhaustion kill arms a short de-click tail; render until it drains.
+  for (int i = 0; i < 8 && voice.active(); ++i) voice.render(output, 128);
+  CHECK_FALSE(voice.active());
 }
 
 TEST_CASE("SampleVoice stretch renders for the musical division duration") {
@@ -413,10 +458,17 @@ TEST_CASE("SampleVoice stretch kill stops output") {
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 1,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 0, 0, 3, 50.0f);
   voice.noteOn();
-  voice.render(output.data(), 256);
+  // The stretcher primes silently for its first blocks (cold start fades in
+  // naturally); render until the note is clearly audible before killing so
+  // the de-click tail has a non-zero last output to fade from.
+  for (int i = 0; i < 40; ++i) voice.render(output.data(), 256);
   CHECK(voice.active());
 
+  // kill() arms a short de-click tail instead of hard-cutting: the tail
+  // renders and drains before the voice goes inactive.
   voice.kill();
+  CHECK(voice.active());
+  voice.render(output.data(), 256);
   CHECK_FALSE(voice.active());
   voice.render(output.data(), 256);
   for (float value : output) CHECK(value == 0.0f);
@@ -795,16 +847,16 @@ TEST_CASE("SampleVoice plays stored slice bounds and legacy fallback identically
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 4, 1);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 8);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[8] / 32768.0f) < 0.01f);
 
   // A nudged bound moves the playback window: slice 1 now starts at 11.
   CHECK(sampleSliceNudge(&sample, 1, 3) == 11);
   voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
                   sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 4, 1);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 11);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[11] / 32768.0f) < 0.01f);
 
   // Legacy fallback: sentinel 8 with empty bounds divides the loop evenly
   // (slice 1 of 8 over 32 frames starts at frame 4).
@@ -816,11 +868,14 @@ TEST_CASE("SampleVoice plays stored slice bounds and legacy fallback identically
   voice.configure(&legacy, 0.0f, 1.0f, 100.0f, legacy.start, legacy.end, 0,
                   legacy.filterCutoffHz, legacy.filterResonance, -1, -1, -1, -1, -1, 8, 1);
   voice.noteOn();
+  CHECK(voice.playbackFrame() == 4);
   voice.render(output, 4);
-  CHECK(std::fabs(output[0] - pcm[4] / 32768.0f) < 0.01f);
 
   // LAZY slices map chromatically like EQUAL/AUTO: with bounds present the
   // caller passes the decoded count and the voice plays the selected window.
+  // Drain the previous note (its exhaustion kill arms a short de-click
+  // tail) so this retrigger starts fresh from silence.
+  for (int i = 0; i < 64 && voice.active(); ++i) voice.render(output, 4);
   InstrumentSample lazy = makeSliceSample(32, 0, 255);
   lazy.data = pcm;
   lazy.sustain = 255;
@@ -841,4 +896,512 @@ TEST_CASE("SampleVoice plays stored slice bounds and legacy fallback identically
   voice.noteOn();
   voice.render(output, 4);
   CHECK(std::fabs(output[0] - pcm[0] / 32768.0f) < 0.01f);
+}
+
+TEST_CASE("reverse playback interpolates without mirroring the fraction") {
+  // A low-rate sample (step < 1) played backwards must interpolate toward
+  // frame + 1 like forward playback. Mirroring the fraction toward frame - 1
+  // zigzags around every integer frame crossing and buzzes.
+  int16_t pcm[64];
+  for (int i = 0; i < 64; ++i) pcm[i] = (int16_t)(i * 512); // ramp: value i/64
+
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  // 24 kHz source at a 48 kHz output puts the plain path at step 0.5
+  // (speedPercent stays 100 so the granular path does not engage).
+  sample.sampleRate = 24000;
+  sample.frameCount = 64;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255; // full window: marker 255 maps to frameCount
+  sample.sustain = 255;
+
+  SampleVoice voice;
+  float output[32 * 2];
+  voice.init(48000.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
+                  sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
+                  -1, -1, 0, 0, 0, 50.0f, 0, 1);
+  voice.noteOn();
+  voice.render(output, 32);
+
+  // The descending cursor starts at frame 63 and moves -0.5 per frame:
+  // 63, 62.5, 62, 61.5, ... Correct interpolation glides down the ramp
+  // (0.5 ramp-LSB per frame). The mirrored-fraction bug reads 63, 61.5,
+  // 62, 60.5 ... and jumps ~1.5 ramp-LSB every other frame.
+  double maxJump = 0.0;
+  for (int i = 1; i < 32; ++i) {
+    const double jump = std::fabs((double)output[i * 2] - (double)output[(i - 1) * 2]);
+    if (jump > maxJump) maxJump = jump;
+  }
+  // 0.5 ramp-LSB = 0.0078 normalized; the bug jumps 0.023.
+  CHECK(maxJump < 0.015);
+  // output[2*i] is output frame i; the cursor sits at 63 - 0.5*i. The
+  // always-on 2 ms de-click ramp scales the first 96 output frames (frame i
+  // gets weight (i+1)/96), so compare against the ramped ideal.
+  auto rampWeight = [](int frame) {
+    return frame < 96 ? (float)(frame + 1) / 96.0f : 1.0f;
+  };
+  CHECK(std::fabs(output[0] - 63.0f / 64.0f * rampWeight(0)) < 0.001f);
+  CHECK(std::fabs(output[2] - 62.5f / 64.0f * rampWeight(1)) < 0.001f);
+  CHECK(std::fabs(output[4] - 62.0f / 64.0f * 3.0f / 96.0f) < 0.001f);
+  CHECK(std::fabs(output[8] - 61.0f / 64.0f * 5.0f / 96.0f) < 0.001f);
+}
+
+// --- Loop X-fade (engine side; SPL 04/05 wiring is covered in PR3) -----------
+// The crossfade replaces the hard wrap: over the last 25% of the loop
+// window the outgoing pass (still reading toward the seam) mixes with the
+// incoming pass (already reading from the wrap target). The fixture ramp
+// (data[i] = i) is the worst case: the seam material jumps ~8000 LSB.
+
+// Builds a voice on a ramp sample with a loop window [loopStartFrame, 8820)
+// and renders `ticks` ticks of 882 frames, returning the interleaved output.
+static std::vector<float> renderXfadeVoice(InstrumentSample* sample,
+                                           uint8_t loopMode, uint8_t xfade,
+                                           int ticks) {
+  SampleVoice voice;
+  std::vector<float> all;
+  float output[882 * 2];
+  voice.init(44100.0f);
+  voice.configure(sample, 0.0f, 1.0f, sample->speedPercent, sample->start,
+                  sample->end, loopMode, sample->filterCutoffHz,
+                  sample->filterResonance, -1, -1, -1, -1, -1, 0, 0,
+                  sample->stretchMode, 50.0f, 0, 0, sample->loopStart, xfade);
+  voice.noteOn();
+  for (int t = 0; t < ticks; ++t) {
+    voice.render(output, 882);
+    all.insert(all.end(), output, output + 882 * 2);
+  }
+  return all;
+}
+
+// Largest absolute difference between consecutive stereo samples (same
+// channel, adjacent frames) across a whole capture - the click detector the
+// de-click tests assert against.
+static double maxJump(const std::vector<float>& all) {
+  double jump = 0.0;
+  for (size_t i = 2; i < all.size(); i += 2) {
+    const double d = std::fabs((double)all[i] - (double)all[i - 2]);
+    if (d > jump) jump = d;
+  }
+  return jump;
+}
+
+TEST_CASE("xfade forward loop removes the wrap discontinuity") {
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopMode = 1;
+  sample.loopStart = 0x40; // frame 2213
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // Hard wrap: the seam jumps (8819 - 2213) / 32768 = 0.2016 in one sample
+  // (the wrap target is the loop start marker, not frame 0).
+  const double hardJump = maxJump(renderXfadeVoice(&sample, 1, 0, 30));
+  CHECK(hardJump > 0.15);
+
+  // Crossfaded: the transition spreads over the 1651-frame window; the
+  // worst single-sample jump is a small fraction of the hard cut.
+  const double fadeJump = maxJump(renderXfadeVoice(&sample, 1, 1, 30));
+  CHECK(fadeJump < 0.01);
+  CHECK(fadeJump < hardJump);
+}
+
+TEST_CASE("xfade ping-pong removes the turn discontinuity") {
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopMode = 3;
+  sample.loopStart = 0x40;
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // On the ramp the ping-pong fold is naturally continuous (the material
+  // mirrors at the turn), so the hard wrap barely jumps; the fade is a
+  // safety mix for real-world material. Assert the fade stays small in
+  // absolute terms on this worst-case uncorrelated fixture.
+  const double fadeJump = maxJump(renderXfadeVoice(&sample, 3, 1, 40));
+  CHECK(fadeJump < 0.01);
+}
+
+TEST_CASE("xfade disabled path is bit-identical to the hard wrap") {
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopMode = 1;
+  sample.loopStart = 0x40;
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // The fade must only alter output inside the window: before the fade
+  // window opens (frame 7169 = 8820 - 1651) the xfade render is
+  // bit-identical to the hard-wrap render; inside the window it differs.
+  const std::vector<float> hard = renderXfadeVoice(&sample, 1, 0, 14);
+  const std::vector<float> xfade = renderXfadeVoice(&sample, 1, 1, 14);
+  REQUIRE(hard.size() == xfade.size());
+  const size_t windowStart = 7169 * 2;
+  for (size_t i = 0; i < windowStart; ++i) CHECK(hard[i] == xfade[i]);
+  int diffs = 0;
+  for (size_t i = windowStart; i < hard.size(); ++i) {
+    if (hard[i] != xfade[i]) ++diffs;
+  }
+  CHECK(diffs > 0);
+}
+
+TEST_CASE("xfade is bypassed on the granular path") {
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.sustain = 255;
+  sample.loopMode = 1;
+  sample.loopStart = 0x40;
+  sample.speedPercent = 150; // granular
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // The granular path windows its own grains; SPL 04 must not change the
+  // output there.
+  const std::vector<float> plain = renderXfadeVoice(&sample, 1, 0, 14);
+  const std::vector<float> xfade = renderXfadeVoice(&sample, 1, 1, 14);
+  REQUIRE(plain.size() == xfade.size());
+  for (size_t i = 0; i < plain.size(); ++i) CHECK(plain[i] == xfade[i]);
+}
+
+TEST_CASE("xfade is bypassed on the stretch path") {
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.sustain = 255;
+  sample.loopMode = 1;
+  sample.loopStart = 0x40;
+  sample.stretchMode = 1;
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // The stretch processor owns the read pointer; SPL 04 must not change
+  // the output there.
+  const std::vector<float> plain = renderXfadeVoice(&sample, 1, 0, 14);
+  const std::vector<float> xfade = renderXfadeVoice(&sample, 1, 1, 14);
+  REQUIRE(plain.size() == xfade.size());
+  for (size_t i = 0; i < plain.size(); ++i) CHECK(plain[i] == xfade[i]);
+}
+
+TEST_CASE("xfade survives per-tick reconfigure") {
+  // configure() runs every tick; reconfiguring with the same window must
+  // not reset an in-flight fade (the fade completes and hands over).
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopMode = 1;
+  sample.loopStart = 0x40;
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  SampleVoice voice;
+  float output[882 * 2];
+  voice.init(44100.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 1,
+                  sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
+                  -1, -1, 0, 0, 0, 50.0f, 0, 0, sample.loopStart, 1);
+  voice.noteOn();
+  // Play into the fade window (window = (8820-2213)/4 = 1651 frames, so
+  // it starts at frame ~7169 = tick 7.4), reconfigure every tick.
+  for (int t = 0; t < 30; ++t) {
+    voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 1,
+                    sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
+                    -1, -1, 0, 0, 0, 50.0f, 0, 0, sample.loopStart, 1);
+    voice.render(output, 882);
+  }
+  // The voice must still be looping (the fade completed and handed over
+  // instead of being reset mid-flight).
+  CHECK(voice.active());
+}
+
+TEST_CASE("retrigger after a loop crossfade starts from the last output") {
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopMode = 2; // Loop X
+  sample.loopStart = 0x40;
+  std::vector<int16_t> data(8820);
+  for (int i = 0; i < 8820; ++i) data[i] = (int16_t)i;
+  sample.data = data.data();
+
+  SampleVoice voice;
+  float output[882 * 2];
+  voice.init(44100.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 2,
+                  sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
+                  -1, -1, 0, 0, 0, 50.0f, 0, 0, sample.loopStart);
+  voice.noteOn();
+  for (int t = 0; t < 10; ++t) voice.render(output, 882);
+  const float beforeRetrigger = output[2 * 881];
+
+  voice.noteOn();
+  voice.render(output, 1);
+  CHECK(std::fabs(output[0] - beforeRetrigger) < 0.01f);
+}
+
+TEST_CASE("xfade derives from loop modes 3/4 without the xfade parameter") {
+  // Modes 3 (Loop X) and 4 (Ping X) turn the crossfade on themselves: the
+  // explicit xfade parameter stays 0. The wrap geometry matches the plain
+  // modes 1/2.
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 0;
+  sample.end = 255;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopStart = 0x40; // frame 2213
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // Mode 2: the hard wrap jumps 0.2016 in one sample; the crossfade
+  // spreads it over the 1651-frame window.
+  sample.loopMode = 2;
+  const double fadeJump2 = maxJump(renderXfadeVoice(&sample, 2, 0, 30));
+  CHECK(fadeJump2 < 0.01);
+
+  // Mode 4: both turn points are faded; on the ramp the fold is naturally
+  // continuous, so the fade stays small in absolute terms.
+  sample.loopMode = 4;
+  const double fadeJump4 = maxJump(renderXfadeVoice(&sample, 4, 0, 40));
+  CHECK(fadeJump4 < 0.01);
+}
+
+TEST_CASE("mode 2 descending hard-wraps like mode 1") {
+  // Legacy Start > End windows reverse the playback direction. A descending
+  // forward loop (mode 1 or 2) must hard-wrap: the phase-aligned incoming
+  // pass would read past the sample data (the wrap target sits at the
+  // region end). Only ping-pong (modes 3/4) arms a fade on the way down.
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 44100;
+  sample.frameCount = 8820;
+  sample.channels = 1;
+  sample.start = 200; // descending window: start marker above end marker
+  sample.end = 40;
+  sample.speedPercent = 100;
+  sample.sustain = 255;
+  sample.loopMode = 2;
+  sample.loopStart = 0x40;
+  std::vector<int16_t> data(8820);
+  for (uint32_t i = 0; i < 8820; ++i) data[i] = (int16_t)(i % 32768);
+  sample.data = data.data();
+
+  // The descending pass must survive the wrap and keep looping: the voice
+  // stays active and the cursor stays inside the sample.
+  SampleVoice voice;
+  float output[882 * 2];
+  voice.init(44100.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 2,
+                  sample.filterCutoffHz, sample.filterResonance, -1, -1, -1,
+                  -1, -1, 0, 0, 0, 50.0f, 0, 0, sample.loopStart, 0);
+  voice.noteOn();
+  for (int t = 0; t < 4; ++t) voice.render(output, 882);
+  CHECK(voice.active());
+  const double frame = voice.playbackFrame();
+  CHECK(frame >= 0.0);
+  CHECK(frame < 8820.0);
+}
+
+TEST_CASE("De-click: initial trigger with a nonzero first sample ramps in") {
+  // A fresh note whose first sample is far from zero must not click: the
+  // 2 ms output ramp scales the first rendered frame down to ~1/96 of its
+  // full level instead of jumping straight to full scale.
+  int16_t pcm[512];
+  for (int i = 0; i < 512; ++i) pcm[i] = 16000;
+
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 48000;
+  sample.frameCount = 512;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255;
+  sample.sustain = 255;
+
+  SampleVoice voice;
+  std::vector<float> output(96 * 2);
+  voice.init(48000.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
+                  sample.filterCutoffHz, sample.filterResonance);
+  voice.noteOn();
+  voice.render(output.data(), 96);
+
+  const float fullScale = pcm[0] / 32768.0f;
+  // First frame: ramp blend 1/96 of the way from silence to the sample.
+  CHECK(std::fabs(output[0] - fullScale / 96.0f) < 0.005f);
+  // Last frame of the ramp window: essentially full scale.
+  CHECK(std::fabs(output[2 * 95] - fullScale) < 0.02f);
+  // No consecutive-sample jump anywhere in the capture may exceed the
+  // full-scale step the ramp is smoothing.
+  CHECK(maxJump(output) < fullScale);
+}
+
+TEST_CASE("De-click: retrigger mid-sound bridges from the previous output") {
+  // A retrigger while the voice is sounding must not jump from the old
+  // waveform to the new one at full level: the ramp starts from the last
+  // rendered output, so the boundary frame stays continuous.
+  int16_t pcm[512];
+  for (int i = 0; i < 512; ++i) {
+    pcm[i] = (int16_t)(std::sin(2.0 * M_PI * 440.0 * i / 48000.0) * 24000.0);
+  }
+
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 48000;
+  sample.frameCount = 512;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255;
+  sample.sustain = 255;
+
+  SampleVoice voice;
+  std::vector<float> output(96 * 2);
+  voice.init(48000.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
+                  sample.filterCutoffHz, sample.filterResonance);
+  voice.noteOn();
+  voice.render(output.data(), 96);
+  const float lastValue = output[2 * 95];
+
+  voice.noteOn();
+  voice.render(output.data(), 96);
+  // Ramp frame 0 blends 1/96 toward the new sample from the old output:
+  // it stays within one full-scale step of the pre-retrigger output.
+  CHECK(std::fabs(output[0] - lastValue) < 0.02f);
+  // A 440 Hz sine at 48 kHz moves at most ~0.014 per frame naturally; any
+  // unbridged retrigger would jump by up to the full waveform span.
+  CHECK(maxJump(output) < 0.05f);
+}
+
+TEST_CASE("De-click: kill mid-render-block fades linearly to silence") {
+  // kill() inside a render block must not leave a discontinuity or a zero
+  // gap: the same buffer continues with a linear fade from the output
+  // captured at the cut, decaying to silence within the 3 ms tail.
+  int16_t pcm[64];
+  for (int i = 0; i < 64; ++i) pcm[i] = 12000;
+
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 48000;
+  sample.frameCount = 64;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255;
+  sample.sustain = 255;
+
+  SampleVoice voice;
+  std::vector<float> output(256 * 2);
+  voice.init(48000.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 0,
+                  sample.filterCutoffHz, sample.filterResonance);
+  voice.noteOn();
+  voice.render(output.data(), 256);
+
+  // One-shot exhaustion kills at frame 64: the tail loop starts AT the cut
+  // frame with weight 1.0 (a no-op rewrite of the already-rendered frame),
+  // so the first visible decayed frame is index 64 with weight 142/143.
+  CHECK_FALSE(voice.active());
+  const float cut = output[2 * 63];
+  CHECK(std::fabs(output[2 * 64] - cut * 142.0f / 143.0f) < 0.001f);
+  for (int k = 0; k < 143; ++k) {
+    const float expected = cut * (142.0f - (float)k) / 143.0f;
+    CHECK(std::fabs(output[2 * (64 + k)] - expected) < 0.002f);
+  }
+  // The tail is 144 frames: everything after frame 207 is silence.
+  for (int i = 208; i < 256; ++i) CHECK(output[2 * i] == 0.0f);
+}
+
+TEST_CASE("De-click: stretch kill mid-render-block fades linearly to silence") {
+  // The stretch path must not erase its de-click tail with the trailing
+  // memset: the tail renders from the kill frame and the zeroing starts
+  // only after the fade ends.
+  int16_t pcm[48000];
+  for (int i = 0; i < 48000; ++i) {
+    pcm[i] = (int16_t)(std::sin(2.0 * M_PI * 440.0 * i / 48000.0) * 24000.0);
+  }
+
+  InstrumentSample sample;
+  std::memset(&sample, 0, sizeof(sample));
+  sample.sampleRate = 48000;
+  sample.frameCount = 48000;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255;
+  sample.sustain = 255;
+
+  SampleVoice voice;
+  std::vector<float> output(256 * 2);
+  voice.init(48000.0f);
+  voice.configure(&sample, 0.0f, 1.0f, 100.0f, sample.start, sample.end, 1,
+                  sample.filterCutoffHz, sample.filterResonance, -1, -1, -1, -1, -1, 0, 0, 3, 50.0f);
+  voice.noteOn();
+  // The stretcher primes silently for its first blocks; render until the
+  // note is clearly audible before killing.
+  for (int i = 0; i < 40; ++i) voice.render(output.data(), 256);
+  CHECK(voice.active());
+
+  voice.kill();
+  voice.render(output.data(), 256);
+  // The tail starts at frame 0 of this buffer, continuous with the last
+  // frame of the previous buffer (weight 1.0), then decays linearly.
+  const float cut = output[0];
+  CHECK(cut != 0.0f);
+  for (int k = 1; k < 144; ++k) {
+    const float expected = cut * (143.0f - (float)k) / 143.0f;
+    CHECK(std::fabs(output[2 * k] - expected) < 0.002f);
+  }
+  // The tail is 144 frames: everything after it is silence.
+  for (int i = 144; i < 256; ++i) CHECK(output[2 * i] == 0.0f);
+  CHECK_FALSE(voice.active());
 }

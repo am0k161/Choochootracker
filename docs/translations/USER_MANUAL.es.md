@@ -14,6 +14,7 @@ Sigue el flujo de trabajo y sistema de navegación clásico de LSDj, con varias 
 - Muestras PCM, formas de onda de ciclo único y osciladores wavetable, con filtro multimodo
 - aChChid, un sintesizador acid versátil basado en Open303
 - Bogie, un sintetizador de batería nativo de 12 modelos con filtro multimodo
+- MonkSynth, un sintetizador vocal con unísono de diez voces y delay estéreo
 - MME, un sintetizador multi-modulación de dos osciladores con filtro multimodo
 - Sintered, un sintetizador experimental digital nativo de batería con seis modelos
 
@@ -26,6 +27,12 @@ Instale `choochootracker.zip` mediante PortMaster, o copie el paquete extraído 
 ### Miyoo Mini / Mini Plus (Onion OS)
 
 Extraiga el archivo MiyooPorts en la raíz de la tarjeta SD para que sus carpetas `Roms/PORTS/` se mezclen con las existentes de Onion. Inicie **ChooChooTracker** desde el menú de Ports después de actualizar la colección. Haga copia de seguridad de la carpeta `projects/` antes de reemplazar una instalación existente.
+
+El tiempo de carga de un proyecto puede variar según los tipos de instrumento usados en la canción. Si el arranque o la carga de un proyecto parece anormalmente lento, indica cuánto tarda cada uno, junto con el modelo de consola y la versión de Onion OS.
+
+### Raspberry Pi OS 64 bits
+
+Extrae el archivo Raspberry Pi AArch64, instala el runtime de SDL2 (`sudo apt install libsdl2-2.0-0`) y ejecuta `./chipnomad.sh` desde el directorio extraído. Mantén los instrumentos empaquetados y demás recursos junto al ejecutable.
 
 ### Windows
 
@@ -40,10 +47,6 @@ Puede usar Choochootracker en línea en https://choochootracker.vercel.app/ .
 Se puede controlar esta versión con teclado, controles en pantalla en dispositivos móviles o con su gamepad.
 
 Los ajustes guardados, muestras, temas, proyectos, etc. se almacenan en el navegador.
-
-Tras bloquear pantalla o cambiar de aplicación, toque un control para recuperar el audio si es necesario. **Restart audio** reinicia la salida sin descartar el proyecto. **Reload app** guarda el trabajo actual para **Continue**, guarda ajustes y recarga.
-
-Use **Download .cct** para exportar sus proyectos.
 
 Nota: debido a restricciones de iOS, puede ser imposible usar midi con la versión web en iPhone.
 
@@ -78,7 +81,7 @@ ChooChooTracker funciona mejor con un gamepad que tenga D-pad, 2 sticks analógi
 | **MOTION RECORD** | L2 | W |
 | **MOTION ERASE** | R2 | E |
 
-Las asignaciones se pueden cambiar en **Settings > Key mapping**. Guarde la reasignación con **Done**, luego suelte el botón antes de continuar en Settings.
+Las asignaciones se pueden cambiar en **Settings > Controls > Key mapping**, también en Android con un gamepad externo. En PortMaster, guarde la reasignación con **Done**, luego suelte el botón antes de continuar en Settings.
 
 ### Navegación
 
@@ -198,6 +201,8 @@ Seleccione una fila de Song en varias columnas para poner en cola o detener esas
 - **OPT + PLAY**: solo la pista actual o columnas seleccionadas (libere **OPT** para mantener el solo)
 - **OPT + [IZQUIERDA/DERECHA]**: solo todas las pistas a la izquierda o derecha de la actual
 - Seleccione un rango y doble toque **EDIT**: abre BOUNCE TO SAMPLE (ver Bounce arriba)
+
+Detener la reproducción y cambiar mute o solo usan una breve corrección de salida de 3 ms para reducir los clics. Esto incluye también reactivar el sonido y quitar los solos durante la reproducción.
 
 ### Chain
 
@@ -433,6 +438,16 @@ El mensaje antiguo **“Custom bank modulation ignored”** describe una comprob
 Para elegir una librería, comienza con presets basados principalmente en mapeos de samples, loops y envolventes estáticos. Sonidos cuyo carácter depende de articulaciones por controlador, filtros animados o LFOs programados requieren comparación más detallada en un reproductor SoundFont completo. **Carga y reproduce** no significa **reproduce completamente el preset**. Compara notas y velocities útiles, así como notas sostenidas y tiempo de liberación (note OFF). Cambiar SF2 a SF3 (o al revés) no elimina por sí solo estas necesidades de modulación. Una conversión debe traducir los mapeos y comportamiento a funciones soportadas por este motor; renderizar un efecto en un sample solo preserva ese resultado, no su respuesta interactiva al controlador. Consulta la [cobertura de formato y límites](soundbanks/README.md#format-coverage)
 y [notas de validación](soundbanks/validation.md) antes de elegir o convertir un banco. Estos límites describen la implementación experimental actual, no restricciones inherentes a todos los reproductores SoundFont.
 
+#### Explorar colecciones SoundFont
+
+En SAMPLE → SOUNDFONT, **Preset** abre tus colecciones. **Right** o **EDIT/A** entra directamente en una carpeta. En una colección hoja, Right pasa a sus presets; otro Right avanza 15 entradas sin cargar. EDIT/A carga el preset resaltado. Left vuelve a las colecciones y luego a la carpeta superior; OPT también retrocede. PLAY inicia/detiene la canción mientras exploras.
+
+Iconos de carpeta y de sonido identifican las entradas. Las colecciones usan toda la altura del panel. El preset seleccionado permanece bajo las ocho vistas previas de pista; los nombres largos se desplazan tras un segundo de inactividad en la selección y reinician al moverte. EDIT+Left/Right en la página de instrumento sigue el mismo orden de carpetas anidadas, manteniendo juntos los sonidos de cada colección. EDIT+PLAY escucha.
+
+La tercera fila informa Reading preset, Finding samples, Unzipping, Checking samples o Loading samples. Los instrumentos EXS con nombres incrustados vacíos o `(null)` usan sus nombres de archivo. Los bancos de origen y el audio no cambian. Usa **Rescan** tras modificar los archivos de tu biblioteca.
+
+Consulta [cobertura de formatos y límites](soundbanks/README.md#format-coverage) para el comportamiento compatible del sampler y los formatos de sample.
+
 ### AY Classic, AY Plus y AY Sample
 
 Estos son los motores originales ChipNomad AY/YM. AY Classic ofrece controles de tono, ruido y envolvente al estilo hardware. AY Plus añade osciladores por software y modulación más rica. AY Sample reproduce un sample mediante niveles de volumen estilo AY y es distinto del motor Sampler.
@@ -570,7 +585,19 @@ En la pantalla de Modulación, presiona **EDIT** en una fuente para elegir una f
 
 Motion es una macro envolvente interna: valores bajo `80` usan forma AD, `80` desactiva la envolvente, y valores sobre `80` usan forma solo decay. Acercarse más al centro ralentiza la envolvente. Sus destinos son fijos por modelo, haciendo a Sintered predecible en patrones tracker: Knot anima Mod/Fold; Shard Feedback/Bite; Burst Noise/Color/Feedback; Comb Damping/Regen; Logic Rate/Crush; Melt Chaos/Drive. Todos los modelos resetean su estado con disparo de nota y limitan la retroalimentación interna para golpes repetibles.
 
+### MonkSynth
+
+MonkSynth es un sintetizador vocal. Modela su vocal, el carácter de la voz, el soplo, el glide, el vibrato, el unísono y el delay desde la página Instrument. EDIT abre todos los controles y el nombre del patch.
+
+Elige un banco y un preset sobre los controles VOICE. ALL incluye FACTORY y USER; EDIT+PLAY escucha el preset resaltado, mientras que EDIT lo selecciona. Guarda tus propios sonidos en `instruments/USER/monk/`. Los instrumentos y canciones guardados conservan sus ajustes de MonkSynth.
+
+Los valores son hexadecimales `00..FF`, salvo Voices (`01..0A`, de una a diez). Attack, decay y release abarcan 0..5 segundos; el detune 0..50 cents y la apertura de voces 0..0,5. Volume, Pitch y los seis controles principales de voz están disponibles como destinos de modulación y de grabación de movimiento.
+
+Los dieciséis controles aparecen juntos en **MonkSynth FX**: `MWV` (vocal), `MIN` (voz), `MAM` (soplo), `MFL` (glide), `MFB` (profundidad de vibrato), `MSH` (velocidad de vibrato), `MUV` (voces), `MDT` (detune), `MVS` (apertura), `MDM` (mezcla de delay), `MDR` (velocidad de delay), `MLV` (nivel) y `EAT`/`EDC`/`ESU`/`ERL` (ADSR). Estos significados se aplican cuando MONK es el instrumento activo; los significados existentes de los comandos de MME no cambian. El grupo Trigger FX compartido conserva TDC/TCL sin entradas de envolvente duplicadas.
+
 ### MME
+
+Elige **SYNTH → MME** en el menú Tipo de instrumento.
 
 **MME** (Multi Modulation Engine) es un sintetizador de dos osciladores dedicado a interacciones entre ellos. Sus modelos son `Ring`, `Fold`, `Cross`, `VPM`, `Sync`, `Logic` y `Vocode`. Ambos osciladores son internos y siguen las notas del tracker; `Interval` define su relación.
 
@@ -684,6 +711,24 @@ Este motor de Sample limpio reproduce muestras PCM mono o estéreo cargadas en R
 - **Loop** selecciona Off, Loop o Ping-Pong.
 - **Speed** controla la estiración temporal granular de `0%` a `500%` (`100%` es normal).Los formatos WAV no compatibles muestran un error. Convierte archivos inusuales a WAV `PCM8`, `PCM16` o `PCM24` antes de importarlos.
 
+##### Entrada de audio
+
+Abre **Settings → Audio → Audio Input** antes de grabar desde un micrófono o una interfaz de audio USB. La lista muestra las entradas disponibles en ese momento en el dispositivo. Si se desconecta una interfaz armada, la captura se interrumpe y el gestor de audio se reinicia para que la app siga funcionando. Si estabas grabando, pulsa **STOP** para terminar la toma interrumpida. Tras reconectar, selecciona **[Refresh]** y comprueba que la entrada deseada esté armada antes de volver a grabar; reconectar por sí solo no la rearma de forma fiable. **[List]** vuelve a leer la lista de entradas actual sin reiniciar el audio.
+
+Selecciona la casilla **ARM** de una entrada para ponerla a disposición del grabador del Sampler; su pequeño medidor muestra el nivel entrante. Arma una sola interfaz a la vez: esta versión solo abre la primera interfaz armada, aunque haya varias casillas marcadas. Tu selección se recuerda por nombre de dispositivo, de modo que una interfaz no disponible permanece desarmada en lugar de ser sustituida por otra entrada. Pulsa **OPT** para volver a los ajustes de Audio.
+
+##### Grabación de entrada de audio
+
+En la pantalla de instrumento Sample, **REC** (o **EDIT/REC** cuando hay un sample cargado) abre el editor de samples, que reúne grabación y edición en una pantalla. Arma primero las entradas en la pantalla **Settings → Audio → Audio Input** (ver [Entrada de audio](#entrada-de-audio)). Las filas superiores del editor controlan la grabación:
+
+- **Input** recorre la fuente de grabación: `T1`..`T8` graban las ocho pistas del tracker, seguidas del micrófono o la interfaz USB armados. Para grabar una fuente externa, sigue avanzando más allá de `T8` hasta que aparezca el nombre del dispositivo. `-` significa que no se eligió ninguna fuente explícitamente; **REC** usa entonces la primera entrada armada y muestra su nombre. Mantén **EDIT** y pulsa **LEFT**/**RIGHT** para retroceder/avanzar, o **EDIT+OPT** para volver a `-`. Tocar Input lo hace avanzar directamente.
+- El medidor de nivel junto a **Input** muestra el nivel en vivo de la entrada armada (solo fuentes externas). **MON** activa el monitoreo de la entrada: la entrada armada se envía a la salida a -6 dB para reducir el acople. El ajuste se guarda en el archivo de ajustes.
+- **REC** inicia la grabación. Las fuentes externas graban de inmediato; una fuente de pista muestra **ARMED** y la grabación empieza cuando arranca la reproducción (pulsa **PLAY**). **STOP** termina la grabación: el WAV se escribe en la carpeta de exportación del proyecto (`recNNN.wav`), se carga en el instrumento Sampler actual y la Region vuelve a ser el sample completo. Salir de la pantalla con **OPT** durante una grabación en curso la finaliza del mismo modo.
+- **PLAY** (se muestra tras una grabación) escucha la toma; se convierte en **STOP** mientras suena la vista previa. **CLEAR** (a su lado) borra el archivo WAV y descarga el sample del instrumento; tras borrar, **REC** vuelve a ocupar su lugar.
+- La forma de onda muestra la entrada en vivo durante la grabación y la forma de onda completa una vez terminada. La línea de estado muestra el nombre del archivo durante la grabación y el número de frames después; una toma externa muestra además `drop 0` cuando no se perdió ningún frame de audio. Un sample grabado es totalmente editable: región de bucle, selección, slicing, procesado y guardado funcionan igual que en cualquier archivo cargado.
+
+Las grabaciones se escriben a la frecuencia de muestreo de audio seleccionada, como WAV estéreo de 16 bits. Las fuentes de pista capturan lo que renderizan los instrumentos de la pista (tras los FX); las fuentes externas capturan directamente la entrada del dispositivo.
+
 #### 2xSCWF
 
 2xSCWF es un oscilador de forma de onda de ciclo único dual. Carga 1 WAV mono que contenga exactamente 1 periodo en cada oscilador. Ambos osciladores leen hacia adelante y se reinician al final de su ciclo.
@@ -742,9 +787,9 @@ DX7 tiene un límite de **16 notas activas en toda la canción**, incluidas voce
 
 Los instrumentos Genesis FM, Arcade FM, OPL2, OPL3, OPLL y VRC7 tienen un botón **EDIT** a la derecha de Fine ct que abre una tabla de parámetros del patch:
 
-- Genesis FM / Arcade FM: algoritmo, realimentación, panorama, AMS, PMS, máscara de operador y ajustes LFO; luego MUL, DT, TL, KS, AR, D1R, D2R, RR y D1L para los cuatro operadores, más SSG (Genesis) o DT2 y AM (Arcade).
-- OPL2 / OPL3: realimentación, conexión y panorama por voz; vibrato y trémolo profundos; luego MUL, TL, AR, DR, SL, RR, forma de onda, KSL, VIB, TRM, SUS y KSR por operador. En OPL3 se puede cambiar el modo (2op, 4op, dual).
-- OPLL / VRC7: registros de tono personalizado (realimentación, MUL, TL, KSL, AR, DR, SL, RR, formas de onda, AM, VIB, EG, KSR). Editar un preset ROM lo convierte en “Personalizado”.
+- Genesis FM / Arcade FM
+- OPL2 / OPL3: en OPL3 el modo (2op, 4op, dual) se puede cambiar aquí.
+- OPLL / VRC7: editar un preset ROM lo convierte en «Custom».
 
 Izquierda/Derecha y las teclas de edición habituales cambian valores; el instrumento sigue sonando para oír cambios. La barra de estado describe el parámetro bajo el cursor. OPT o Left+Shift regresa a la pantalla del instrumento. DX7 y SID no tienen editor de operadores.
 
@@ -849,10 +894,12 @@ Los tipos de modulación disponibles son:
 - ADSR – clásica envolvente ataque-decaimiento-sustain-release
 - AHD – envolvente ataque-hold-decaimiento
 - LFO – oscilador de baja frecuencia con varias formas
-- SLFO – LFO con multiplicador de periodo para ciclos lentos
+- syncLFO (antes SLFO) – LFO con un ajuste de ticks por unidad y multiplicador de periodo
+- slowLFO – ciclos largos con un control de periodo proporcional, que empieza justo más allá del rango del LFO ordinario
 - FLFO – LFO a frecuencia de audio que puede llegar a kHz; FLFO consume mucho CPU
 - SLIN – control lineal de joystick
 - SRAT – control de joystick basado en velocidad
+- Sequence – lee la secuencia del tracker como señal de modulación: **PITCH** es el tono secuenciado final, **VOL** el volumen secuenciado final y **TRANCE GATE** un modulador rítmico independiente. Motif, Rate y Length eligen el patrón del gate; Trigger elige si corre libre, se redispara por nota o se reinicia en los límites de frase o cadena. Los gates cerrados dan cero, los abiertos medio nivel, y Accents reparte gates a nivel completo de forma euclidiana entre los gates activos. No usa ni cambia ningún insert de pista.
 
 La lista de destinos de modulación depende del tipo de instrumento.
 
@@ -860,7 +907,13 @@ Cuando una envolvente ADSR o AHD apunta a Volumen, se vuelve la envolvente de vo
 
 La cantidad de modulación puede ser positiva o negativa. Su rango depende del destino. Si el rango completo del destino es `127` o menor, como en la mayoría de parámetros, la cantidad define un rango absoluto. Destinos más amplios como tono usan cantidad escalada.
 
+Las fuentes Sequence PITCH y VOL tienen un **Mode**. **Normal** mantiene audible el valor del tracker y a la vez lo usa como modulación. **Bypass** lo convierte solo en fuente: PITCH redispara en el último tono (o C-4 en la primera nota) y VOL mantiene el último nivel audible. Trance Gate ya es solo fuente. Si algún slot Sequence activo pone PITCH o VOL en bypass, gana el bypass. Para evitar realimentación, PITCH y VOL no pueden apuntar a Pitch o Volume.
+
 Todos los parámetros de duración, incluyendo ataque, hold, decaimiento y periodo, se miden en ticks.
+
+**syncLFO** es el antiguo SLFO: ajusta sus ticks y su multiplicador para un movimiento sincronizado con el tempo. Los ajustes SLFO existentes y las canciones mantienen el mismo timing.
+
+Usa **slowLFO** para barridos más largos de lo que puede hacer el LFO ordinario. Su control Period va de 256 a 131.072 ticks. Todos los LFO basados en ticks siguen el tempo de la canción y comparten las mismas formas, la misma selección de wavetable y los mismos modos de disparo. Elige Free para un barrido que continúa entre notas; Retrig, Phrase y Chain lo reinician en sus límites respectivos.
 
 Formas de LFO:
 
@@ -880,8 +933,8 @@ Tipos de disparo LFO:
 
 - Free – reinicia el LFO solo cuando cambia el instrumento
 - Retrig – reinicia el LFO en cada nota
-- Phrase – reinicia LFO y SLFO al entrar en una nueva frase
-- Chain – reinicia LFO y SLFO al entrar en una nueva cadena
+- Phrase – reinicia LFO, syncLFO y slowLFO al entrar en una nueva frase
+- Chain – reinicia LFO, syncLFO y slowLFO al entrar en una nueva cadena
 - Hold – para después de 1 ciclo y mantiene el último valor
 - Once – para después de 1 ciclo y vuelve a cero
 
@@ -918,17 +971,15 @@ La pantalla de navegación mantiene visible la columna completa F–M–I–P en
 | Saturation | Drive, Tone, Level, Mix |
 | Bitcrusher | Bit depth, Rate reduction, Tone, Mix |
 | Destruction | Mode, Amount, Tone, Mix |
-| Parametric EQ | Low gain, Low frequency, Mid gain, Mid frequency, High gain, High frequency |
+| FORMANT | Mode, Vowel, First formant, Second formant, Resonance, Mix |
 | Trance Gate | Pattern, Rate, Length, Gate, Phase, Mode, Smooth, Mix |
 | Beads (Mutable Instruments) | Time, Size, Density, Pitch, Scatter, Feedback, Shape/Freeze, Mix |
 
-Los controles continuos usan 00–FF, incluyendo cero válido y máximo FF. Los controles bipolares tienen un neutral exacto en 80. Los modos de Distortion son 00 Density, 01 Drive, 02 Spiral, 03 Mojo, 04 Dyno. Las ratios del Compressor 00–07 son 1.5, 2, 3, 4, 6, 8, 16, 20:1; las fuentes del detector 00–02 son entrada estéreo, izquierda, derecha. El filtro del detector en 80 es neutral; por debajo es low-pass y por encima high-pass. No se proporciona sidechain externo/cruzado. Cualquier slot puede contener cualquier módulo; módulos repetidos son independientes. Chorus y Phaser comienzan con modulación audible pero controlada. Reduce Mix, Depth o Feedback para un efecto casi transparente; Depth, Feedback y Mix altos son intencionadamente extremos. Flanger y Rotary usan modulaciones suaves por defecto. La velocidad de Rotary usa el rango completo **00-FF**: **00 = 0.01 Hz** (una rotación cada 100 segundos), **FF = 25 Hz** (el máximo anterior de Chaos). La escala exponencial aporta control fino sobre movimientos LFO lentos. Nuevos insertos Rotary inician en **8F**, alrededor de 0.8 Hz. Esto reemplaza los cuatro valores discretos de velocidad; las configuraciones antiguas y automatización F11/F21 requieren reajuste (Slow/Fast/Hyper/Chaos antiguos corresponden aproximadamente a **8F/CB/E7/FF**). Otros parámetros sin cambios. Bitcrusher varía profundidad de bits entre 4 y 16 y reducción de tasa de 1x a 32x. Modos de Destruction: Fold, Clip y Crush. Saturation y distortion incluyen controles de nivel o mezcla para balancear con la señal cruda.
-
-Parametric EQ tiene estantes de ±24 dB en 60–500 Hz y 2–14 kHz, más un campana fija Q=0.9 en 250 Hz–5 kHz. Sus controles de ganancia son neutrales en 80; con los tres neutrales actúa como bypass exacto. EQ activo usa knee suave transparente sobre el full scale y llega a máximo 1.5 para contener boosts extremos.
+Los controles continuos usan 00–FF, salvo FORMANT VOW (00–7F). Los controles bipolares tienen un neutral exacto en 80. Los modos de Distortion son 00 Density, 01 Drive, 02 Spiral, 03 Mojo, 04 Dyno. Las ratios del Compressor 00–07 son 1.5, 2, 3, 4, 6, 8, 16, 20:1. Compressor Detect 00–02 escucha su propia entrada estéreo, izquierda o derecha; 03–0A escucha en cambio las pistas 1–8. El filtro del detector en 80 es neutral; por debajo es low-pass y por encima high-pass. Una fuente de pista se toma tras su volumen, pan y Tilt EQ pero antes de sus inserts; una fuente silenciada o ausente aporta silencio. Cualquier slot puede contener cualquier módulo; módulos repetidos son independientes. Chorus y Phaser comienzan con modulación audible pero controlada. Reduce Mix, Depth o Feedback para un efecto casi transparente; Depth, Feedback y Mix altos son intencionadamente extremos. Flanger y Rotary usan modulaciones suaves por defecto. La velocidad de Rotary usa el rango completo **00-FF**: **00 = 0.01 Hz** (una rotación cada 100 segundos), **FF = 25 Hz** (el máximo anterior de Chaos). La escala exponencial aporta control fino sobre movimientos LFO lentos. Nuevos insertos Rotary inician en **8F**, alrededor de 0.8 Hz. Esto reemplaza los cuatro valores discretos de velocidad; las configuraciones antiguas y automatización F11/F21 requieren reajuste (Slow/Fast/Hyper/Chaos antiguos corresponden aproximadamente a **8F/CB/E7/FF**). Otros parámetros sin cambios. Bitcrusher varía profundidad de bits entre 4 y 16 y reducción de tasa de 1x a 32x. Modos de Destruction: Fold, Clip y Crush. Saturation y distortion incluyen controles de nivel o mezcla para balancear con la señal cruda.
 
 Trance Gate es un secuenciador de amplitud sincronizado a tempo para pads, leads y stabs. Valores de Pattern 00–3F seleccionan motivos musicales nombrados; 00–1F son grooves básicos y 20–3F variaciones experimentales. Rate ofrece valores rectos, en tripletes y punteados de 1/2 hasta 1/32. Length trunca el motivo de 16 pasos rotado independientemente a 1–16 pasos. Cada note-on en pista reinicia la secuencia; note-off la deja correr en release. Forward, Reverse y Ping-Pong definen la dirección; Chaos usa mutación repetible que preserva densidad cada cuatro loops. En inserto master sigue el tiempo de transporte sin retriggers de nota. Gate ajusta la anchura de cada paso abierto, Smooth redondea bordes conservando un fade mínimo sin clics, y Mix crossfadea entre audio seco y gateado.
 
-**Beads** usa el DSP granular original de Mutable Instruments como inserto estéreo. Elige Beads en slot de pista o master. Sus ocho controles usan comandos existentes F11–F18 / F21–F28 y destinos MOD de insert; no se requieren nuevos FX ID ni formatos de proyecto. Los granos corren continuamente sin eventos adicionales.
+**Beads** usa el DSP granular original de Mutable Instruments como inserto estéreo. Elige Beads en un slot de pista. Sus ocho controles usan comandos existentes F11–F18 / F21–F28 y destinos MOD de insert; no se requieren nuevos FX ID ni formatos de proyecto. Los granos corren continuamente sin eventos adicionales.
 
 - **Time:** posición en el buffer de grabación de cuatro segundos.
 - **Size:** granos largos reversos en 00, granos más cortos alrededor de 55, luego granos progresivamente más largos hacia adelante. FF activa el modo delay original tras la transición.
@@ -940,6 +991,18 @@ Trance Gate es un secuenciador de amplitud sincronizado a tempo para pads, leads
 - **Mix:** 00 es seco exacto, FF totalmente procesado. Cambios suavizados.
 
 Freeze mantiene el audio capturado por el efecto; cambiar de módulo o resetear Beads lo limpia. Los envíos de reverb de pista siguen disponibles.
+
+### Hacer que un kick bombee la mezcla u otra pista
+
+Para un master que bombee, pon el kick en la pista 1, selecciona Compressor en MASTER FX, fija Detect en 03 (Track 1), Ratio en 04 (6:1), Attack hacia 60 (unos 1,6 ms), Release hacia C0 (unos 115 ms), Makeup en 00 y Mix en FF. Baja Threshold hasta que los demás sonidos se hundan con cada kick y ajusta después Release para que se recuperen antes del siguiente. El sonido directo del kick conserva sus propios inserts de pista pero esquiva los dos slots de insert master; sus retornos de reverb y delay bombean igualmente.
+
+Para bajar solo un bajo, pad o sintetizador, pon su Compressor en esa pista y selecciona la pista del kick con Detect. El kick de origen sigue audible y su volumen no cambia por el compresor de esa pista. Un kick y un bajo combinados en la misma pista no se pueden separar con este enrutamiento.
+
+### FORMANT
+
+Selecciona **FORMANT** en TF1 o TF2 para moldear un sonido en tonos de tipo vocal. Funciona mejor con una fuente sostenida y rica en armónicos, como una onda de sierra.
+
+Pon **MODE** en `00` VOW y usa **VOW** para barrer de A (`00`) a U (`7F`) pasando por E, I y O. Pon MODE en `01` CUSTOM para afinar tú mismo **F1** y **F2**. **RES** estrecha o ensancha el carácter vocal; **MIX** mezcla el efecto con la señal original. Usa MOD → INSERT FX para mover los controles activos. MODE no es un destino MOD.
 
 ### Lane FX para Inserts
 
@@ -1041,6 +1104,7 @@ Los FX de pista fuerzan valores de secuenciador o motor sonoro en pasos individu
 | `SNG` | signed `XX` | Mueve la reproducción `XX` filas de canción. |
 | `PRO` | `00-64` | Evalúa una probabilidad absoluta de activación de `0%` a `100%`. |
 | `MOD` | `AB` | Activa en paso `A` de un ciclo de `B` pasos. |
+| `RNN` | `MX` | Toca una nota aleatoria. `M` elige el modo: `0` siempre aleatorio, `1` aleatorio por PLAY, `2` elige y mantiene hasta que cambie el valor. `X` elige el rango: `0` cualquier nota, `1` +3 st, `2` +6 st, `3` +12 st, `4` -3 st, `5` -6 st, `6` -12 st, `7` +/-3 st, `8` +/-6 st, `9` +/-12 st. Las elecciones aleatorias siguen la escala del proyecto cuando el motor de escala se aplica a la pista. |
 | `SPD` | signed `XX` | Selecciona una razón de reloj persistente por track; ver la tabla de velocidades abajo. |
 | `SLE` | `00-FF` ticks | Define tiempo de glide persistente por track para FX continuos del engine. `00` es inmediato. Se reinicia a `00` al parar la reproducción. |
 
@@ -1124,7 +1188,8 @@ El valor se interpreta como un cambio relativo con signo de 8 bits (`01` suma `1
 | ADSR | Ataque | Decay | Sustain | Release | Sin usar |
 | AHD | Ataque | Hold | Decay | Sin usar | Sin usar |
 | LFO | Forma | Modo de activación | Periodo | Sin usar | Índice AY wavetable |
-| SLFO | Forma | Modo de activación | Ticks | Multiplicador | Índice AY wavetable |
+| syncLFO | Forma | Modo de activación | Ticks | Multiplicador | Índice AY wavetable |
+| slowLFO | Forma | Modo de activación | Paso de periodo (00–FF) | - | Índice AY wavetable |
 | FLFO | Forma | Modo de activación | Frecuencia (`1 Hz` a `20 kHz`) | Sin usar | Índice AY wavetable |
 
 ### FX Braids
@@ -1199,6 +1264,7 @@ El valor se interpreta como un cambio relativo con signo de 8 bits (`01` suma `1
 | `SCF` | `00-FF` | Corte exponencial, `20 Hz` a `20 kHz` |
 | `SRS` | `00-FF` | Resonancia filtro exponencial |
 | `SSP` | `00-FF` | Velocidad del sample, mapeada de `0%` a `500%` |
+| `RNS` | `M0` | Toca un slice aleatorio de un sample cortado en lugar del asignado a la nota. `M` elige el modo: `0` siempre aleatorio, `1` aleatorio por PLAY, `2` elige y mantiene hasta que cambie el valor. Requiere el modo slice activado en el instrumento; el nibble bajo no se usa. |
 
 ### FX AY compartidos por instrumentos AY
 
@@ -1268,11 +1334,9 @@ El Mixer es la pantalla principal más a la izquierda. Muestra la carga de CPU y
 
 El mixer es por pista, no por instrumento. Si una pista cambia de instrumento, su nivel, PAN, Tilt y envíos permanecen atados a la pista. Los instrumentos además tienen su propio **Vol** y **Pan** `00-FF` en la fila superior de la pantalla Instrument. El PAN del instrumento se aplica primero, luego el PAN de pista. Ambos preservan una imagen estéreo en el centro; atenuando progresivamente el lado opuesto al moverlos.
 
-### Master FX
+### Auto Mix
 
-La entrada **MASTER FX** abre un submenú Insert FX con dos ranuras para la mezcla completa. Sus efectos corren después de las devoluciones de reverb y delay, antes del volumen master. Selecciona un módulo, edita sus parámetros o desactívalo igual que en un insert de pista; presiona **OPT** para volver al Mixer. Los ajustes Master FX se guardan con el proyecto y no se automatizan por frase, tabla o modulación.
-
-Los efectos en esta categoría son los mismos que en la pantalla Insert FX.
+El Mixer contiene un botón **AUTO MIX**. Renderiza `6 segundos` sin conexión, equilibra el volumen de las pistas, compara después 8 bandas de octava con un perfil de ruido rosa y baja suavemente las pistas que saturan esas bandas. Propone cambios de nivel prudentes, deja algo de margen de pico e inicia una vista previa temporal. **Apply** conserva los niveles propuestos, mientras que **Cancel** restaura los 8 niveles anteriores. Es un buen punto de partida, pero probablemente querrás retocar el resultado.
 
 ### Reverberación
 
@@ -1333,11 +1397,41 @@ En escritorio, key jazz permite escribir archivo, título y autor directamente c
 La pantalla Scale controla el motor global de escala 12-TET. La fila **Mode** selecciona entre dos modos:- **Cuantizador** (por defecto): la entrada de frases permanece cromática; cuando está activado, las notas se redondean hacia abajo justo antes de llegar al motor de sonido, así cambiar la raíz o la escala reharmoniza la canción sin editar sus frases.
 - **Bloqueo de nota**: las notas introducidas en las frases se ajustan a la nota más cercana de la escala a medida que se ingresan, así solo se pueden escribir notas de la escala. Las entradas nuevas y las disminuciones se ajustan hacia abajo; `EDIT + RIGHT` / `EDIT + UP` suben la nota a la siguiente nota de la escala arriba. La entrada siempre sigue la escala del proyecto en esta pantalla: cambiar la raíz o la escala afecta inmediatamente las notas recién ingresadas en las pistas habilitadas, mientras que las notas ya almacenadas permanecen sin tocar. El FX `SCL` no está disponible en este modo y cualquier `SCL` ya escrito se ignora. La cuantización en reproducción de notas simples se omite (la entrada ya está bloqueada); la cuantización de acordes vía `CRD` sigue aplicándose.
 
-#TODO: explicar tempo, sincronización MIDI y link
+- **Clock source** elige entre **Internal** (el tempo propio del proyecto), **Midi Clock** (el secuenciador sigue un reloj MIDI entrante) y **Ableton Link** (el secuenciador sigue el tempo de una sesión Link en la red local). Con **Midi Clock**, la fila **Tempo** aparece atenuada y muestra el tempo medido del reloj entrante; el transporte (play/stop) lo controlan los mensajes Start/Continue/Stop del emisor, así que el control PLAY de la app no hace falta. Con **Ableton Link**, la fila pasa a ser la fila **Link**: contiene el interruptor de conexión/desconexión de la sesión en lugar de un campo de tempo (ver abajo). La fuente de reloj se guarda en settings.txt y se aplica a todos los proyectos.
+- **Tempo** fija el tempo del proyecto en BPM enteros (`3-500`). Internamente el tracker sigue guardando su tick rate en Hz (`tick rate = BPM x 0,4`), por lo que los proyectos existentes se cargan y guardan sin cambios; un proyecto con tempo fraccionario lo muestra redondeado y se ajusta a un BPM entero en la primera edición del tempo. El ajuste grueso avanza de 5 en 5 BPM, el fino de 1 en 1; borrar restablece el valor por defecto de 125 BPM.
 
 ChooChooTracker guarda proyectos en `.cct`. Este es un formato propietario fácil de leer incluso por un humano.
 
 Usa **Save** antes de cambiar tipos de instrumento o cargar otro proyecto.
+
+### Ableton Link
+
+Ableton Link permite que ChooChooTracker siga el tempo de otras apps compatibles con Link (Ableton Live, LinkHut, etc.) en la misma red local (Wi-Fi o Ethernet). Es solo un receptor: el tracker ajusta su propio tempo a la sesión y nunca envía tempo ni transporte a otros participantes.
+
+**Qué se sincroniza:**
+
+- Tempo de sesión - el tracker sigue continuamente el tempo de la sesión Link (dentro del rango de 3-500 BPM del tracker).
+- Fase del beat - pulsar PLAY alinea la reproducción con la rejilla de beats de la sesión: la canción empieza en el siguiente compás (quantum de 4 beats).
+
+**Qué no se sincroniza:**
+
+Durante la reproducción con Link, ChooChooTracker comprueba la fase de beat compartida una vez por compás 4/4 y ajusta suavemente su propio tick rate cuando hace falta. Esto compensa pequeñas diferencias de reloj entre dispositivos sin saltar ni repetir ticks del tracker, y nunca cambia la sesión Link de otro participante.
+
+- Los grooves y los valores `SPD` y `DELAY` no se ven afectados - siguen siendo relativos al tempo seguido.
+- Las posiciones del cursor en song/chain/phrase y los ajustes del mixer nunca se comparten.
+
+**Cómo usarlo:**
+
+1. Abre la pantalla Project y pon **Clock source** en **Ableton Link**. La fila de debajo pasa a ser la fila **Link**.
+2. Pulsa EDIT en **[Connect]** para unirte a la sesión. El mensaje de estado a la derecha muestra el progreso: `Wait...` al conectar, `No net` si no hay red, `No sess` si no se encuentra sesión, `Err` ante un fallo interno. Mientras estás conectado, el botón muestra **[Disconnect]** y el estado alterna aproximadamente cada segundo entre `connected` y `Peers: N` (N = número de peers).
+3. Espera a `connected` y pulsa PLAY - la reproducción empieza alineada con el siguiente compás de la sesión.
+4. Pulsa EDIT en **[Disconnect]** (o vuelve a poner la fuente de reloj en Internal) para salir de la sesión.
+
+En modo Link la sesión es dueña del tempo: la fila no muestra campo de BPM y el tempo de la sesión se aplica automáticamente al proyecto (dentro del rango de 3-500 BPM del tracker).
+
+**Disponibilidad por plataforma:** PortMaster (objetivo principal), Windows, Linux, macOS y Android son compatibles. La versión Web y las de Miyoo no incluyen Link.
+
+**Nota PortMaster:** en dispositivos PortMaster el buffer de audio es mayor (512 frames a 48 kHz), por lo que la alineación de beat es aproximada, dentro de unos 10-15 ms, y no exacta al sample. La sincronización del tempo en sí no se ve afectada.
 
 ## 13. Configuración
 
@@ -1350,6 +1444,8 @@ Usa Settings para preferencias que permanecen con la aplicación, no con el proy
 - **Asignación de teclas** asigna controles de teclado o controlador. Elige un comando, presiona su nuevo control y luego selecciona **Done** para guardar la asignación.
 
 ### Audio
+
+**Sample rate** ofrece `32 kHz` o `48 kHz` (por defecto). Los cambios se aplican de inmediato y se guardan. Cambiar la frecuencia de muestreo detiene la reproducción y la vista previa de samples mientras los motores de sonido y cualquier entrada de audio armada se reabren a la nueva frecuencia. Si un dispositivo rechaza la nueva frecuencia, el ajuste anterior sigue activo. `32 kHz` reduce el trabajo de procesado y limita la frecuencia reproducida más alta a 16 kHz. El indicador de carga de CPU muestra el coste del renderizado de audio.
 
 **Buffer size** equilibra rapidez con estabilidad. Usa un valor menor para tocar en vivo con menos latencia; súbelo si el audio cruje o la CPU está siempre alta. Los valores disponibles son `32`, `64`, `128`, `256`, `512` y `1024` muestras. La lectura de CPU ayuda a elegir un ajuste estable.
 
@@ -1373,7 +1469,7 @@ Elige dispositivos de entrada y salida, asigna canales MIDI entrantes a instrume
 - **Forma de onda de la canción** muestra u oculta la forma de onda del mix en la página Song; ver [Forma de onda de la canción](#song-waveform).
 - **Visuales de pista** elige para cada pista entre **Detailed** (forma de onda del instrumento y superposiciones) o **Audio waveform** (audio resultante de la pista). Usa **All detailed** o **All audio** para cambiar todas las pistas a la vez.
 - **Waveform FPS** ajusta la frecuencia de refresco del osciloscopio del instrumento y visualizadores del mixer, de 1 a 60 cuadros por segundo. Bájalos si quieres visualización más suave o más espacio de CPU.
-- **Renderer** indica si la aplicación usa renderizado `GPU` o `Software`. **Boot screen** selecciona la pantalla de título `Original` o `Night`.
+- **Renderer** indica si la aplicación usa renderizado `GPU` o `Software`.
 
 ### Informe de soporte y salir
 
@@ -1408,8 +1504,9 @@ Settings > **MIDI** abre este submenú: **MIDI In** / **MIDI Out** selecciona un
 - **Previsualización de sonido desde un teclado MIDI**: con un dispositivo MIDI In seleccionado, tocar notas en el teclado conectado reproduce un instrumento en cualquier pantalla, igual que el atajo en pantalla **EDIT + PLAY** en la pantalla [Instrument](#5-instruments). Es solo una previsualización, no entra notas en la canción.
 - **Mapeo de canales**: abre la lista de los 16 canales MIDI; asigna a cada uno un instrumento (`OFF` por defecto) para que las notas recibidas en ese canal previsualicen ese instrumento sin importar cuál esté seleccionado en la pantalla Instrument - por ejemplo canal `01` -> instrumento `05`. Un canal con `OFF` usa el instrumento actualmente seleccionado, comportamiento original. El mapeo se guarda en settings.txt.
 - **Mapeo MIDI CC**: asigna un controlador entrante a un parámetro de instrumento, incluyendo su **Volume**, o a controles globales. Las filas globales muestran `TRK 1`-`TRK 8` en lugar de instrumento y ofrecen **Mute**, **Solo**, **Volume**, **Reverb send** y **Delay send** por pista; **Song play/stop** no tiene destino. Un mapeo nuevo ignora el CC que lo aprendió/configuró y entra en efecto en el próximo movimiento físico, por lo que mapear mientras se reproduce no resetea parches a cero. Mute y solo usan `0-63` = apagado, `64-127` = encendido.
+- **Sincronización por reloj MIDI**: con un dispositivo MIDI In seleccionado, pon **Clock source** de la pantalla Project en **Midi Clock** para seguir a un secuenciador externo. El tracker mide el tempo del reloj entrante (24 pulsos por negra) y lo muestra en la fila **Tempo** atenuada; los mensajes **Start**, **Continue** y **Stop** controlan la reproducción. La fuente de reloj se recuerda en settings.txt.
 - **Controlar un dispositivo MIDI externo**: asigna a una pista el tipo de instrumento [MIDI Out](#midi-out) y fija su Canal; tocar notas en esa pista enviará MIDI real al dispositivo MIDI Out seleccionado en lugar de reproducir sonido en ChooChooTracker.
 
 ## 16. Créditos y licencias
 
-ChooChooTracker es un fork de ChipNomad y mantiene su licencia MIT. Braids, Plaits, Plaits-Alt, Clouds DSP, MME DSP basado en Warps y código stmlib derivan de liberaciones open-source de Mutable Instruments bajo sus respectivos avisos MIT. Plaits-Alt proviene del fork lylepmills/eurorack Plaits Lab; aplican sus avisos de fuente retenidos. El motor aChChid usa Open303 de Robin Schmidt, copyright 2009, bajo Licencia MIT. Bogie y Sintered son implementaciones nativas originales. El I/O MIDI usa RtMidi de Gary P. Scavone, con licencia estilo MIT. Consulta los archivos de licencia incluidos para atribución exacta. Ableton Link se proporciona bajo un acuerdo especial de licencia de Ableton, no está bajo licencia MIT, y nuestra licencia no se extiende a tus forks ni a otros proyectos fuera de ChooChooTracker.
+ChooChooTracker es un fork de ChipNomad y mantiene su licencia MIT. Braids, Plaits, Plaits-Alt, Clouds DSP, MME DSP basado en Warps y código stmlib derivan de liberaciones open-source de Mutable Instruments bajo sus respectivos avisos MIT. Plaits-Alt proviene del fork lylepmills/eurorack Plaits Lab; aplican sus avisos de fuente retenidos. El motor aChChid usa Open303 de Robin Schmidt, copyright 2009, bajo Licencia MIT. MonkSynth usa el DSP nativo de JonET bajo Licencia MIT; véase `LICENSE.monksynth.txt`. Bogie y Sintered son implementaciones nativas originales. El I/O MIDI usa RtMidi de Gary P. Scavone, con licencia estilo MIT. Consulta los archivos de licencia incluidos para atribución exacta. Ableton Link se proporciona bajo un acuerdo especial de licencia de Ableton, no está bajo licencia MIT, y nuestra licencia no se extiende a tus forks ni a otros proyectos fuera de ChooChooTracker.

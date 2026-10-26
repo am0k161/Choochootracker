@@ -140,7 +140,8 @@ static void audioCallback(int16_t* buffer, int stereoSamples) {
   // A short render is normal when a song ends. Preserve its valid prefix;
   // pre-clear also makes an early render failure safe without stale samples.
   memset(floatBuffer, 0, stereoSamples * 2 * sizeof(*floatBuffer));
-  chipnomadRender(chipnomadState, floatBuffer, stereoSamples);
+  audioInputManager.readLiveInput(samplePreviewBuffer, stereoSamples);
+  chipnomadRender(chipnomadState, floatBuffer, stereoSamples, samplePreviewBuffer);
   renderPreview(samplePreviewBuffer, stereoSamples);
   for (int i = 0; i < stereoSamples * 2; ++i) floatBuffer[i] += samplePreviewBuffer[i];
 
@@ -296,6 +297,23 @@ static int restart(void) {
   return 0;
 }
 
+static int refreshDevices(void) {
+  if (!floatBuffer || !samplePreviewBuffer) return 1;
+  audioPause(1);
+  audioCleanup();
+  if (audioInputRefreshDevices()) return 1;
+  if (audioSetup(audioCallback, aSampleRate, aBufferSize)) {
+    if (!appSettings.audioOutputDeviceName[0]) return 1;
+    audioOutputSelect("");
+    if (audioSetup(audioCallback, aSampleRate, aBufferSize)) return 1;
+    appSettings.audioOutputDeviceName[0] = 0;
+    settingsSave();
+  }
+  linkClientResetHostTimeFilter(chipnomadState->linkClient);
+  audioPause(0);
+  return 0;
+}
+
 static void replaceProject(Project* replacement) {
   if (!replacement || !chipnomadState) return;
   pause();
@@ -312,6 +330,16 @@ static void reinitializeChips(void) {
   pause();
   chipnomadInitChips(chipnomadState, aSampleRate, NULL);
   resume();
+}
+
+static void ensureInstrumentVoices(InstrumentType type) {
+  PreparedInstrumentVoices* prepared = chipnomadPrepareInstrumentVoices(chipnomadState, type);
+  if (!prepared) return;
+  // Voice construction is finished. Only pointer publication needs the lock.
+  // ponytail: keep old pools for reuse; a full project reinit releases unused ones.
+  audioLock();
+  chipnomadInstallInstrumentVoices(chipnomadState, prepared);
+  audioUnlock();
 }
 
 static int mutateProject(ProjectMutation* mutation, void* userdata) {
@@ -495,10 +523,12 @@ struct AudioManager audioManager = {
   .start = start,
   .reconfigure = reconfigure,
   .restart = restart,
+  .refreshDevices = refreshDevices,
   .pause = pause,
   .resume = resume,
   .replaceProject = replaceProject,
   .reinitializeChips = reinitializeChips,
+  .ensureInstrumentVoices = ensureInstrumentVoices,
   .mutateProject = mutateProject,
   .stop = stop,
   .toggleTrackMute = toggleTrackMute,

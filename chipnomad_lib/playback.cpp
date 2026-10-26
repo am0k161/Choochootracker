@@ -326,7 +326,8 @@ void handleNoteOff(PlaybackState* state, int trackIdx) {
 
   int isModernVoice = instType == InstrumentType::Braids ||
     instType == InstrumentType::SoundFont || instType == InstrumentType::Plaits || instType == InstrumentType::PlaitsAlt || instType == InstrumentType::Sample ||
-    instType == InstrumentType::DrumSynth || instType == InstrumentType::MME || instType == InstrumentType::Sintered;
+    instType == InstrumentType::DrumSynth || instType == InstrumentType::MME || instType == InstrumentType::Sintered ||
+    instType == InstrumentType::AudioIn;
 
   int hasVolumeADSR = 0;
 
@@ -1124,6 +1125,7 @@ static void handleInstrument(PlaybackState* state, int trackIdx) {
   case InstrumentType::DrumSynth:
   case InstrumentType::MME:
   case InstrumentType::Sintered:
+  case InstrumentType::AudioIn:
     break;
   case InstrumentType::none:
     break;
@@ -1587,7 +1589,7 @@ float playbackVolumeGain(const PlaybackState* state, const PlaybackTrackState* t
   for (const PlaybackTableState* table : tables) {
     if (table->tableIdx == EMPTY_VALUE_8) continue;
     uint8_t volume = state->p->tables[table->tableIdx].rows[table->rows[0]].volume;
-    if (volume != EMPTY_VALUE_8) gain *= volume / 15.0f;
+    if (volume != EMPTY_VALUE_8) gain *= volume / (float)PHRASE_VOLUME_MAX;
   }
   return gain;
 }

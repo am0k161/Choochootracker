@@ -46,7 +46,7 @@ static int editingStringLength = 0;
 // to a whole BPM on the first tempo edit; untouched projects save unchanged.
 static uint16_t bpmValue = 125;
 // Mirror of appSettings.clockSource for the Clock source row.
-// 0 = Internal, 1 = Midi Clock, 2 = Ableton Link (future).
+// 0 = Internal, 1 = Midi Clock, 2 = Ableton Link.
 static uint8_t clockSourceMirror = 0;
 
 // Whole-BPM range: tickRate 1-200 Hz maps to 2.5-500 BPM, so whole numbers
@@ -219,6 +219,8 @@ static void onProjectSaved(const char* folderPath) {
     // to match the name the project was just saved with
     exportSyncFolderWithProjectName();
     settingsSave();
+  } else {
+    screenMessage(MESSAGE_TIME_ERROR, "%s", projectFileError);
   }
   screenSetup(&screenProject, 0);
 }
@@ -269,36 +271,8 @@ static void cancelConfirm(void) {
 static void drawRowHeader(int row, CellState state);
 static void drawColHeader(int col, CellState state);
 
-static ScreenData screenProjectCommon = {
-  .rows = SCR_PROJECT_ROWS,
-  .cursorRow = 0,
-  .cursorCol = 0,
-  .topRow = 0,
-  .selectMode = -1,
-  .selectStartRow = 0,
-  .selectStartCol = 0,
-  .selectAnchorRow = 0,
-  .selectAnchorCol = 0,
-  .playbackLevel = ScreenPlaybackLevel::none,
-  .getColumnCount = projectCommonColumnCount,
-  .drawStatic = projectCommonDrawStatic,
-  .drawCursor = projectCommonDrawCursor,
-  .drawSelection = NULL,
-  .drawRowHeader = drawRowHeader,
-  .drawColHeader = drawColHeader,
-  .drawField = projectCommonDrawField,
-  .onEdit = projectCommonOnEdit,
-  .onInput = NULL,
-  .onRawInput = NULL,
-  .isCellValid = NULL,
-  .getLoopRange = NULL,
-};
-
 static ScreenData* projectScreen(void) {
-  ScreenData* data = &screenProjectCommon;
-  if (chipnomadState->project.chipType == ChipType::AY) {
-    data = &screenProjectAY;
-  }
+  ScreenData* data = &screenProjectExtra;
   data->drawRowHeader = drawRowHeader;
   data->drawColHeader = drawColHeader;
 

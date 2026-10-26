@@ -20,7 +20,8 @@ void DrumSynthVoice::configure(const InstrumentDrumSynth* instrument, float pitc
   post_.setGain(gain);
   if (!instrument_) return;
   post_.setFilter(instrument_->filterEnabled != 0, instrument_->filterCharacter,
-    instrument_->filterMode, instrument_->filterSlope24dB != 0, cutoffHz, resonance / 255.0f);
+    instrument_->filterMode, instrument_->filterSlope24dB != 0, cutoffHz, resonance / 255.0f,
+    instrument_->filterColor);
 }
 
 void DrumSynthVoice::noteOn() {

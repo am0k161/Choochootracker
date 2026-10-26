@@ -77,7 +77,7 @@ TEST_CASE("Lane FX popup keeps every existing engine and insert command visible"
       }
     }
   }
-  CHECK(engines == 27);
+  CHECK(engines == int(InstrumentType::totalCount) - 3);
 }
 
 TEST_CASE("Lane FX group spacing stays compact when switching help types") {

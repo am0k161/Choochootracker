@@ -14,6 +14,7 @@ Het volgt de klassieke LSDj workflow en navigatiesysteem, met diverse sound desi
 - PCM-samples, single-cycle waveforms en wavetable-oscillatoren, met een multimode filter
 - aChChid, een veelzijdige acid synth gebaseerd op Open303
 - Bogie, een native 12-model drum synthesizer met een multimode filter
+- MonkSynth, een vocale synthesizer met tienstemmige unison en stereo delay
 - MME, een twee-oscillator multi-modulatie synthesizer met een multimode filter
 - Sintered, een native zes-model experimentele digitale drum synthesizer
 
@@ -26,6 +27,12 @@ Installeer `choochootracker.zip` via PortMaster, of kopieer het uitgepakte pakke
 ### Miyoo Mini / Mini Plus (Onion OS)
 
 Pak het MiyooPorts-archief uit in de root van de SD-kaart zodat de `Roms/PORTS/` mappen samenvloeien met de bestaande Onion-mappen. Start **ChooChooTracker** vanuit het Ports-menu na het verversen van de collectie. Maak een back-up van de app-map `projects/` voordat je een bestaande installatie vervangt.
+
+De laadtijd van een project kan variëren afhankelijk van de instrumenttypes die in de song worden gebruikt. Als opstarten of laden van een project ongewoon traag lijkt, geef dan aan hoe lang elk duurt, samen met het consolemodel en de Onion OS-versie.
+
+### Raspberry Pi OS 64-bit
+
+Pak het Raspberry Pi AArch64-archief uit, installeer de SDL2-runtime (`sudo apt install libsdl2-2.0-0`) en voer `./chipnomad.sh` uit vanuit de uitgepakte map. Houd de meegeleverde instrumenten en overige bestanden naast het uitvoerbare bestand.
 
 ### Windows
 
@@ -40,8 +47,6 @@ Je kunt Choochootracker online gebruiken op https://choochootracker.vercel.app/ 
 Je bestuurt deze versie met het toetsenbord, het on-screen keyboard op mobiele apparaten, of je gamepad.
 
 Opgeslagen instellingen, samples, thema’s, projecten etc. worden in de browseropslag bewaard.
-
-Na schermvergrendeling of app-switch, tik op een bedieningsknop om indien nodig audio te herstellen. **Restart audio** opent de output opnieuw zonder het project te sluiten. **Reload app** slaat het huidige werk op in **Continue**, bewaart instellingen, en laadt opnieuw.
 
 Gebruik **Download .cct** om je projecten te exporteren.
 
@@ -78,7 +83,7 @@ ChooChooTracker werkt het best met een gamepad met een D-pad, 2 analoge sticks e
 | **MOTION RECORD** | L2 | W |
 | **MOTION ERASE** | R2 | E |
 
-Toewijzingen kunnen worden aangepast in **Settings > Key mapping**. Sla een aangepaste mapping op met **Done**, laat dan de knop los voordat je verdergaat in Settings.
+Toewijzingen kunnen worden aangepast in **Settings > Controls > Key mapping**, ook op Android met een externe gamepad. Sla op PortMaster een aangepaste mapping op met **Done**, laat dan de knop los voordat je verdergaat in Settings.
 
 ### Navigatie
 
@@ -196,6 +201,8 @@ Selecteer één Song-rij over meerdere kolommen om die tracks tegelijk te starte
 - **OPT + PLAY**: solo de huidige track of geselecteerde kolommen (laat eerst **OPT** los om solo te behouden)
 - **OPT + [LEFT/RIGHT]**: solo alle tracks links of rechts van de huidige track
 - Selecteer een bereik en dubbelklik op **EDIT**: open het BOUNCE TO SAMPLE scherm (zie Bounce onder Song)
+
+Playback stoppen en mute of solo wijzigen gebruiken een korte output-correctie van 3 ms om klikken te verminderen. Dit geldt ook voor het opheffen van mute en het verwijderen van solo's tijdens playback.
 
 ### Chain
 
@@ -453,6 +460,16 @@ Het oudere bericht **“Custom bank modulation ignored”** beschrijft een contr
 Voor het kiezen van een bibliotheek, begin met presets die vooral gebaseerd zijn op sample-mapping, loops en statische envelopes. Geluiden waarvan het karakter afhangt van controller articulaties, geanimeerde filters of geprogrammeerde LFO’s hebben een nader vergelijk nodig in een volledige SoundFont-speler. **Laadt en speelt** betekent niet **volledig reproduceert de preset**. Vergelijk nuttige noten en velocities evenals aangehouden noten en note OFF. Het veranderen van SF2 naar SF3 (of terug) verwijdert deze modulatiebehoeften niet automatisch. Een conversie moet de mappings en het gedrag vertalen naar functies die deze engine ondersteunt; het renderen van een effect in een sample behoudt alleen dat resultaat, niet de interactieve controllerrespons. Zie de [format coverage and limits](soundbanks/README.md#format-coverage) en [validatienotities](soundbanks/validation.md) vóór het kiezen of converteren van een bank. Deze limieten beschrijven de huidige experimentele implementatie, niet restricties inherent aan alle SoundFont-spelers.
 
 
+#### SoundFont-collecties doorbladeren
+
+In SAMPLE → SOUNDFONT opent **Preset** je collecties. **Right** of **EDIT/A** gaat direct een map in. In een eindcollectie gaat Right naar de presets; nog een Right springt 15 items verder zonder te laden. EDIT/A laadt de gemarkeerde preset. Left gaat terug naar de collecties en dan naar de bovenliggende map; OPT gaat ook terug. PLAY start/stopt de song tijdens het bladeren.
+
+Map- en geluidsiconen identificeren de items. Collecties gebruiken de volledige hoogte van het paneel. De geselecteerde preset blijft onder de acht trackpreviews staan; lange namen scrollen na een seconde stilstand op de selectie en resetten zodra je beweegt. EDIT+Left/Right op de instrumentpagina volgt dezelfde volgorde van geneste mappen, waarbij de geluiden van elke collectie bij elkaar blijven. EDIT+PLAY beluistert.
+
+De derde rij meldt Reading preset, Finding samples, Unzipping, Checking samples of Loading samples. EXS-instrumenten met lege of `(null)` ingebedde namen gebruiken hun bestandsnamen. De bronbanken en audio veranderen niet. Gebruik **Rescan** nadat je de bestanden van je bibliotheek hebt gewijzigd.
+
+Zie [formaatdekking en limieten](soundbanks/README.md#format-coverage) voor het ondersteunde samplergedrag en de sampleformaten.
+
 ### AY Classic, AY Plus en AY Sample
 
 Dit zijn de originele ChipNomad AY/YM-engines. AY Classic biedt hardware-achtige toon-, noise- en envelopbedieningselementen. AY Plus voegt software-oscillatoren en rijkere modulatie toe. AY Sample speelt een sample af via AY-stijl volumeregeling en is een apart instrumenttype dan de Sampler-engine.
@@ -590,6 +607,16 @@ Op het Modulatiescherm, druk **EDIT** op een bron om een familie te kiezen (Enve
 
 Motion is een interne macro envelope: waarden onder `80` gebruiken een AD vorm, `80` schakelt uit, en waarden boven `80` gebruiken een decay-only vorm. Verder van het midden maakt de envelope sneller. De bestemmingen zijn per model vast, dus Sintered blijft voorspelbaar in trackerpatronen: Knot animeert Mod/Fold; Shard Feedback/Bite; Burst Noise/Color/Feedback; Comb Damping/Regen; Logic Rate/Crush; Melt Chaos/Drive. Alle modellen resetten hun staat bij een noot-trigger en begrenzen interne feedback voor herhaalbare hits.
 
+### MonkSynth
+
+MonkSynth is een vocale synthesizer. Hij modelleert klinker, stemkarakter, ademruis, glide, vibrato, unison en delay vanaf de Instrument-pagina. EDIT opent alle regelaars en de patchnaam.
+
+Kies een bank en een preset op de VOICE-regelaars. ALL omvat FACTORY en USER; EDIT+PLAY beluistert de gemarkeerde preset, terwijl EDIT hem selecteert. Sla je eigen geluiden op in `instruments/USER/monk/`. Opgeslagen instrumenten en songs behouden hun MonkSynth-instellingen.
+
+Waarden zijn hexadecimaal `00..FF`, behalve Voices (`01..0A`, van één tot tien). Attack, decay en release beslaan 0..5 seconden; detune 0..50 cent en voice spread 0..0,5. Volume, Pitch en de zes hoofdregelaars van de stem zijn beschikbaar als modulatiebestemmingen en voor motion recording.
+
+Alle zestien regelaars staan samen in **MonkSynth FX**: `MWV` (klinker), `MIN` (stem), `MAM` (ademruis), `MFL` (glide), `MFB` (vibratodiepte), `MSH` (vibratosnelheid), `MUV` (stemmen), `MDT` (detune), `MVS` (spread), `MDM` (delay-mix), `MDR` (delaysnelheid), `MLV` (niveau) en `EAT`/`EDC`/`ESU`/`ERL` (ADSR). Deze betekenissen gelden wanneer MONK het actieve instrument is; de bestaande betekenissen van de MME-commando's veranderen niet. De gedeelde Trigger FX-groep behoudt TDC/TCL zonder dubbele envelope-items.
+
 ### MME
 
 **MME** (Multi Modulation Engine) is een tweedosillator synth gericht op interacties tussen oscillatoren. De modellen zijn `Ring`, `Fold`, `Cross`, `VPM`, `Sync`, `Logic` en `Vocode`. Beide oscillatoren zijn intern en volgen tracker-noten; `Interval` stelt hun relatie in.
@@ -707,6 +734,24 @@ Deze schone Sample engine speelt mono of stereo PCM samples geladen in RAM.- Tik
 - **Loop** kiest uit Off, Loop of Ping-Pong.
 - **Speed** regelt granulaire time-stretching van `0%` tot `500%` (`100%` is normaal).Niet-ondersteunde WAV-formaten tonen een foutmelding. Converteer ongebruikelijke bestanden naar `PCM8`, `PCM16` of `PCM24` WAV voordat je ze importeert.
 
+##### Audio-ingang
+
+Open **Settings → Audio → Audio Input** voordat je opneemt vanaf een microfoon of USB-audio-interface. De lijst toont de ingangen die op dat moment op het apparaat beschikbaar zijn. Als een gearmde interface wordt losgekoppeld, wordt de opname onderbroken en herstart de audiomanager zodat de app blijft werken. Als je aan het opnemen was, druk dan op **STOP** om de onderbroken take af te sluiten. Selecteer na het opnieuw aansluiten **[Refresh]** en controleer of de gewenste ingang gearmd is voordat je weer opneemt; alleen opnieuw aansluiten armt hem niet betrouwbaar. **[List]** leest de huidige ingangenlijst opnieuw in zonder de audio te herstarten.
+
+Vink het vakje **ARM** van een ingang aan om hem beschikbaar te maken voor de Sampler-recorder; de kleine meter toont het ingangsniveau. Arm één interface tegelijk: deze versie opent alleen de eerste gearmde interface, ook als meerdere vakjes zijn aangevinkt. Je selectie wordt onthouden op apparaatnaam, zodat een niet-beschikbare interface ongearmd blijft in plaats van door een andere ingang te worden vervangen. Druk op **OPT** om terug te keren naar de Audio-instellingen.
+
+##### Audio-ingang opnemen
+
+Op het Sample-instrumentscherm opent **REC** (of **EDIT/REC** wanneer een sample is geladen) de sample-editor, die opnemen en bewerken op één scherm samenbrengt. Arm eerst de ingangen op het scherm **Settings → Audio → Audio Input** (zie [Audio-ingang](#audio-ingang)). De bovenste rijen van de editor besturen het opnemen:
+
+- **Input** bladert door de opnamebron: `T1`..`T8` nemen de acht trackertracks op, gevolgd door de gearmde microfoon of USB-interface. Ga voor een externe bron voorbij `T8` tot de apparaatnaam verschijnt. `-` betekent dat er geen bron expliciet is gekozen; **REC** gebruikt dan de eerste gearmde ingang en toont de naam. Houd **EDIT** ingedrukt en druk op **LEFT**/**RIGHT** om terug/vooruit te gaan, of **EDIT+OPT** om terug te keren naar `-`. Tikken op Input gaat direct vooruit.
+- De niveaumeter naast **Input** toont het live niveau van de gearmde ingang (alleen externe bronnen). **MON** schakelt ingangsmonitoring in: de gearmde ingang gaat met -6 dB naar de uitgang om feedback te beperken. De instelling wordt in het instellingenbestand opgeslagen.
+- **REC** start het opnemen. Externe bronnen nemen direct op; een trackbron toont **ARMED** en de opname begint wanneer de playback start (druk op **PLAY**). **STOP** beëindigt de opname: de WAV wordt naar de exportmap van het project geschreven (`recNNN.wav`), in het huidige Sampler-instrument geladen en de Region wordt weer de volledige sample. Het scherm verlaten met **OPT** tijdens een lopende opname beëindigt die op dezelfde manier.
+- **PLAY** (getoond na een opname) beluistert de take; wordt **STOP** terwijl de preview speelt. **CLEAR** (ernaast) verwijdert het WAV-bestand en laadt de sample uit het instrument; na het wissen neemt **REC** zijn plaats weer in.
+- De golfvorm toont de live ingang tijdens het opnemen en de volledige golfvorm daarna. De statusregel toont de bestandsnaam tijdens het opnemen en het aantal frames erna; een externe take toont ook `drop 0` wanneer er geen audioframe verloren is gegaan. Een opgenomen sample is volledig bewerkbaar: loopregio, selectie, slicing, bewerking en opslaan werken als bij elk geladen bestand.
+
+Opnames worden geschreven met de geselecteerde audio-samplefrequentie, als 16-bit stereo WAV. Trackbronnen leggen vast wat de instrumenten van de track renderen (na FX); externe bronnen leggen de apparaatingang direct vast.
+
 #### 2xSCWF
 
 2xSCWF is een dual single-cycle golfvormoscillator. Laad 1 mono WAV met precies 1 periode in elke oscillator. Beide oscillatoren lezen vooruit en wikkelen aan het einde van hun cyclus.
@@ -764,9 +809,9 @@ DX7 heeft een limiet van **16 actieve noten door het hele nummer heen**, inclusi
 
 Genesis FM, Arcade FM, OPL2, OPL3, OPLL en VRC7 instrumenten hebben een **EDIT** knop rechts van Fine ct. Deze opent een tabel van de patch parameters:
 
-- Genesis FM / Arcade FM: algoritme, feedback, pan, AMS, PMS, operatormasker en LFO-instellingen, daarna MUL, DT, TL, KS, AR, D1R, D2R, RR en D1L voor de vier operators, plus SSG (Genesis) of DT2 en AM (Arcade).
-- OPL2 / OPL3: feedback, connectie en pan per stem, diepe vibrato en tremolo, daarna MUL, TL, AR, DR, SL, RR, golfvorm, KSL, VIB, TRM, SUS en KSR per operator. Op OPL3 kan hier de mode (2op, 4op, dual) worden aangepast.
-- OPLL / VRC7: de custom tone registers (feedback, MUL, TL, KSL, AR, DR, SL, RR, golfvormen, AM, VIB, EG, KSR). ROM presets bewerken zet ze in “Custom”.
+- Genesis FM / Arcade FM
+- OPL2 / OPL3: op OPL3 kan hier de modus (2op, 4op, dual) worden gewijzigd.
+- OPLL / VRC7: een ROM-preset bewerken maakt er een "Custom" van.
 
 Links/Rechts en de gebruikelijke bewerkingsknoppen wijzigen waarden; het instrument blijft spelen zodat je wijzigingen hoort. De statusbalk beschrijft de parameter onder de cursor. OPT of Links+Shift keert terug naar het instrumentenscherm. DX7 en SID hebben geen operator-editor.
 
@@ -871,10 +916,12 @@ De beschikbare modulatie types zijn:
 - ADSR - klassieke attack-decay-sustain-release envelope
 - AHD - attack-hold-decay envelope
 - LFO - low frequency oscillator met verschillende vormen
-- SLFO - LFO met een periode-multiplier voor trage cycles
+- syncLFO (voorheen SLFO) - LFO met een ticks-per-eenheid-instelling en een periode-multiplier
+- slowLFO - lange cycles met een proportionele periode-regelaar, die net voorbij het bereik van de gewone LFO begint
 - FLFO - audio-rate LFO die het kHz-bereik kan bereiken; FLFO kan CPU-intensief zijn
 - SLIN - lineaire joystick bediening
 - SRAT - rate-based joystick bediening
+- Sequence - leest de trackersequentie als modulatiesignaal: **PITCH** is de uiteindelijke gesequencete toonhoogte, **VOL** het uiteindelijke gesequencete volume en **TRANCE GATE** een onafhankelijke ritmische modulator. Motif, Rate en Length kiezen het gate-patroon; Trigger bepaalt of het vrij loopt, per noot opnieuw triggert of reset op phrase- of chain-grenzen. Gesloten gates geven nul, open gates een half niveau, en Accents verdeelt Euclidisch gates op volledig niveau over de actieve gates. Het gebruikt of wijzigt geen track-insert.
 
 De lijst van modulatie bestemmingen hangt af van het instrumenttype.
 
@@ -882,7 +929,13 @@ Wanneer een ADSR of AHD envelope Volume target, wordt het de volume-envelope van
 
 De modulatie-hoeveelheid kan positief of negatief zijn. Het bereik hangt af van de bestemming. Als het volledige bereik van de bestemming `127` of minder is, zoals bij de meeste parameters, definieert de hoeveelheid een absoluut bereik. Brede bestemmingen zoals pitch gebruiken een geschaalde hoeveelheid.
 
+De Sequence-bronnen PITCH en VOL hebben een **Mode**. **Normal** houdt de trackerwaarde hoorbaar en gebruikt hem tegelijk als modulatie. **Bypass** maakt hem alleen een bron: PITCH triggert opnieuw op de laatste toonhoogte (of C-4 bij de eerste noot) en VOL houdt het laatste hoorbare niveau vast. Trance Gate is al alleen een bron. Als een actieve Sequence-slot PITCH of VOL op bypass zet, wint bypass. Om feedback te voorkomen kunnen PITCH en VOL niet naar Pitch of Volume wijzen.
+
 Alle duurparameters, inclusief attack, hold, decay en periode, worden gemeten in ticks.
+
+**syncLFO** is de voormalige SLFO: stel zijn ticks en multiplier in voor tempogesynchroniseerde beweging. Bestaande SLFO-instellingen en songs behouden dezelfde timing.
+
+Gebruik **slowLFO** voor sweeps die langer zijn dan de gewone LFO aankan. De Period-regelaar loopt van 256 tot 131.072 ticks. Alle tick-gebaseerde LFO's volgen het songtempo en delen dezelfde vormen, wavetable-keuze en triggermodi. Kies Free voor een sweep die tussen noten doorloopt; Retrig, Phrase en Chain herstarten hem op hun respectievelijke grenzen.
 
 LFO-vormen:
 
@@ -902,8 +955,8 @@ LFO trigger types:
 
 - Free - start LFO alleen opnieuw als het instrument verandert
 - Retrig - start LFO opnieuw bij elke noot
-- Phrase - start LFO en SLFO opnieuw wanneer playback een nieuwe phrase ingaat
-- Chain - start LFO en SLFO opnieuw wanneer playback een nieuwe chain ingaat
+- Phrase - start LFO, syncLFO en slowLFO opnieuw wanneer playback een nieuwe phrase ingaat
+- Chain - start LFO, syncLFO en slowLFO opnieuw wanneer playback een nieuwe chain ingaat
 - Hold - stopt na 1 cycle en houdt de laatste waarde vast
 - Once - stopt na 1 cycle en keert terug naar nul
 
@@ -940,15 +993,15 @@ De navigatieweergave houdt de volledige F–M–I–P kolom zichtbaar in alle in
 | Saturation | Drive, Tone, Level, Mix |
 | Bitcrusher | Bit depth, Rate reduction, Tone, Mix |
 | Destruction | Mode, Amount, Tone, Mix |
-| Parametric EQ | Low gain, Low frequency, Mid gain, Mid frequency, High gain, High frequency |
+| FORMANT | Mode, Vowel, First formant, Second formant, Resonance, Mix |
 | Trance Gate | Pattern, Rate, Length, Gate, Phase, Mode, Smooth, Mix |
 | Beads (Mutable Instruments) | Time, Size, Density, Pitch, Scatter, Feedback, Shape/Freeze, Mix |
 
-Continue variabelen gebruiken 00–FF, inclusief geldige nul en maximale FF. Bipolaire
+Continue variabelen gebruiken 00–FF, inclusief geldige nul en maximale FF, behalve FORMANT VOW (00–7F). Bipolaire
 variabelen hebben een exact neutraal punt op 80. Distortion modi zijn 00 Density, 01 Drive,
 02 Spiral, 03 Mojo, 04 Dyno. Compressorratio's 00–07 zijn 1.5, 2, 3, 4, 6, 8, 16,
-20:1; detectorbronnen 00–02 zijn stereo input, links, rechts. Detectorfilter 80 is
-neutraal, daaronder is het low-pass, daarboven high-pass. Er is geen externe/cross-track sidechain.
+20:1; Compressor Detect 00–02 luistert naar zijn eigen stereo-ingang, links of rechts; 03–0A luistert in plaats daarvan naar tracks 1–8. Detectorfilter 80 is
+neutraal, daaronder is het low-pass, daarboven high-pass. Een trackbron wordt genomen na zijn volume, pan en Tilt EQ maar vóór zijn inserts; een gemute of ontbrekende bron levert stilte.
 Elke slot kan elk module bevatten; herhaalde modules zijn onafhankelijk.
 Chorus en Phaser starten met hoorbare maar gecontroleerde modulatie. Verlaag Mix,
 Depth of Feedback voor een bijna transparant effect; hoge waarden van Depth, Feedback en Mix
@@ -964,11 +1017,6 @@ Bitcrusher bitdiepte varieert van 4 tot 16 bits en
 rate reduction van 1x tot 32x. Destruction modi zijn Fold, Clip en Crush.
 Saturation en distortion bevatten output level of mix-controles om ze
 tegen het onbewerkte signaal te balanceren.
-Parametric EQ heeft 24 dB boost/cut shelves bij 60–500 Hz en 2–14 kHz, plus een
-fixed-Q 0.9 bell bij 250 Hz–5 kHz. De gain-controles zijn neutraal bij 80; met alle
-drie neutraal is het een exacte bypass. Actieve EQ gebruikt een transparante soft knee boven
-full scale en bereikt een maximum van 1.5 om extreme boosts te begrenzen.
-
 Trance Gate is een tempo-gesynchroniseerde amplitude- sequencer voor pads, leads en
 stoten. Pattern waarden 00–3F selecteren benoemde muzikale motieven; 00–1F zijn kern grooves
 en 20–3F zijn experimentele variaties. Rate biedt rechte, triplet en gedoteerde waarden van 1/2 tot 1/32. Length verkort het onafhankelijk geroteerde 16-stappenmotief tot 1–16
@@ -979,7 +1027,7 @@ insert volgt het de transporttijd zonder nootretriggers. Gate bepaalt de breedte
 en Mix crossfade tussen droge en gated audio.
 
 **Beads** gebruikt de originele Mutable Instruments granular DSP als stereo insert.
-Kies Beads in een track- of master-insert slot. De acht bedieningselementen gebruiken ook
+Kies Beads in een track-insert slot. De acht bedieningselementen gebruiken ook
 bestaande F11–F18 / F21–F28 commando’s en insert MOD bestemmingen; er zijn geen nieuwe FX IDs
 of projectformaten nodig. Korrels (grains) lopen continu zonder extra events.
 
@@ -1004,6 +1052,18 @@ of projectformaten nodig. Korrels (grains) lopen continu zonder extra events.
 
 Freeze houdt de audio vast die door het effect is vastgelegd; het selecteren van een ander
 module of resetten van Beads maakt het vrij. Track reverb sends blijven beschikbaar.
+
+### Een kick de mix of een andere track laten pompen
+
+Voor een pompende master zet je de kick op track 1, selecteer je Compressor in MASTER FX, zet je Detect op 03 (Track 1), Ratio op 04 (6:1), Attack rond 60 (ongeveer 1,6 ms), Release rond C0 (ongeveer 115 ms), Makeup op 00 en Mix op FF. Verlaag Threshold tot de andere geluiden bij elke kick wegzakken en stel daarna Release bij zodat ze herstellen vóór de volgende. Het directe kickgeluid behoudt zijn eigen track-inserts maar omzeilt de twee master-insertslots; zijn reverb- en delay-returns pompen alsnog.
+
+Om alleen een bas, pad of synth te verlagen, zet je zijn Compressor op die track en selecteer je de kicktrack met Detect. De bronkick blijft hoorbaar en zijn volume wordt niet gewijzigd door de compressor van die track. Een kick en bas die op dezelfde track zijn gecombineerd, kunnen met deze routing niet worden gescheiden.
+
+### FORMANT
+
+Selecteer **FORMANT** op TF1 of TF2 om een geluid te vormen tot klinkerachtige tonen. Werkt het best met een aanhoudende, obertoonrijke bron zoals een zaagtand.
+
+Zet MODE op `00` VOW en gebruik **VOW** om van A (`00`) naar U (`7F`) te sweepen via E, I en O. Zet MODE op `01` CUSTOM om **F1** en **F2** zelf af te stellen. **RES** versmalt of verbreedt het klinkerkarakter; **MIX** mengt het effect met het oorspronkelijke signaal. Gebruik MOD → INSERT FX om de actieve regelaars te bewegen. MODE is geen MOD-bestemming.
 
 ### Lane FX voor Inserts
 
@@ -1121,6 +1181,7 @@ Track FX forceren sequencer- of sound-engine waarden op individuele stappen. And
 | `SNG` | signed `XX` | Verplaatst playback met `XX` songrijen. |
 | `PRO` | `00-64` | Bereken een absolute triggerkans van `0%` tot `100%`. |
 | `MOD` | `AB` | Trigger op doorgang `A` van een `B`-doorgangen cyclus. |
+| `RNN` | `MX` | Speelt een willekeurige noot. `M` kiest de modus: `0` altijd willekeurig, `1` willekeurig per PLAY, `2` kiest en houdt vast tot de waarde verandert. `X` kiest het bereik: `0` elke noot, `1` +3 st, `2` +6 st, `3` +12 st, `4` -3 st, `5` -6 st, `6` -12 st, `7` +/-3 st, `8` +/-6 st, `9` +/-12 st. Willekeurige keuzes volgen de projectschaal wanneer de schaal-engine op de track wordt toegepast. |
 | `SPD` | signed `XX` | Selecteert een persistente per-track klokratio; zie de snelhedentabel hieronder. |
 | `SLE` | `00-FF` ticks | Stelt persistente per-track glide tijd in voor continue engine FX. `00` is direct. Reset naar `00` bij stoppen playback. |
 
@@ -1202,7 +1263,8 @@ De waarde wordt geïnterpreteerd als een signed `8-bit` relatieve verandering (`
 | ADSR | Attack | Decay | Sustain | Release | Ongebruikt |
 | AHD | Attack | Hold | Decay | Ongebruikt | Ongebruikt |
 | LFO | Shape | Trigger mode | Period | Ongebruikt | AY wavetable index |
-| SLFO | Shape | Trigger mode | Ticks | Multiplier | AY wavetable index |
+| syncLFO | Shape | Trigger mode | Ticks | Multiplier | AY wavetable index |
+| slowLFO | Shape | Trigger mode | Periodestap (00–FF) | - | AY wavetable index |
 | FLFO | Shape | Trigger mode | Frequency (`1 Hz` tot `20 kHz`) | Ongebruikt | AY wavetable index |
 
 ### Braids FX
@@ -1277,6 +1339,7 @@ De waarde wordt geïnterpreteerd als een signed `8-bit` relatieve verandering (`
 | `SCF` | `00-FF` | Exponentiële cutoff, `20 Hz` tot `20 kHz` |
 | `SRS` | `00-FF` | Exponentiële filterresonantie |
 | `SSP` | `00-FF` | Samplesnelheid, gemapt van `0%` tot `500%` |
+| `RNS` | `M0` | Speelt een willekeurige slice van een gesliced sample in plaats van de aan de noot toegewezen slice. `M` kiest de modus: `0` altijd willekeurig, `1` willekeurig per PLAY, `2` kiest en houdt vast tot de waarde verandert. Vereist dat slice-modus in het instrument aan staat; de lage nibble wordt niet gebruikt. |
 
 ### AY FX gedeeld door AY-instrumenten
 
@@ -1344,11 +1407,9 @@ Gebruik het om de 8 tracks in balans te brengen, elke track vorm te geven met Ti
 
 De mixer is trackgebaseerd, niet instrumentgebaseerd. Als een track van instrument verandert, blijven het niveau, PAN, Tilt en sends aan de track gekoppeld. Instrumenten hebben ook hun eigen `00-FF` **Vol** en **Pan** in de bovenste rij van het Instrument-scherm. Instrument PAN wordt eerst toegepast, daarna track PAN. Beide behouden een bestaande stereo-beeld in het midden; ze verzwakken progressief de tegenovergestelde kant bij verplaatsing naar links of rechts.
 
-### Master FX
+### Auto Mix
 
-De **MASTER FX** optie opent een sub-menu met twee Insert FX slots voor de complete mix. De effecten draaien na de reverb en delay returns, vóór het master volume. Selecteer een module, bewerk de parameters of bypass hem net zoals bij een track-insert; druk op **OPT** om terug te keren naar de Mixer. Master FX instellingen worden met het project opgeslagen en zijn niet geautomatiseerd per phrase, table of modulatie.
-
-Effecten in deze categorie zijn hetzelfde als op het Insert FX scherm.
+De Mixer bevat een **AUTO MIX**-knop. Deze rendert offline `6 seconden`, balanceert het trackvolume, vergelijkt daarna 8 octaafbanden met een roze-ruisprofiel en verlaagt tracks die die banden overbelasten zachtjes. Hij stelt voorzichtige niveauwijzigingen voor, laat wat piekruimte over en start een tijdelijke preview. **Apply** behoudt de voorgestelde niveaus, terwijl **Cancel** de vorige 8 niveaus herstelt. Het is een goed startpunt, maar je zult het resultaat waarschijnlijk willen bijstellen.
 
 ### Reverb
 
@@ -1407,11 +1468,41 @@ Op desktop kun je met key jazz de bestandsnaam, titel en auteur direct op je toe
 Het Scale scherm bestuurt de globale 12-TET scale engine. De **Mode** rij selecteert tussen twee modi:- **Quantizer** (standaard): frase-invoer blijft chromatisch; wanneer ingeschakeld worden noten direct vóór het geluidssysteem naar beneden afgerond, zodat het veranderen van de grondtoon of toonladder een nummer reharmoniseert zonder de frases te bewerken.
 - **Note Lock**: noten die in frases worden getypt, worden bij invoer vastgezet op de dichtstbijzijnde toon van de toonladder, zodat alleen toonladdernoten kunnen worden geschreven. Nieuwe invoer en verlagen sluiten naar beneden aan; `EDIT + RIGHT` / `EDIT + UP` verhogen de noot naar de volgende toonladdernoot erboven. Invoer volgt altijd de projecttoonladder op dit scherm: verandering van grondtoon of toonladder beïnvloedt direct nieuw ingevoerde noten op ingeschakelde tracks, terwijl reeds opgeslagen noten onaangeroerd blijven. `SCL` FX is niet beschikbaar in deze modus en elk reeds geschreven `SCL` wordt genegeerd. Afspelen-kwantisering van gewone noten wordt overgeslagen (invoer is al vergrendeld); akkoordkwantisering via `CRD` blijft van kracht.
 
-#TODO: uitleg over tempo, midi-sync en link
+- **Clock source** kiest tussen **Internal** (het eigen tempo van het project), **Midi Clock** (de sequencer volgt een binnenkomende MIDI-clock) en **Ableton Link** (de sequencer volgt het tempo van een Link-sessie op het lokale netwerk). Bij **Midi Clock** is de **Tempo**-rij gedimd en toont het gemeten tempo van de binnenkomende clock; het transport (play/stop) wordt bestuurd door de Start/Continue/Stop-berichten van de zender, dus de PLAY-bediening van de app is niet nodig. Bij **Ableton Link** wordt de rij de **Link**-rij: die bevat de verbind/verbreek-schakelaar voor de sessie in plaats van een tempoveld (zie hieronder). De clockbron wordt in settings.txt opgeslagen en geldt voor alle projecten.
+- **Tempo** stelt het projecttempo in hele BPM in (`3-500`). Intern slaat de tracker zijn tick rate nog steeds op in Hz (`tick rate = BPM x 0,4`), dus bestaande projecten laden en bewaren ongewijzigd; een project met een fractioneel tempo toont het afgerond en snapt naar een hele BPM bij de eerste tempobewerking. Grove aanpassing gaat in stappen van 5 BPM, fijne in stappen van 1; wissen herstelt de standaard van 125 BPM.
 
 ChooChooTracker slaat projecten op als `.cct`. Dit is een eigen formaat dat zelfs voor mensen makkelijk leesbaar is.
 
 Gebruik **Save** voordat je instrumenttypes verandert of een ander project laadt.
+
+### Ableton Link
+
+Ableton Link laat ChooChooTracker het tempo volgen van andere Link-compatibele apps (Ableton Live, LinkHut, enz.) op hetzelfde lokale netwerk (Wi-Fi of Ethernet). Het is alleen een ontvanger: de tracker past zijn eigen tempo aan de sessie aan en stuurt nooit tempo of transport naar andere deelnemers.
+
+**Wat wordt gesynchroniseerd:**
+
+- Sessietempo - de tracker volgt continu het tempo van de Link-sessie (binnen het 3-500 BPM-bereik van de tracker).
+- Beatfase - op PLAY drukken lijnt de playback uit op het beatraster van de sessie: de song begint op de volgende maat (quantum van 4 beats).
+
+**Wat niet wordt gesynchroniseerd:**
+
+Tijdens playback met Link controleert ChooChooTracker de gedeelde beatfase eens per 4/4-maat en past zijn eigen tick rate zachtjes aan wanneer nodig. Dit compenseert kleine klokverschillen tussen apparaten zonder trackerticks over te slaan of te herhalen, en wijzigt nooit de Link-sessie van een andere deelnemer.
+
+- Grooves en `SPD`- en `DELAY`-waarden worden niet beïnvloed - ze blijven relatief aan het gevolgde tempo.
+- Cursorposities in song/chain/phrase en mixerinstellingen worden nooit gedeeld.
+
+**Hoe te gebruiken:**
+
+1. Open het Project-scherm en zet **Clock source** op **Ableton Link**. De rij eronder wordt de **Link**-rij.
+2. Druk op EDIT bij **[Connect]** om de sessie te betreden. Het statusbericht rechts toont de voortgang: `Wait...` tijdens verbinden, `No net` als er geen netwerk is, `No sess` als er geen sessie wordt gevonden, `Err` bij een interne fout. Zolang je verbonden bent toont de knop **[Disconnect]** en wisselt de status ongeveer elke seconde tussen `connected` en `Peers: N` (N = aantal peers).
+3. Wacht op `connected` en druk op PLAY - de playback begint uitgelijnd op de volgende maat van de sessie.
+4. Druk op EDIT bij **[Disconnect]** (of zet de clockbron terug op Internal) om de sessie te verlaten.
+
+In Link-modus is de sessie eigenaar van het tempo: de rij toont geen BPM-veld en het sessietempo wordt automatisch op het project toegepast (binnen het 3-500 BPM-bereik van de tracker).
+
+**Beschikbaarheid per platform:** PortMaster (hoofddoel), Windows, Linux, macOS en Android worden ondersteund. De Web- en Miyoo-versies bevatten geen Link.
+
+**PortMaster-opmerking:** op PortMaster-apparaten is de audiobuffer groter (512 frames bij 48 kHz), dus de beatuitlijning is bij benadering, binnen ongeveer 10-15 ms, en niet sample-exact. De tempo-synchronisatie zelf wordt niet beïnvloed.
 
 ## 13. Settings
 
@@ -1424,6 +1515,8 @@ Gebruik Settings voor voorkeuren die aan de app blijven verbonden, niet aan het 
 - **Key mapping** wijst toetsenbord- of controllerbesturingen toe. Kies een commando, druk op de nieuwe bediening, en selecteer daarna **Done** om de mapping op te slaan.
 
 ### Audio
+
+**Sample rate** biedt `32 kHz` of `48 kHz` (standaard). Wijzigingen gelden direct en worden opgeslagen. De samplefrequentie wijzigen stopt playback en samplepreview terwijl de geluidsengines en elke gearmde audio-ingang op de nieuwe frequentie opnieuw worden geopend. Als een apparaat de nieuwe frequentie weigert, blijft de vorige instelling actief. `32 kHz` verlaagt de verwerkingsbelasting en begrenst de hoogste afgespeelde frequentie op 16 kHz. De CPU-belastingsindicator toont de kosten van audiorendering.
 
 **Buffer size** ruilt reactietijd in voor veiligheid. Gebruik een kleinere waarde voor strakker live spelen; verhoog hem als het geluid kraakt of de CPU-meter consistent hoog staat. Beschikbare waarden zijn `32`, `64`, `128`, `256`, `512` en `1024` samples. Het CPU-belastingsdisplay helpt bij het kiezen van een stabiele instelling.
 
@@ -1447,7 +1540,7 @@ Kies hier in- en uitgangen, wijs binnenkomende MIDI-kanalen toe aan instrumenten
 - **Song waveform** toont of verbergt de mixgolfvorm op de Song-pagina; zie [Song waveform](#song-waveform).
 - **Track visuals** kiest per track tussen **Detailed** (het instrumentgolfvorm plus overlays) of **Audio waveform** (de uiteindelijke trackaudio). Gebruik **All detailed** of **All audio** om alle tracks tegelijk te wijzigen.
 - **Waveform FPS** stelt in hoe vaak het instrumentscope- en mixervisualisatiescherm wordt vernieuwd, tussen `1` en `60` frames per seconde. Verlaag voor een rustiger scherm of meer headroom.
-- **Renderer** toont of de applicatie `GPU`- of `Software`-rendering gebruikt. **Boot screen** kiest tussen het `Original` of `Night` titelscherm.
+- **Renderer** toont of de applicatie `GPU`- of `Software`-rendering gebruikt.
 
 ### Support report and quit
 
@@ -1480,8 +1573,9 @@ Stel Repeat delay en Repeat speed bij in Settings. Als een enkele druk dubbel re
 - **Geluid preview vanaf een MIDI-keyboard**: met een geselecteerde MIDI In device speelt het spelen van noten op het verbonden keyboard een instrument af op elk scherm, net als de on-screen **EDIT + PLAY** snelkoppeling op het [Instrument](#5-instruments)-scherm. Dit is alleen voor preview - het voert geen noten in in het nummer.
 - **Kanaaltoewijzing**: opent een lijst van de 16 MIDI-kanalen; wijs elk kanaal een instrument toe (`OFF` standaard) zodat noten die op dat kanaal binnenkomen dat instrument afspelen, ongeacht welk instrument op het Instrument-scherm geselecteerd is - bijvoorbeeld kanaal `01` -> instrument `05`. Een kanaal op `OFF` valt terug op het momenteel geselecteerde instrument, het oorspronkelijke gedrag. Deze toewijzing wordt opgeslagen in settings.txt.
 - **MIDI CC-toewijzing**: wijst een binnenkomende controller toe aan een instrumentparameter, inclusief de **Volume**, of aan globale controls. Globale rijen tonen `TRK 1`-`TRK 8` in plaats van een instrument en bieden track **Mute**, **Solo**, **Volume**, **Reverb send** en **Delay send**; **Song play/stop** heeft geen doel. Een nieuwe toewijzing negeert de CC die het heeft geleerd/ingevoerd en wordt actief bij de volgende fysieke beweging, waardoor het instellen van toewijzingen tijdens het afspelen een patch niet op nul kan zetten. Mute en solo gebruiken `0-63` = uit, `64-127` = aan.
+- **MIDI-clocksynchronisatie**: met een MIDI In-apparaat geselecteerd zet je **Clock source** op het Project-scherm op **Midi Clock** om een extern sequencer te volgen. De tracker meet het tempo van de binnenkomende clock (24 pulsen per kwartnoot) en toont het in de gedimde **Tempo**-rij; de berichten **Start**, **Continue** en **Stop** besturen de playback. De clockbron wordt onthouden in settings.txt.
 - **Een extern MIDI-apparaat aansturen**: geef een track het [MIDI Out](#midi-out) instrumenttype en stel het kanaal in; het triggeren van noten op die track stuurt echte MIDI naar het geselecteerde MIDI Out-apparaat in plaats van geluid te maken in ChooChooTracker.
 
 ## 16. Credits en licenties
 
-ChooChooTracker is een fork van ChipNomad en behoudt de MIT-licentie aanpak. Braids, Plaits, Plaits-Alt, Clouds DSP, Warps-afgeleide MME DSP en stmlib-code zijn afgeleid van Mutable Instruments’ open-source releases onder hun toepasselijke MIT-licentie. Plaits-Alt is afkomstig uit de lylepmills/eurorack Plaits Lab-fork; de daarbij behorende bronvermeldingen blijven gelden. De aChChid-engine gebruikt Open303 door Robin Schmidt, copyright 2009, onder de MIT-licentie. Bogie en Sintered zijn originele native implementaties. MIDI I/O gebruikt RtMidi door Gary P. Scavone, onder een MIT-achtige licentie. Zie de meegeleverde licentiebestanden voor exacte vermelding. Ableton Link wordt geleverd met een speciale licentieovereenkomst van Ableton, valt niet onder de MIT-licentie, en onze licentie geldt niet voor jouw forks of andere projecten dan ChooChooTracker.
+ChooChooTracker is een fork van ChipNomad en behoudt de MIT-licentie aanpak. Braids, Plaits, Plaits-Alt, Clouds DSP, Warps-afgeleide MME DSP en stmlib-code zijn afgeleid van Mutable Instruments’ open-source releases onder hun toepasselijke MIT-licentie. Plaits-Alt is afkomstig uit de lylepmills/eurorack Plaits Lab-fork; de daarbij behorende bronvermeldingen blijven gelden. De aChChid-engine gebruikt Open303 door Robin Schmidt, copyright 2009, onder de MIT-licentie. MonkSynth gebruikt de native DSP van JonET onder de MIT-licentie; zie `LICENSE.monksynth.txt`. Bogie en Sintered zijn originele native implementaties. MIDI I/O gebruikt RtMidi door Gary P. Scavone, onder een MIT-achtige licentie. Zie de meegeleverde licentiebestanden voor exacte vermelding. Ableton Link wordt geleverd met een speciale licentieovereenkomst van Ableton, valt niet onder de MIT-licentie, en onze licentie geldt niet voor jouw forks of andere projecten dan ChooChooTracker.

@@ -261,8 +261,11 @@ TEST_CASE_FIXTURE(PlaybackFixture, "table volume and VOL apply to the shared voi
   track->note.volume = PHRASE_VOLUME_MAX;
   track->note.volumeOffset = -1;
   tableInit(&state->playbackState, 0, &track->note.instrumentTable, 0, 0, 1);
-  state->project.tables[0].rows[0].volume = 15;
+  state->project.tables[0].rows[0].volume = PHRASE_VOLUME_MAX;
   CHECK(playbackVolumeGain(&state->playbackState, track) == doctest::Approx(126.0f / PHRASE_VOLUME_MAX));
+
+  state->project.tables[0].rows[0].volume = 64;
+  CHECK(playbackVolumeGain(&state->playbackState, track) == doctest::Approx(126.0f * 64 / (PHRASE_VOLUME_MAX * PHRASE_VOLUME_MAX)));
 
   state->project.tables[0].rows[0].volume = 0;
   CHECK(playbackVolumeGain(&state->playbackState, track) == 0.0f);
