@@ -1,5 +1,18 @@
 #include "corelib_audio.h"
 #include "chipnomad_lib.h"
+#include <cstring>
+int mockAudioOutputDeviceCount = 0;
+char mockSelectedAudioOutput[128] = {};
+int audioOutputDeviceCount(void) { return mockAudioOutputDeviceCount; }
+int audioOutputDeviceName(int index, char* buffer, int size) {
+  if (index < 0 || index >= mockAudioOutputDeviceCount || !buffer || size < 13) return 1;
+  std::strcpy(buffer, "ROCCAT Juke");
+  return 0;
+}
+void audioOutputSelect(const char* name) {
+  std::strncpy(mockSelectedAudioOutput, name ? name : "", sizeof(mockSelectedAudioOutput) - 1);
+  mockSelectedAudioOutput[sizeof(mockSelectedAudioOutput) - 1] = 0;
+}
 
 int audioSetup(AudioCallback* audioCallback, int sampleRate, int bufferSize) { return 0; }
 void audioPause(int isPaused) {}

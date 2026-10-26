@@ -12,11 +12,13 @@ static void noOp(void) {}
 static int startAudio(int, int) { return 0; }
 int mockAudioReconfigureResult, mockAudioReconfigureCalls, mockAudioReconfigureRate, mockAudioReconfigureSize, mockAudioCpuLoad;
 int mockAudioRestartResult, mockAudioRestartCalls;
+int mockAudioRefreshResult, mockAudioRefreshCalls;
 static int reconfigureAudio(int rate, int size) { ++mockAudioReconfigureCalls; mockAudioReconfigureRate = rate; mockAudioReconfigureSize = size; return mockAudioReconfigureResult; }
 static int restartAudio(void) { ++mockAudioRestartCalls; return mockAudioRestartResult; }
+static int refreshAudio(void) { ++mockAudioRefreshCalls; return mockAudioRefreshResult; }
 static int cpuLoad() { return mockAudioCpuLoad; }
 static int mutateProject(ProjectMutation* mutation, void* userdata) { return mutation ? mutation(userdata) : 1; }
-AudioManager audioManager = {startAudio, reconfigureAudio, restartAudio, noOp, noOp, nullptr, nullptr, nullptr, mutateProject, noOp,
+AudioManager audioManager = {startAudio, reconfigureAudio, restartAudio, refreshAudio, noOp, noOp, nullptr, nullptr, nullptr, mutateProject, noOp,
                              nullptr, nullptr, cpuLoad};
 const AppScreen screenSong = {nullptr, nullptr, noOp, noOp, ignoreInput};
 const AppScreen screenTitle = {nullptr, nullptr, noOp, noOp, ignoreInput};

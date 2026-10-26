@@ -67,6 +67,8 @@ static void drawCursor(int col, int row) {
     gfxCursor(0, 5 + row - 2, (int)strlen(row == 2 ? "Channel mapping" : "MIDI CC mapping"));
   } else if ((row == 4 || row == 5) && col == 0) {
     gfxCursor(16, row + 4, 3);
+  } else if (row == 6 && col == 0) {
+    gfxCursor(16, 10, 6);
   }
 }
 
@@ -108,10 +110,23 @@ static void drawField(int col, int row, CellState state) {
     gfxPrint(16, row + 4, enabled ? "ON" : "OFF");
     if (appSettings.clockSource == ClockSource::midiClock)
       gfxPrint(20, row + 4, "(MIDI slave)");
+  } else if (row == 6 && col == 0) {
+    gfxSetFgColor(appSettings.colorScheme.textDefault);
+    gfxPrint(0, 10, "MIDI delay");
+    gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
+    gfxPrintf(16, 10, "%03u ms", appSettings.midiOutputDelayMs);
   }
 }
 
 static int onEdit(int col, int row, CellEditAction action) {
+  if (row == 6 && col == 0) {
+    uint8_t value = appSettings.midiOutputDelayMs;
+    if (!edit8noLast(convertMultiAction(action), &value, 10, 0, 200)) return 0;
+    appSettings.midiOutputDelayMs = value;
+    midiRouterSetOutputDelayMs(value);
+    if (settingsSave()) screenMessage(MESSAGE_TIME_ERROR, "Could not save MIDI delay");
+    return 1;
+  }
   if ((row == 4 || row == 5) && col == 0) {
     uint8_t* value = row == 4 ? &appSettings.midiSendClock : &appSettings.midiSendTransport;
     action = convertMultiAction(action);
@@ -170,7 +185,7 @@ static int onEdit(int col, int row, CellEditAction action) {
 }
 
 static ScreenData screenMidiData = {
-  .rows = 6,
+  .rows = 7,
   .cursorRow = 0,
   .cursorCol = 0,
   .topRow = 0,

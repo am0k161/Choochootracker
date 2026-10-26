@@ -123,6 +123,9 @@ void midiRouterDestroy(MidiRouterState* router);
 // UI thread: independent output switches, both off by default. Slave mode
 // suppresses both to prevent feedback. Internal and Link use the engine tempo.
 void midiRouterSetSyncOutput(MidiRouterState* router, int clock, int transport);
+// Delay scheduled notes, CC, clock and transport together to align external
+// hardware with the audio output. Panic messages remain immediate.
+void midiRouterSetOutputDelayMs(unsigned delayMs);
 // One call per engine tick; clock runs during sequencer playback only.
 void midiRouterMasterTick(MidiRouterState* router, int playing, uint64_t dueMicros);
 // Sends a Note On at dueMicros and tracks it as active on [trackIdx][slot],

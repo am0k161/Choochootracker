@@ -4,6 +4,7 @@
 #include "screen_audio_input.h"
 #include "../common.h"
 #include "../audio_input_manager.h"
+#include "../audio_manager.h"
 #include "../corelib/corelib_audio.h"
 #include "../monitor_display.h"
 #include "corelib_gfx.h"
@@ -220,9 +221,12 @@ static int onEdit(int col, int row, CellEditAction action) {
       return 1;
     } else if (col == 1) {
       // Refresh: restart the SDL audio subsystem for hot-plugged devices.
+      audioInputManagerStopRecording();
       audioInputManager.disarmAll();
-      audioInputCleanup();
-      audioInputRefreshDevices();
+      if (!audioManager.refreshDevices || audioManager.refreshDevices()) {
+        screenMessage(MESSAGE_TIME_ERROR, "Audio refresh failed");
+        return 1;
+      }
       audioInputManager.enumerate();
       syncArmedDevicesFromSettings();
       screenFullRedraw(&screenAudioInputData);

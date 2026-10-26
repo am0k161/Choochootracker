@@ -671,7 +671,15 @@ void appSetup(void) {
   chipnomadSetBraidsSettings(chipnomadState, appSettings.braidsBits,
     appSettings.braidsDrift, appSettings.braidsSignature,
     appSettings.braidsSignatureSeed);
-  audioManager.start(appSettings.audioSampleRate, appSettings.audioBufferSize);
+  audioOutputSelect(appSettings.audioOutputDeviceName);
+  if (audioManager.start(appSettings.audioSampleRate, appSettings.audioBufferSize) &&
+      appSettings.audioOutputDeviceName[0]) {
+    audioOutputSelect("");
+    if (!audioManager.start(appSettings.audioSampleRate, appSettings.audioBufferSize)) {
+      appSettings.audioOutputDeviceName[0] = 0;
+      settingsSave();
+    }
+  }
   audioManager.resume();
 
   // Audio input: enumerate capture devices and re-arm the ones saved in
@@ -687,6 +695,7 @@ void appSetup(void) {
   if (savedOutputPort >= 0 && midiRouterOpenOutput(savedOutputPort) == 0) appSettings.midiOutputDevice = savedOutputPort;
   midiRouterSetChannelInstrumentMap(chipnomadState->midiRouter, appSettings.midiChannelInstrument);
   midiRouterSetSyncOutput(chipnomadState->midiRouter, appSettings.midiSendClock, appSettings.midiSendTransport);
+  midiRouterSetOutputDelayMs(appSettings.midiOutputDelayMs);
   midiRouterSetClockMode(chipnomadState->midiRouter,
     appSettings.clockSource == ClockSource::midiClock ? MidiClockMode::slave : MidiClockMode::off);
   // Ableton Link: restore the saved selection. Connect happens on demand
@@ -833,11 +842,12 @@ static void handleAudioDeviceRemoved(int isCapture) {
   screenNotifyAudioRestart();
   audioInputManagerStopRecording();
   audioInputManager.disarmAll();
-  audioInputCleanup();
-  audioInputRefreshDevices();
+  if (!audioManager.refreshDevices || audioManager.refreshDevices()) {
+    screenMessage(MESSAGE_TIME_ERROR, "Audio refresh failed");
+    return;
+  }
   audioInputManager.enumerate();
   syncArmedDevicesFromSettings();
-  audioManager.restart();
 }
 
 void appOnEvent(MainLoopEventData eventData) {

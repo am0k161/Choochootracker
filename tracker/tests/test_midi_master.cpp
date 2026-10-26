@@ -18,6 +18,7 @@ struct MasterFixture {
   MidiBackend backend{};
   ChipNomadState* state;
   MasterFixture() {
+    midiRouterSetOutputDelayMs(0);
     backend.scheduleOutput = send;
     backend.nowMicros = now;
     backend.hasClockOutput = 1;
@@ -36,10 +37,24 @@ struct MasterFixture {
     events.clear();
   }
   ~MasterFixture() {
+    midiRouterSetOutputDelayMs(0);
     chipnomadDestroy(state);
     midiRouterSetBackend(nullptr);
   }
 };
+}
+
+TEST_CASE_FIXTURE(MasterFixture, "MIDI output delay aligns scheduled clock and leaves panic immediate") {
+  midiRouterSetOutputDelayMs(40);
+  midiRouterSetSyncOutput(state->midiRouter, 1, 1);
+  midiRouterMasterTick(state->midiRouter, 1, 1000000);
+  REQUIRE(events.size() == 2);
+  CHECK(events[0].timestampMicros == 1040000);
+  CHECK(events[1].timestampMicros == 1040000);
+  midiRouterPanic(state->midiRouter);
+  REQUIRE(events.size() == 3);
+  CHECK(events[2].type == 0xfc);
+  CHECK(events[2].timestampMicros == 1000000);
 }
 
 TEST_CASE_FIXTURE(MasterFixture, "MIDI master follows audio ticks and transport") {

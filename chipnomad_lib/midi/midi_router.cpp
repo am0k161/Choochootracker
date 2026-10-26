@@ -61,6 +61,11 @@ struct MidiRouterState {
 };
 
 static const MidiBackend* g_backend = nullptr;
+static std::atomic<unsigned> g_outputDelayMs{0};
+
+void midiRouterSetOutputDelayMs(unsigned delayMs) {
+  g_outputDelayMs.store(delayMs > 200 ? 200 : delayMs, std::memory_order_relaxed);
+}
 
 void midiRouterSetBackend(const MidiBackend* backend) {
   g_backend = backend;
@@ -115,7 +120,8 @@ void midiRouterDestroy(MidiRouterState* router) {
   delete router;
 }
 
-static void sendEvent(uint8_t type, uint8_t channel, uint8_t data1, uint8_t data2, uint64_t dueMicros) {
+static void sendEvent(uint8_t type, uint8_t channel, uint8_t data1, uint8_t data2, uint64_t dueMicros, bool delayed = true) {
+  if (delayed) dueMicros += (uint64_t)g_outputDelayMs.load(std::memory_order_relaxed) * 1000;
   MidiEvent event = {dueMicros, type, channel, data1, data2};
   g_backend->scheduleOutput(g_backend->userdata, &event, dueMicros);
 }
@@ -186,19 +192,19 @@ void midiRouterPanic(MidiRouterState* router) {
   // this sweep's own Note Offs/panic CCs below are scheduled fresh on top.
   if (g_backend->flushOutputQueue) g_backend->flushOutputQueue(g_backend->userdata);
   uint64_t now = g_backend->nowMicros ? g_backend->nowMicros(g_backend->userdata) : 0;
-  if (router->masterRunning.exchange(false)) sendEvent(0xfc, 0, 0, 0, now);
+  if (router->masterRunning.exchange(false)) sendEvent(0xfc, 0, 0, 0, now, false);
   for (int trackIdx = 0; trackIdx < PROJECT_MAX_TRACKS; ++trackIdx) {
     for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) {
       if (!router->noteActive[trackIdx][slot]) continue;
-      sendEvent(0x80, router->activeChannel[trackIdx][slot], router->activeNote[trackIdx][slot], 0, now);
+      sendEvent(0x80, router->activeChannel[trackIdx][slot], router->activeNote[trackIdx][slot], 0, now, false);
       router->noteActive[trackIdx][slot] = 0;
     }
   }
   // Final fallback, unconditionally on every channel: cheap insurance
   // against any note this sweep doesn't know about.
   for (uint8_t channel = 0; channel < 16; ++channel) {
-    sendEvent(0xB0, channel, 123, 0, now); // All Notes Off
-    sendEvent(0xB0, channel, 120, 0, now); // All Sound Off
+    sendEvent(0xB0, channel, 123, 0, now, false); // All Notes Off
+    sendEvent(0xB0, channel, 120, 0, now, false); // All Sound Off
   }
   memset(router->channelSetupSent, 0, sizeof(router->channelSetupSent));
 }

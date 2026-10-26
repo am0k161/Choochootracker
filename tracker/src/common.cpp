@@ -48,6 +48,7 @@ void initDefaultAppSettings(void) {
   appSettings.screenHeight = 0;
   appSettings.audioSampleRate = kAudioSampleRate;
   appSettings.audioBufferSize = defaultAudioBufferSize();
+  appSettings.audioOutputDeviceName[0] = 0;
   appSettings.aySampleDithering = 1; // Default: ON
   appSettings.doubleTapFrames = 20;
   appSettings.keyRepeatDelay = 16;
@@ -86,6 +87,7 @@ void initDefaultAppSettings(void) {
   appSettings.clockSource = ClockSource::internal;
   appSettings.midiSendClock = 0;
   appSettings.midiSendTransport = 0;
+  appSettings.midiOutputDelayMs = 0;
   for (int i = 0; i < MIDI_CHANNEL_COUNT; i++) appSettings.midiChannelInstrument[i] = -1;
   appSettings.persistentWaveform = 0;
 #ifdef ANDROID_BUILD
@@ -220,6 +222,7 @@ int settingsSave(void) {
   fprintf(file, "screenHeight: %d\n", appSettings.screenHeight);
   fprintf(file, "audioSampleRate: %d\n", appSettings.audioSampleRate);
   fprintf(file, "audioBufferSize: %d\n", appSettings.audioBufferSize);
+  fprintf(file, "audioOutputDeviceName: %s\n", appSettings.audioOutputDeviceName);
   fprintf(file, "aySampleDithering: %d\n", appSettings.aySampleDithering);
   fprintf(file, "doubleTapFrames: %d\n", appSettings.doubleTapFrames);
   fprintf(file, "keyRepeatDelay: %d\n", appSettings.keyRepeatDelay);
@@ -259,6 +262,7 @@ int settingsSave(void) {
   // that read the old field still load the Internal/Midi-Clock choice.
   fprintf(file, "midiSendClock: %d\n", appSettings.midiSendClock);
   fprintf(file, "midiSendTransport: %d\n", appSettings.midiSendTransport);
+  fprintf(file, "midiOutputDelayMs: %d\n", appSettings.midiOutputDelayMs);
   fprintf(file, "clockSource: %d\n", (int)appSettings.clockSource);
   fprintf(file, "midiClockMode: %d\n",
     appSettings.clockSource == ClockSource::midiClock ? 1 : 0);
@@ -388,6 +392,9 @@ int settingsLoad(void) {
       sscanf(line + 17, "%d", &appSettings.audioSampleRate);
     } else if (strncmp(line, "audioBufferSize: ", 17) == 0) {
       sscanf(line + 17, "%d", &appSettings.audioBufferSize);
+    } else if (strncmp(line, "audioOutputDeviceName: ", 23) == 0) {
+      strncpy(appSettings.audioOutputDeviceName, line + 23, AUDIO_DEVICE_NAME_LENGTH);
+      appSettings.audioOutputDeviceName[AUDIO_DEVICE_NAME_LENGTH] = 0;
     } else if (strncmp(line, "aySampleDithering: ", 19) == 0) {
       sscanf(line + 19, "%d", &appSettings.aySampleDithering);
     } else if (strncmp(line, "doubleTapFrames: ", 17) == 0) {
@@ -453,6 +460,10 @@ int settingsLoad(void) {
       int value = 0;
       if (sscanf(line + 19, "%d", &value) == 1 && (value == 0 || value == 1))
         appSettings.midiSendTransport = (uint8_t)value;
+    } else if (strncmp(line, "midiOutputDelayMs: ", 19) == 0) {
+      int value = 0;
+      if (sscanf(line + 19, "%d", &value) == 1 && value >= 0 && value <= 200)
+        appSettings.midiOutputDelayMs = (uint8_t)value;
     } else if (strncmp(line, "clockSource: ", 13) == 0) {
       // Canonical v3+ setting. Read before the legacy `midiClockMode:`
       // alias below; if both lines exist (new binaries write both), the

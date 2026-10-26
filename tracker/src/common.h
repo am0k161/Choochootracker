@@ -99,6 +99,7 @@ struct AppSettings {
   int screenHeight;
   int audioSampleRate;
   int audioBufferSize;
+  char audioOutputDeviceName[AUDIO_DEVICE_NAME_LENGTH + 1];
   int aySampleDithering;
   int doubleTapFrames;
   int keyRepeatDelay;
@@ -133,6 +134,7 @@ struct AppSettings {
   ClockSource clockSource;
   uint8_t midiSendClock;
   uint8_t midiSendTransport;
+  uint8_t midiOutputDelayMs;
   // Saved to settings.txt: which instrument a MIDI-in note on a given
   // channel (0-15) plays during preview, e.g. channel 0 -> instrument 5.
   // -1 = channel not assigned (falls back to the currently selected

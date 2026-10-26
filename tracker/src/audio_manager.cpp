@@ -297,6 +297,23 @@ static int restart(void) {
   return 0;
 }
 
+static int refreshDevices(void) {
+  if (!floatBuffer || !samplePreviewBuffer) return 1;
+  audioPause(1);
+  audioCleanup();
+  if (audioInputRefreshDevices()) return 1;
+  if (audioSetup(audioCallback, aSampleRate, aBufferSize)) {
+    if (!appSettings.audioOutputDeviceName[0]) return 1;
+    audioOutputSelect("");
+    if (audioSetup(audioCallback, aSampleRate, aBufferSize)) return 1;
+    appSettings.audioOutputDeviceName[0] = 0;
+    settingsSave();
+  }
+  linkClientResetHostTimeFilter(chipnomadState->linkClient);
+  audioPause(0);
+  return 0;
+}
+
 static void replaceProject(Project* replacement) {
   if (!replacement || !chipnomadState) return;
   pause();
@@ -506,6 +523,7 @@ struct AudioManager audioManager = {
   .start = start,
   .reconfigure = reconfigure,
   .restart = restart,
+  .refreshDevices = refreshDevices,
   .pause = pause,
   .resume = resume,
   .replaceProject = replaceProject,

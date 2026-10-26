@@ -18,6 +18,20 @@ static int webSampleRate, webBufferSize;
 uint64_t outputLatencyMicros(void);
 static uint64_t measuredOutputLatencyMicros = 0;
 uint64_t outputLatencyMicros(void) { return measuredOutputLatencyMicros; }
+static SDL_AudioDeviceID selectedOutputDevice = 0;
+static char selectedOutputName[128] = {};
+
+int audioOutputDeviceCount(void) { return SDL_GetNumAudioDevices(SDL_FALSE); }
+int audioOutputDeviceName(int index, char* buffer, int bufferSize) {
+  if (!buffer || bufferSize <= 0) return 1;
+  const char* name = SDL_GetAudioDeviceName(index, SDL_FALSE);
+  if (!name) { buffer[0] = 0; return 1; }
+  SDL_strlcpy(buffer, name, (size_t)bufferSize);
+  return 0;
+}
+void audioOutputSelect(const char* name) {
+  SDL_strlcpy(selectedOutputName, name ? name : "", sizeof(selectedOutputName));
+}
 #ifdef ANDROID_BUILD
 #include "../android/audio_diagnostics.h"
 #include <jni.h>
@@ -111,10 +125,17 @@ int audioSetup(AudioCallback* audioCallback, int sampleRate, int bufferSize) {
   spec.callback = sdlAudioCallback;
   spec.userdata = (void *)audioCallback;
 
-  int opened = SDL_OpenAudio(&spec, NULL);
+  int opened;
+  if (selectedOutputName[0]) {
+    selectedOutputDevice = SDL_OpenAudioDevice(selectedOutputName, SDL_FALSE, &spec, NULL, 0);
+    opened = selectedOutputDevice ? 0 : -1;
+  } else {
+    selectedOutputDevice = 0;
+    opened = SDL_OpenAudio(&spec, NULL);
+  }
 #ifdef PORTMASTER_BUILD
   const char* fallback = SDL_getenv("CCT_AUDIODEV_FALLBACK");
-  if (opened < 0 && fallback && *fallback) {
+  if (opened < 0 && !selectedOutputName[0] && fallback && *fallback) {
     fprintf(stderr, "Default audio unavailable (%s); retrying %s\n", SDL_GetError(), fallback);
     if (SDL_setenv("AUDIODEV", fallback, 1) == 0)
       opened = SDL_OpenAudio(&spec, NULL);
@@ -155,16 +176,18 @@ void audioPause(int isPaused) {
 #ifdef ANDROID_BUILD
   // Reset only while SDL holds the callback paused, so intentional pauses do
   // not appear as scheduling gaps and the callback owns its timing state.
-  if (!isPaused && SDL_GetAudioStatus() == SDL_AUDIO_PAUSED) previousCallback = 0;
+  if (!isPaused && (selectedOutputDevice ? SDL_GetAudioDeviceStatus(selectedOutputDevice) : SDL_GetAudioStatus()) == SDL_AUDIO_PAUSED) previousCallback = 0;
 #endif
-  SDL_PauseAudio(isPaused);
+  if (selectedOutputDevice) SDL_PauseAudioDevice(selectedOutputDevice, isPaused);
+  else SDL_PauseAudio(isPaused);
 }
 
-void audioLock(void) { SDL_LockAudio(); }
-void audioUnlock(void) { SDL_UnlockAudio(); }
+void audioLock(void) { if (selectedOutputDevice) SDL_LockAudioDevice(selectedOutputDevice); else SDL_LockAudio(); }
+void audioUnlock(void) { if (selectedOutputDevice) SDL_UnlockAudioDevice(selectedOutputDevice); else SDL_UnlockAudio(); }
 
 void audioCleanup(void) {
-  SDL_CloseAudio();
+  if (selectedOutputDevice) { SDL_CloseAudioDevice(selectedOutputDevice); selectedOutputDevice = 0; }
+  else SDL_CloseAudio();
 #ifdef ANDROID_BUILD
   if (diagnosticThread) {
     SDL_AtomicSet(&diagnosticStop, 1);
@@ -345,8 +368,8 @@ int audioInputSetup(AudioCaptureCallback* callback, int sampleRate,
 
 int audioInputRefreshDevices(void) {
   // SDL caches the device list until the audio subsystem re-initializes.
-  // Re-init it so hot-plugged USB interfaces show up. Capture devices must be
-  // closed first (the caller disarms before calling this).
+  // Re-init it so hot-plugged USB interfaces show up. The caller closes both
+  // capture and output streams before calling this.
   if (captureDevice) return 1;
   SDL_QuitSubSystem(SDL_INIT_AUDIO);
   if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) return 1;

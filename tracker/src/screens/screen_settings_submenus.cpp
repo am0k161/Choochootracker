@@ -7,6 +7,7 @@
 #include "corelib_file.h"
 #include "corelib_font.h"
 #include "corelib_gfx.h"
+#include "corelib_audio.h"
 #include "file_browser.h"
 #include "screens.h"
 #include "waveform_display.h"
@@ -28,7 +29,7 @@ static void drawAudioCpuLoad(void) {
   if (load == displayedCpuLoad) return;
   displayedCpuLoad = load;
   gfxSetFgColor(appSettings.colorScheme.textInfo);
-  gfxPrintf(23, 4, "%03d%%", load);
+  gfxPrintf(23, 5, "%03d%%", load);
 }
 
 static void audioStatic(void) { gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "AUDIO"); }
@@ -43,7 +44,8 @@ static int audioInputArmedCount(void) {
 static void audioCursor(int, int row) {
   if (row == 0) gfxCursor(23, 2, 6);
   else if (row == 1) gfxCursor(23, 3, appSettings.audioBufferSize == 1024 ? 4 : 3);
-  else if (row == 3) gfxCursor(23, 5, 3); // "OFF"/"ON" value width
+  else if (row == 2) gfxCursor(14, 4, 16);
+  else if (row == 4) gfxCursor(23, 6, 3); // "OFF"/"ON" value width
 }
 static void audioField(int, int row, CellState state) {
   const ColorScheme cs = appSettings.colorScheme;
@@ -56,13 +58,19 @@ static void audioField(int, int row, CellState state) {
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     gfxClearRect(23, 3, 4, 1);
     gfxPrintf(23, 3, "%d", appSettings.audioBufferSize);
-  } else if (row == 3) {
-    gfxSetFgColor(cs.textDefault); gfxPrint(0, 5, "Audio Input");
+  } else if (row == 2) {
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, 4, "Audio Output");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
-    gfxClearRect(23, 5, 3, 1);
-    gfxPrint(23, 5, audioInputArmedCount() > 0 ? "ON" : "OFF");
+    gfxClearRect(14, 4, 16, 1);
+    gfxPrintf(14, 4, "%.16s", appSettings.audioOutputDeviceName[0] ?
+      appSettings.audioOutputDeviceName : "Default");
+  } else if (row == 4) {
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, 6, "Audio Input");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
+    gfxClearRect(23, 6, 3, 1);
+    gfxPrint(23, 6, audioInputArmedCount() > 0 ? "ON" : "OFF");
   } else {
-    gfxSetFgColor(cs.textDefault); gfxPrint(0, 4, "CPU load");
+    gfxSetFgColor(cs.textDefault); gfxPrint(0, 5, "CPU load");
     drawAudioCpuLoad();
   }
 }
@@ -72,9 +80,50 @@ static int audioBufferIndex(int value) {
   return 0;
 }
 static int audioEdit(int, int row, CellEditAction action) {
-  if (row == 3) {
+  if (row == 4) {
+    if (action == CellEditAction::clear || action == CellEditAction::decrease ||
+        action == CellEditAction::decreaseBig || action == CellEditAction::multiDecrease ||
+        action == CellEditAction::multiDecreaseBig) {
+      audioInputManager.disarmAll();
+      for (int i = 0; i < AUDIO_INPUT_MAX_ARMED; ++i) appSettings.audioInputArmed[i] = -1;
+      if (settingsSave()) screenMessage(MESSAGE_TIME_ERROR, "Could not save audio setting");
+      return 1;
+    }
     if (action != CellEditAction::tap) return 0;
     screenSetup(&screenAudioInput, 0);
+    return 1;
+  }
+  if (row == 2) {
+    int count = audioOutputDeviceCount();
+    if (count < 0) count = 0;
+    int current = 0;
+    char name[AUDIO_DEVICE_NAME_LENGTH + 1];
+    for (int i = 0; i < count; ++i)
+      if (!audioOutputDeviceName(i, name, sizeof(name)) &&
+          strcmp(name, appSettings.audioOutputDeviceName) == 0) { current = i + 1; break; }
+    int next = current;
+    if (action == CellEditAction::clear) next = 0;
+    else if (action == CellEditAction::tap || action == CellEditAction::increase ||
+             action == CellEditAction::increaseBig || action == CellEditAction::multiIncrease ||
+             action == CellEditAction::multiIncreaseBig) next = current < count ? current + 1 : 0;
+    else if (action == CellEditAction::decrease || action == CellEditAction::decreaseBig ||
+             action == CellEditAction::multiDecrease || action == CellEditAction::multiDecreaseBig)
+      next = current > 0 ? current - 1 : count;
+    else return 0;
+    char previous[AUDIO_DEVICE_NAME_LENGTH + 1];
+    strcpy(previous, appSettings.audioOutputDeviceName);
+    name[0] = 0;
+    if (next > 0 && audioOutputDeviceName(next - 1, name, sizeof(name))) return 1;
+    if (strcmp(previous, name) == 0) return 1;
+    audioOutputSelect(name);
+    if (!audioManager.restart || audioManager.restart()) {
+      audioOutputSelect(previous);
+      if (audioManager.restart) audioManager.restart();
+      screenMessage(MESSAGE_TIME_ERROR, "Audio output failed");
+      return 1;
+    }
+    strcpy(appSettings.audioOutputDeviceName, name);
+    if (settingsSave()) screenMessage(MESSAGE_TIME_ERROR, "Could not save audio setting");
     return 1;
   }
   if (row != 0 && row != 1) return 0;
@@ -108,8 +157,8 @@ static int audioEdit(int, int row, CellEditAction action) {
   if (settingsSave() != 0) screenMessage(MESSAGE_TIME_ERROR, "Could not save audio setting");
   return 1;
 }
-static int audioCellValid(int, int row) { return row == 0 || row == 1 || row == 3; }
-static ScreenData audioData = {4, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, audioStatic, audioCursor, NULL, noHeader, noHeader, audioField, audioEdit, NULL, NULL, audioCellValid, NULL};
+static int audioCellValid(int, int row) { return row == 0 || row == 1 || row == 2 || row == 4; }
+static ScreenData audioData = {5, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, audioStatic, audioCursor, NULL, noHeader, noHeader, audioField, audioEdit, NULL, NULL, audioCellValid, NULL};
 
 static void controlsStatic(void) { gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "CONTROLS"); gfxPrint(0, 2, "Keys repeat"); }
 #ifdef TOUCH_INPUT
