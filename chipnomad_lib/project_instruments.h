@@ -270,7 +270,7 @@ struct InstrumentBraids : InstrumentVoicePostSettings {
   uint16_t color;
 };
 
-enum class AChChidWave : uint8_t { square, saw, braids };
+enum class AChChidWave : uint8_t { square, saw, braids, sid };
 struct InstrumentAChChid {
   AChChidWave wave;
   int8_t fineTune;
@@ -279,6 +279,8 @@ struct InstrumentAChChid {
   uint16_t color;
   uint8_t saturation;
   uint16_t cutoff;
+  uint8_t sidShape;
+  uint16_t sidPulseWidth;
   uint8_t resonance;
   uint8_t envMod;
   uint16_t decay;

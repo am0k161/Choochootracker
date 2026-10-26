@@ -3,12 +3,37 @@
 #define CHIPS_IMPL
 #include "sid_voice.h"
 #include <cstring>
+namespace {
+const m6581_t& initialSIDChip() {
+ static const m6581_t initial=[](){m6581_t c;m6581_desc_t d{985248,48000,1};m6581_init(&c,&d);return c;}();
+ return initial;
+}
+}
+void SIDOscillator::init(float rate) {
+ rate_=std::max(8000.f,rate);chip_=initialSIDChip();chip_.sound_hz=int(rate_);
+ chip_.sample_period=(985248*M6581_FIXEDPOINT_SCALE)/int(rate_);m6581_reset(&chip_);
+ cycles_=0;configure(shape_,pulseWidth_);
+}
+void SIDOscillator::configure(uint8_t shape,uint16_t pulseWidth) {
+ shape_=std::clamp<int>(shape,1,8);pulseWidth_=std::min<uint16_t>(pulseWidth,4095);
+ _m6581_set_ctrl(&chip_.voice[0],shape_<<4);
+ chip_.voice[0].pulse_width=pulseWidth_;
+}
+void SIDOscillator::noteOn(bool slide) {
+ if(slide)return;
+ m6581_reset(&chip_);cycles_=0;configure(shape_,pulseWidth_);
+}
+float SIDOscillator::sample(double frequencyHz) {
+ chip_.voice[0].freq=std::clamp(int(std::lround(frequencyHz*16777216./985248.)),1,65535);
+ cycles_+=985248./rate_;int count=int(cycles_);cycles_-=count;
+ float sum=0;for(int i=0;i<count;++i){_m6581_voice_tick(&chip_,0);sum+=chip_.voice[0].wav_output;}
+ return sum/std::max(1,count)/2047.5f-1.f;
+}
 void SIDVoice::init(float rate){
  rate_=std::max(8000.f,rate);
  // Initialize the core's shared cutoff table once, off the audio callback.
  // Concurrent song/export contexts clone this immutable starting state.
- static const m6581_t initial=[](){m6581_t c;m6581_desc_t d{985248,48000,1};m6581_init(&c,&d);return c;}();
- chip_=initial;chip_.sound_hz=int(rate_);chip_.sample_period=(985248*M6581_FIXEDPOINT_SCALE)/int(rate_);m6581_reset(&chip_);
+ chip_=initialSIDChip();chip_.sound_hz=int(rate_);chip_.sample_period=(985248*M6581_FIXEDPOINT_SCALE)/int(rate_);m6581_reset(&chip_);
  dcPole_=std::exp(-2*3.141592653589793*20/rate_);amp_.init(rate_);configured_=false;kill();
 }
 void SIDVoice::write(int reg,int value){

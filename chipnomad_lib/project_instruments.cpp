@@ -302,6 +302,8 @@ static int freeAChChidInstrument(Instrument* instrument) { freeCommon(instrument
 
 static const char* modNameDrumSynth(int modIndex) {
   static const char* names[] = {"Off", "Volume", "Pitch", "Decay", "Tone", "Sweep", "Noise", "FM", "Drive", "Cutoff", "Reso"};
+  a->sidShape = 4;
+  a->sidPulseWidth = 2048;
   return names[modIndex];
 }
 int drumSynthMacroUsed(DrumSynthEngine engine, int macro) {

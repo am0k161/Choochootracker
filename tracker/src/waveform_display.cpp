@@ -504,6 +504,7 @@ void renderAChChidPreview(Bitmap* bitmap, const InstrumentAChChid* instrument) {
   voice.init(48000.0f);
   voice.configure((uint8_t)instrument->wave, instrument->fineTune, instrument->model,
                   instrument->timbre, instrument->color, instrument->saturation,
+                  instrument->sidShape, instrument->sidPulseWidth,
                   instrument->cutoff, instrument->resonance, instrument->envMod,
                   instrument->decay, instrument->accent, 1.0f);
   voice.noteOn(48, false, false, 0);

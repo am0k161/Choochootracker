@@ -334,6 +334,8 @@ static int loadInstrumentSample(FILE* file, Instrument* instrument) {
 
 static int loadInstrumentAChChid(FILE* file, Instrument* instrument) {
   InstrumentAChChid* a = &instrument->chip.achchid;
+  a->sidShape = 4;
+  a->sidPulseWidth = 2048;
   while (1) {
     char* line = peekLine(file);
     if (line == NULL || line[0] == '#') return 0;
@@ -343,6 +345,8 @@ static int loadInstrumentAChChid(FILE* file, Instrument* instrument) {
     else if (strncmp(line, "- Timbre: ", 10) == 0) sscanf(line, "- Timbre: %hu", &a->timbre);
     else if (strncmp(line, "- Color: ", 9) == 0) sscanf(line, "- Color: %hu", &a->color);
     else if (strncmp(line, "- Saturation: ", 14) == 0) sscanf(line, "- Saturation: %hhu", &a->saturation);
+    else if (strncmp(line, "- SID shape: ", 13) == 0) sscanf(line, "- SID shape: %hhu", &a->sidShape);
+    else if (strncmp(line, "- SID pulse: ", 13) == 0) sscanf(line, "- SID pulse: %hu", &a->sidPulseWidth);
     else if (strncmp(line, "- Cutoff: ", 10) == 0) sscanf(line, "- Cutoff: %hu", &a->cutoff);
     else if (strncmp(line, "- Resonance: ", 13) == 0) sscanf(line, "- Resonance: %hhu", &a->resonance);
     else if (strncmp(line, "- Env mod: ", 11) == 0) sscanf(line, "- Env mod: %hhu", &a->envMod);
@@ -912,6 +916,8 @@ static int saveInstrumentMidi(FILE* file, Instrument* instrument) {
   InstrumentMidi* m = &instrument->chip.midi;
   fprintf(file, "- Channel: %hhu\n", m->channel);
   fprintf(file, "- Program: %hhu\n", m->program);
+  fprintf(file, "- SID shape: %hhu\n", a->sidShape);
+  fprintf(file, "- SID pulse: %hu\n", a->sidPulseWidth);
   fprintf(file, "- Bank high: %hhu\n", m->bankHigh);
   fprintf(file, "- Bank low: %hhu\n", m->bankLow);
   fprintf(file, "- CC1 number: %hhu\n", m->ccNumber[0]);

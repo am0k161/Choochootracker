@@ -537,7 +537,7 @@ Global Braids settings are available in the app settings:
 
 ### aChChid
 
-**aChChid** is a monophonic acid bass engine based on Open303. `Square` and `Saw` use its native TB-303 oscillator, filter, envelope and accent behaviour. `Braids` replaces only the oscillator, then continues through the same 303 filter and amplifier path. It exposes Model, Timbre, Color and Shaper instead of Fine tune. Shaper progresses from soft saturation into wavefolding. aChChid does not use ChooChooTracker's unified post-filter or ADSR.
+**aChChid** is a monophonic acid bass engine based on Open303. `Square` and `Saw` use its native TB-303 oscillator, filter, envelope and accent behaviour. `Braids` and `SID` replace only the oscillator, then continue through the same 303 filter and amplifier path. Braids offers Model, Timbre, Color and Shaper. SID offers Shape (triangle, saw, pulse, noise or the four SID waveform combinations), Width (pulse width) and Shaper. Width affects only forms containing a pulse. Shaper progresses from soft saturation into wavefolding. SID does not use the SID chip's filter or envelope. aChChid does not use ChooChooTracker's unified post-filter or ADSR.
 
 Cutoff and Decay use logarithmic editing: **EDIT + LEFT/RIGHT** moves by one
 musical control step, while **EDIT + UP/DOWN** moves by sixteen steps. Cutoff
