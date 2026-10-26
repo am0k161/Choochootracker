@@ -136,13 +136,12 @@ static void setTextureNearest(SDL_Texture* texture) {
 static void useCompositionTarget(void) {
 #ifdef MIYOOPORTS_BUILD
   // The MMIYOO backend does not reliably support render-target textures.
-  // Its physical display is already the tracker's native 640x480 canvas, so
-  // render straight to the window instead of composing through an offscreen
-  // texture. This also avoids a full-screen copy for every UI frame.
+  // Render straight to the window, scaling the 640x480 logical canvas to the
+  // physical display (640x480 on older Minis, 752x560 on V4/Flip).
   SDL_SetRenderTarget(renderer, NULL);
-  SDL_RenderSetLogicalSize(renderer, logicalW, logicalH);
   SDL_RenderSetViewport(renderer, NULL);
   SDL_RenderSetScale(renderer, 1.0f, 1.0f);
+  SDL_RenderSetLogicalSize(renderer, logicalW, logicalH);
 #else
   SDL_SetRenderTarget(renderer, compositionTexture);
   // A render target already has the tracker canvas's native dimensions.
@@ -584,8 +583,14 @@ int gfxSetup(int *screenWidth, int *screenHeight) {
   if (screenWidth != NULL) *screenWidth = screenW;
   if (screenHeight != NULL) *screenHeight = screenH;
 #else
-  // Detect screen resolution if not provided or zero
-  if (screenWidth == NULL || screenHeight == NULL || *screenWidth == 0 || *screenHeight == 0) {
+  // Miyoo cards can move between 640x480 and 752x560 models, so ignore a
+  // resolution saved on another device and query the display each time.
+  bool detectDisplay = screenWidth == NULL || screenHeight == NULL ||
+    *screenWidth == 0 || *screenHeight == 0;
+#ifdef MIYOOPORTS_BUILD
+  detectDisplay = true;
+#endif
+  if (detectDisplay) {
     #if defined(DESKTOP_BUILD) || defined(WEB_BUILD)
       // Desktop and the HTML canvas use the tracker's native size.
       screenW = 640;
@@ -669,6 +674,12 @@ int gfxSetup(int *screenWidth, int *screenHeight) {
 #ifdef ANDROID_BUILD
   physicalW = screenW;
   physicalH = screenH;
+  screenW = 640;
+  screenH = 480;
+#endif
+#ifdef MIYOOPORTS_BUILD
+  // Keep the tracker grid the same size on both Miyoo display generations.
+  // SDL scales it to the window while preserving its 4:3 aspect ratio.
   screenW = 640;
   screenH = 480;
 #endif
@@ -1089,6 +1100,9 @@ void gfxHandleResize(int width, int height) {
   physicalW = width;
   physicalH = height;
   resizePresentDelay = 2;
+  screenW = 640;
+  screenH = 480;
+#elif defined(MIYOOPORTS_BUILD)
   screenW = 640;
   screenH = 480;
 #else

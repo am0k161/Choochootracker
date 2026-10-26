@@ -24,6 +24,8 @@ On the RG353V with ArkOS, use the console's **+ / -** buttons to adjust output v
 
 Extract the MiyooPorts archive at the root of the SD card so that its `Roms/PORTS/` folders merge with Onion's existing folders. Start **ChooChooTracker** from the Ports menu after refreshing the collection. Back up the app's `projects/` folder before replacing an existing installation.
 
+The same MiyooPorts build scales the tracker interface to the detected screen size on the original Mini, Mini Plus, Mini V4 and Mini Flip. The screen size is detected at each launch, including after moving an SD card between models.
+
 Project loading time can vary with the instrument types used in a song. If startup or project loading seems unusually slow, report how long each takes, along with the console model and Onion OS version.
 
 ### Raspberry Pi OS 64-bit
