@@ -89,10 +89,12 @@ static void drawPlaybackCounter(const PlaybackStatus* status) {
 
   char label[7];
   if (appSettings.playbackCounterMode == 0) {
-    uint64_t bars = playbackCounterTicks /
-      ((uint64_t)appSettings.playbackBarRows * appSettings.playbackBarTicks);
-    if (bars > 99999) bars = 99999;
-    snprintf(label, sizeof(label), "B%05llu", (unsigned long long)bars);
+    const uint64_t ticksPerBar = (uint64_t)appSettings.playbackBarRows * appSettings.playbackBarTicks;
+    uint64_t bars = playbackCounterTicks / ticksPerBar;
+    unsigned quarter = playbackCounterTicks ?
+      (unsigned)((playbackCounterTicks % ticksPerBar) * 4 / ticksPerBar) + 1 : 0;
+    if (bars > 9999) { bars = 9999; quarter = 4; }
+    snprintf(label, sizeof(label), "%03llu:%u", (unsigned long long)bars, quarter);
   } else {
     uint64_t seconds = playbackCounterMicros / 1000000;
     if (seconds > 59999) seconds = 59999;

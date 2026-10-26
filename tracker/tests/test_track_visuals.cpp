@@ -178,16 +178,24 @@ TEST_CASE_FIXTURE(VisualFixture, "Playback counter holds at stop and resets on t
   auto& status = chipnomadState->uiPlaybackStatus;
   status.isPlaying = 0;
   appDraw();
-  CHECK(std::string(mockGfxCells[2] + 34, 6) == "B00000");
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "000:0 ");
 
   status.isPlaying = 1;
   status.linkPhaseTicks = 0;
   status.linkPhaseTickMicros = 1000000;
   appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "000:0 ");
+  for (const auto& step : {std::pair<uint64_t, const char*>{1, "000:1 "},
+                           {23, "000:1 "}, {24, "000:2 "}, {48, "000:3 "},
+                           {72, "000:4 "}, {96, "001:1 "}}) {
+    status.linkPhaseTicks = step.first;
+    appDraw();
+    CHECK(std::string(mockGfxCells[2] + 34, 6) == step.second);
+  }
   status.linkPhaseTicks = 191;
   status.linkPhaseTickMicros = 4000000;
   appDraw();
-  CHECK(std::string(mockGfxCells[2] + 34, 6) == "B00001");
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "001:4 ");
   appSettings.playbackCounterMode = 1;
   appDraw();
   CHECK(std::string(mockGfxCells[2] + 34, 6) == "00:03 ");
@@ -209,14 +217,24 @@ TEST_CASE_FIXTURE(VisualFixture, "Playback counter holds at stop and resets on t
   appSettings.playbackCounterMode = 0;
   gfxSetContentRowOffset(2);
   appDraw();
-  CHECK(std::string(mockGfxCells[2] + 34, 6) == "B00002");
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "002:1 ");
   CHECK(gfxGetContentRowOffset() == 2);
   appSettings.playbackBarRows = 8;
   appDraw();
-  CHECK(std::string(mockGfxCells[2] + 34, 6) == "B00004");
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "004:1 ");
+  status.linkPhaseTicks = 204;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "004:2 ");
+  appSettings.playbackBarTicks = 3;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "008:3 ");
+  appSettings.playbackBarTicks = 6;
+  status.linkPhaseTicks = 1000ull * 8 * 6;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "1000:1");
   status.linkPhaseTicks = 100000ull * 8 * 6;
   appDraw();
-  CHECK(std::string(mockGfxCells[2] + 34, 6) == "B99999");
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "9999:4");
   appSettings.playbackCounterMode = 1;
   status.linkPhaseTickMicros = 70000000000ull;
   appDraw();
