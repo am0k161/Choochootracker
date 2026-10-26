@@ -38,6 +38,24 @@ static void tapEdit(){key(1,keyEdit);key(0,0);}
 int main(int argc,char** argv){
   if(argc!=2&&argc!=3)return 1;output=argv[1];initDefaultAppSettings();appSettings.screenWidth=640;appSettings.screenHeight=480;fontSetCurrent(fontGetDefault());require(!gfxSetup(&appSettings.screenWidth,&appSettings.screenHeight),"SDL dummy setup");
   chipnomadState=chipnomadCreate();require(chipnomadState,"state");require(!projectLoad(&chipnomadState->project,"projects/gm-midi-demo.cct"),"fixture");
+  if(argc==3 && !strcmp(argv[2],"--filter-only")) {
+    screensInitAll();waveformDisplayInit();monitorDisplayInit();cInstrument=0;
+    auto& instrument=chipnomadState->project.instruments[0];
+    getInstrumentFunctions(InstrumentType::Braids).init(&instrument);
+    screenSetup(&screenInstrument,0);appDraw();
+    require(instrument.chip.braids.filterCharacter==2,"default Classic");
+    for(int character=3;character<=7;++character) {
+      require(screenInstrumentBraids.onEdit(1,4,CellEditAction::increase),"filter type edit");
+      appDraw();
+      require(instrument.chip.braids.filterCharacter==character,"filter type selection");
+    }
+    auto before=instrument.chip.braids.filterColor;
+    require(screenInstrumentBraids.onEdit(1,6,CellEditAction::increase),"filter Color edit");
+    appDraw();
+    require(instrument.chip.braids.filterColor!=before,"filter Color changed");
+    printf("Standard filter UI selection passed\n");
+    chipnomadDestroy(chipnomadState);SDL_Quit();return 0;
+  }
   if(argc==3 && !strcmp(argv[2],"--audio-in-only")) {
     screensInitAll();waveformDisplayInit();monitorDisplayInit();cInstrument=0;
     auto& instrument=chipnomadState->project.instruments[0];

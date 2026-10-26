@@ -548,12 +548,15 @@ void instrumentCommonDrawField(int col, int row, CellState state) {
 }
 
 void instrumentCommonDrawVoicePostStatic(int drawEnvelope) {
+  const InstrumentVoicePostSettings* post =
+    instrumentVoicePostSettings(&chipnomadState->project.instruments[cInstrument]);
   gfxSetFgColor(appSettings.colorScheme.textTitles);
   gfxPrint(18, 7, "FILTER");
   gfxSetFgColor(appSettings.colorScheme.textDefault);
   gfxPrint(18, 8, "Type");
   gfxPrint(18, 9, "Mode");
-  gfxPrint(18, 10, "Slope");
+  gfxPrint(18, 10, post && post->filterCharacter >= 5 && post->filterCharacter <= 7
+    ? "Color" : "Slope");
   gfxPrint(18, 11, "Cutoff");
   gfxPrint(18, 12, "Reso");
   if (drawEnvelope) {
@@ -577,10 +580,10 @@ int instrumentCommonDrawVoicePostCursor(int col, int row) {
     InstrumentVoicePostSettings* post = instrumentVoicePostSettings(&chipnomadState->project.instruments[cInstrument]);
     int width = 2;
     if (row == 4) {
-      static const char* types[] = {"Off", "Clean", "Classic", "Aggro", "Acid"};
-      width = (int)strlen(types[post && post->filterCharacter <= 4 ? post->filterCharacter : 1]);
+      static const char* types[] = {"Off", "Clean", "Classic", "Aggro", "Acid", "Roar", "Snarl", "Prism"};
+      width = (int)strlen(types[post && post->filterCharacter <= 7 ? post->filterCharacter : 1]);
     } else if (row == 6) {
-      width = 5;
+      width = post && post->filterCharacter >= 5 && post->filterCharacter <= 7 ? 2 : 5;
     } else if (row == 7) {
       char value[12];
       snprintf(value, sizeof(value), "%u Hz", post ? post->filterCutoffHz : 0);
@@ -605,9 +608,13 @@ int instrumentCommonDrawVoicePostField(int col, int row, CellState state,
   gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
   gfxClearRect(26, row + 4, 8, 1);
   switch (row) {
-    case 4: { static const char* types[] = {"Off", "Clean", "Classic", "Aggro", "Acid"}; gfxPrint(26, 8, types[post->filterCharacter <= 4 ? post->filterCharacter : 1]); break; }
+    case 4: { static const char* types[] = {"Off", "Clean", "Classic", "Aggro", "Acid", "Roar", "Snarl", "Prism"}; gfxPrint(26, 8, types[post->filterCharacter <= 7 ? post->filterCharacter : 1]); break; }
     case 5: { static const char* modes[] = {"LP", "BP", "HP"}; gfxPrint(26, 9, modes[post->filterMode <= 2 ? post->filterMode : 0]); break; }
-    case 6: gfxPrint(26, 10, post->filterSlope24dB ? "24 dB" : "12 dB"); break;
+    case 6:
+      if (post->filterCharacter >= 5 && post->filterCharacter <= 7)
+        gfxPrint(26, 10, byteToHex(post->filterColor));
+      else gfxPrint(26, 10, post->filterSlope24dB ? "24 dB" : "12 dB");
+      break;
     case 7: gfxPrintf(26, 11, "%u Hz", post->filterCutoffHz); break;
     case 8: gfxPrint(26, 12, byteToHex(post->filterResonance)); break;
   }
@@ -625,12 +632,15 @@ int instrumentCommonOnEditVoicePost(int col, int row, CellEditAction action,
   if (!col) return 0;
   switch (row) {
     case 4: {
-      int handled = edit8noLast(action, &post->filterCharacter, 1, 0, 4);
+      int handled = edit8noLast(action, &post->filterCharacter, 1, 0, 7);
       post->filterEnabled = post->filterCharacter != 0;
+      if (handled) currentScreen->fullRedraw();
       return handled;
     }
     case 5: return edit8noLast(action, &post->filterMode, 1, 0, 2);
-    case 6: return edit8noLast(action, &post->filterSlope24dB, 1, 0, 1);
+    case 6: return post->filterCharacter >= 5 && post->filterCharacter <= 7
+      ? edit8noLast(action, &post->filterColor, 16, 0, 255)
+      : edit8noLast(action, &post->filterSlope24dB, 1, 0, 1);
     case 7: return editFilterCutoff(action, &post->filterCutoffHz);
     case 8: return edit8noLast(action, &post->filterResonance, 16, 0, 255);
     default: return 0;

@@ -2683,7 +2683,7 @@ static void updateBraidsVoices(ChipNomadState* state) {
         static_cast<BraidsFilterMode>(instrument->filterMode > 2 ? 0 : instrument->filterMode),
         instrument->filterSlope24dB != 0,
         cutoff,
-        resonance / 255.0f);
+        resonance / 255.0f, instrument->filterColor);
       voice->setEnvelope(true,
         envelopeTime(attack), envelopeTime(decay), sustain / 255.0f, envelopeTime(release), shape);
       uint8_t note = track->chordPitchFinal[slot];
@@ -2776,7 +2776,7 @@ static void updatePlaitsVoices(ChipNomadState* state) {
                        (uint16_t)morph, (uint8_t)auxMix, p->envelopeMode,
                        triggerDecay, triggerColor, cents / 100.0f, gain / track->chordVoiceCount);
       voice->setFilter(p->filterEnabled != 0, p->filterCharacter, p->filterMode, p->filterSlope24dB != 0,
-                       cutoff, resonance / 255.0f);
+                       cutoff, resonance / 255.0f, p->filterColor);
       voice->setEnvelope(envelopeTime(attack), envelopeTime(decay),
                          sustain / 255.0f, envelopeTime(release), shape);
     }
@@ -2851,7 +2851,7 @@ static void updatePlaitsAltVoices(ChipNomadState* state) {
         (uint16_t)morph, (uint8_t)auxMix, p->envelopeMode, triggerDecay, triggerColor,
         cents / 100.0f, gain / track->chordVoiceCount);
       voice->setFilter(p->filterEnabled != 0, p->filterCharacter, p->filterMode, p->filterSlope24dB != 0,
-        cutoff, resonance / 255.0f);
+        cutoff, resonance / 255.0f, p->filterColor);
       voice->setEnvelope(envelopeTime(attack), envelopeTime(decay),
         sustain / 255.0f, envelopeTime(release), shape);
     }

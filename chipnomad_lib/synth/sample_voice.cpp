@@ -430,7 +430,7 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
   }
   if (fadeLen != xfade_.length()) xfade_.configure(fadeLen);
   post_.setFilter(sample_->filterEnabled != 0, sample_->filterCharacter, sample_->filterMode,
-                  sample_->filterSlope24dB != 0, cutoffHz, resonance / 255.0f);
+                  sample_->filterSlope24dB != 0, cutoffHz, resonance / 255.0f, sample_->filterColor);
   post_.setEnvelope(true, envelopeTime(attack < 0 ? sample_->attack : attack),
                     envelopeTime(decay < 0 ? sample_->decay : decay),
                     (sustain < 0 ? sample_->sustain : sustain) / 255.0f,

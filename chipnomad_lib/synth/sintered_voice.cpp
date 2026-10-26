@@ -18,7 +18,8 @@ void SinteredVoice::configure(const InstrumentSintered* instrument, float pitchC
   frequency_ = 440.0f * powf(2.0f, (pitchCents - 6900.0f) / 1200.0f);
   post_.setGain(gain);
   post_.setFilter(parameters_.filterEnabled != 0, parameters_.filterCharacter, parameters_.filterMode,
-    parameters_.filterSlope24dB != 0, cutoffHz, resonance / 255.0f);
+    parameters_.filterSlope24dB != 0, cutoffHz, resonance / 255.0f,
+    parameters_.filterColor);
 }
 
 void SinteredVoice::noteOn() {

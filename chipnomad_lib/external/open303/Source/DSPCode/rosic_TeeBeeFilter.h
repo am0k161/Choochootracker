@@ -151,8 +151,8 @@ namespace rosic
   {
     if( newCutoff != cutoff )
     {
-      if( newCutoff < 200.0 )  // an absolute floor for the cutoff frequency - tweakable
-        cutoff = 200.0;  
+      if( newCutoff < 20.0 )  // shared post-filter range; was 200 Hz upstream
+        cutoff = 20.0;
       else if( newCutoff > 20000.0 )
         cutoff = 20000.0;
       else

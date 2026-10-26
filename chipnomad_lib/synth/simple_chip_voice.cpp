@@ -16,7 +16,7 @@ void SimpleChipVoice::configure(InstrumentType type,const InstrumentSimpleChip* 
  bool newProgram=memcmp(&patch_.program,&p->program,sizeof(p->program));
  patch_=*p;if(newProgram){macros_.reset(patch_.program);macroPhase_=0;}
  cents_=std::isfinite(cents)?cents+p->fineTune:6000;
- post_.setGain(gain);post_.setFilter(p->filterEnabled,p->filterCharacter,p->filterMode,p->filterSlope24dB,p->filterCutoffHz,p->filterResonance/255.f);
+ post_.setGain(gain);post_.setFilter(p->filterEnabled,p->filterCharacter,p->filterMode,p->filterSlope24dB,p->filterCutoffHz,p->filterResonance/255.f,p->filterColor);
  post_.setEnvelope(true,p->attack*p->attack/13005.f,p->decay*p->decay/13005.f,p->sustain/255.f,p->release*p->release/13005.f,p->envelopeShape);
  if(active_)registers(false);
 }

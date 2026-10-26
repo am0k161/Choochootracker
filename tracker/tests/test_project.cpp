@@ -620,6 +620,7 @@ TEST_CASE("new instruments use audible synth defaults") {
   CHECK(instrument.chip.braids.sustain == 255);
   CHECK(instrument.chip.braids.release == 0);
   CHECK(instrument.chip.braids.filterCharacter == 2);
+  CHECK(instrument.chip.braids.filterColor == 128);
   CHECK(instrument.chip.braids.filterCutoffHz == 20000);
   CHECK(instrument.chip.braids.timbre == 16384);
   CHECK(instrument.chip.braids.color == 16384);
@@ -651,8 +652,38 @@ TEST_CASE("new instruments use audible synth defaults") {
     CHECK(post->sustain == 255);
     CHECK(post->filterEnabled == 1);
     CHECK(post->filterCharacter == 2);
+    CHECK(post->filterColor == 128);
     CHECK(post->filterCutoffHz == 20000);
   }
+}
+
+TEST_CASE("filter Color round-trips and older instruments default to 128") {
+  auto saved = std::make_unique<Project>();
+  auto loaded = std::make_unique<Project>();
+  projectInit(saved.get()); projectInit(loaded.get());
+  Instrument* instrument = &saved->instruments[0];
+  getInstrumentFunctions(InstrumentType::Braids).init(instrument);
+  instrument->chip.braids.filterCharacter = 7;
+  instrument->chip.braids.filterColor = 201;
+  const char* path = "test_filter_color.cni";
+  const char* oldPath = "test_filter_color_old.cni";
+  REQUIRE(instrumentSave(saved.get(), path, 0) == 0);
+  REQUIRE(instrumentLoad(loaded.get(), path, 0) == 0);
+  CHECK(loaded->instruments[0].chip.braids.filterCharacter == 7);
+  CHECK(loaded->instruments[0].chip.braids.filterColor == 201);
+
+  FILE* input = fopen(path, "rb");
+  FILE* old = fopen(oldPath, "wb");
+  REQUIRE(input != nullptr);
+  REQUIRE(old != nullptr);
+  char line[512];
+  while (fgets(line, sizeof(line), input))
+    if (strncmp(line, "- Filter color: ", 16) != 0) fputs(line, old);
+  fclose(input); fclose(old);
+  projectInit(loaded.get());
+  REQUIRE(instrumentLoad(loaded.get(), oldPath, 0) == 0);
+  CHECK(loaded->instruments[0].chip.braids.filterColor == 128);
+  std::remove(path); std::remove(oldPath);
 }
 
 // instrumentIsEmpty tests

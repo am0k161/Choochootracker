@@ -16,10 +16,10 @@ class VoicePostProcessor {
     gain_ = gain < 0.0f ? 0.0f : (gain > 1.0f ? 1.0f : gain);
   }
   void setFilter(bool enabled, uint8_t character, uint8_t mode, bool slope24dB,
-                 float cutoffHz, float resonance) {
+                 float cutoffHz, float resonance, uint8_t color = 128) {
     if (resonance < 0.0f) resonance = 0.0f;
     if (resonance > 1.0f) resonance = 1.0f;
-    filter_.configure(enabled, character, mode, slope24dB, cutoffHz, resonance * resonance);
+    filter_.configure(enabled, character, mode, slope24dB, cutoffHz, resonance, color);
   }
   void setFilter(bool enabled, uint8_t mode, bool slope24dB,
                  float cutoffHz, float resonance) {

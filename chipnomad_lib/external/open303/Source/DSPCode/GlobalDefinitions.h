@@ -47,6 +47,9 @@ typedef signed long long INT64;
 // unsigned 32 bit integers:
 #ifdef _MSC_VER
 typedef unsigned __int32 UINT32;
+#elif defined(_WIN32)
+// Match the Windows SDK typedef under MinGW too.
+typedef unsigned int UINT32;
 #else
 typedef unsigned long UINT32;
 #endif

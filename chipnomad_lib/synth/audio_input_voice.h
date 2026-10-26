@@ -10,7 +10,7 @@ class AudioInputVoice {
   void configure(const InstrumentVoicePostSettings& p, float gain) {
     post_.setGain(gain);
     post_.setFilter(p.filterEnabled != 0, p.filterCharacter, p.filterMode,
-      p.filterSlope24dB != 0, p.filterCutoffHz, p.filterResonance / 255.0f);
+      p.filterSlope24dB != 0, p.filterCutoffHz, p.filterResonance / 255.0f, p.filterColor);
     post_.setEnvelope(true, p.attack * p.attack / 13005.0f,
       p.decay * p.decay / 13005.0f, p.sustain / 255.0f,
       p.release * p.release / 13005.0f, p.envelopeShape);

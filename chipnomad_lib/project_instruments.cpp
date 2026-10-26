@@ -168,6 +168,7 @@ static void initVoicePostSettings(InstrumentVoicePostSettings* post) {
   post->filterSlope24dB = 0;
   post->filterCutoffHz = FILTER_CUTOFF_MAX_HZ;
   post->filterResonance = 0;
+  post->filterColor = 128;
   post->attack = 0;
   post->decay = 0;
   post->sustain = 255;

@@ -216,6 +216,7 @@ static int loadVoicePostSetting(const char* line, InstrumentVoicePostSettings* p
   else if (strncmp(line, "- Filter slope: ", 16) == 0) sscanf(line, "- Filter slope: %hhu", &post->filterSlope24dB);
   else if (strncmp(line, "- Filter cutoff: ", 17) == 0) sscanf(line, "- Filter cutoff: %hu", &post->filterCutoffHz);
   else if (strncmp(line, "- Filter resonance: ", 20) == 0) sscanf(line, "- Filter resonance: %hhu", &post->filterResonance);
+  else if (strncmp(line, "- Filter color: ", 16) == 0) sscanf(line, "- Filter color: %hhu", &post->filterColor);
   else if (strncmp(line, "- Attack: ", 10) == 0) sscanf(line, "- Attack: %hhu", &post->attack);
   else if (strncmp(line, "- Decay: ", 9) == 0) sscanf(line, "- Decay: %hhu", &post->decay);
   else if (strncmp(line, "- Sustain: ", 11) == 0) sscanf(line, "- Sustain: %hhu", &post->sustain);
@@ -232,6 +233,7 @@ static void saveVoicePostSettings(FILE* file, const InstrumentVoicePostSettings*
   fprintf(file, "- Filter slope: %hhu\n", post->filterSlope24dB);
   fprintf(file, "- Filter cutoff: %hu\n", post->filterCutoffHz);
   fprintf(file, "- Filter resonance: %hhu\n", post->filterResonance);
+  fprintf(file, "- Filter color: %hhu\n", post->filterColor);
   fprintf(file, "- Attack: %hhu\n", post->attack);
   fprintf(file, "- Decay: %hhu\n", post->decay);
   fprintf(file, "- Sustain: %hhu\n", post->sustain);
@@ -591,7 +593,7 @@ static int loadInstrumentOPLL(FILE* file, Instrument* instrument) {
 }
 
 static int loadSimpleChip(FILE* file, Instrument* instrument) {
-  InstrumentSimpleChip p{};bool seen=false,bassSeen=false,programSeen=false;
+  InstrumentSimpleChip p{};p.filterColor=128;bool seen=false,bassSeen=false,programSeen=false;
   p.segaBassExtension=instrument->type==InstrumentType::SegaPSG;
   while(char* line=peekLine(file)) {
     if(line[0]=='#')break;
@@ -651,6 +653,10 @@ int instrumentLoadData(FILE* file, Instrument* instrument, Project* p) {
     }
     consumeLine(file);
   }
+
+  // Older CCT/CNI files have no Color line. instrumentClear() zeroes the union.
+  if (InstrumentVoicePostSettings* post = instrumentVoicePostSettings(instrument))
+    post->filterColor = 128;
 
   // Check version to determine format
   if (projectFileVersion == 1) {
@@ -989,6 +995,7 @@ static int saveInstrumentDrumSynth(FILE* file, Instrument* instrument) {
   fprintf(file, "- Filter slope: %hhu\n", d->filterSlope24dB);
   fprintf(file, "- Filter cutoff: %hu\n", d->filterCutoffHz);
   fprintf(file, "- Filter resonance: %hhu\n", d->filterResonance);
+  fprintf(file, "- Filter color: %hhu\n", d->filterColor);
   return 0;
 }
 

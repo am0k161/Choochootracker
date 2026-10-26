@@ -551,7 +551,7 @@ An `F` in the note volume column triggers an accent. Normal notes use a half-ste
 
 Its six macros are **Decay**, **Tone**, **Sweep**, **Noise**, **FM** and **Drive**. Their labels adapt where useful (for example, Kick's Noise is `Click`, and Cowbell's FM is metallic cross-modulation). Every macro is active on every model, but its musical role changes with the model: Sweep can alter pitch, burst spacing or metallic spread; FM can add cross-modulation, a metallic layer or a ring-like overtone. The lower half of each range is intended for conventional drum sounds; the upper half deliberately opens wider timbral morphs and more synthetic results.
 
-Every model can use the shared LP/BP/HP multimode filter, with Clean, Classic, Aggro or Acid character, `12`/`24 dB` slope, cutoff and resonance. Bogie supports all of its active macros plus Volume, Pitch, Cutoff and Resonance as modulation and motion-recording destinations. Use short Decay with Cowbell for sharp phonk attacks; increase FM for a harder, more metallic bell.
+Every model can use the shared LP/BP/HP multimode filter, with Clean, Classic, Aggro, Acid, Roar, Snarl or Prism character, cutoff and resonance. Clean, Classic, Aggro and Acid expose `12`/`24 dB` slope; Roar, Snarl and Prism expose Color instead. Bogie supports all of its active macros plus Volume, Pitch, Cutoff and Resonance as modulation and motion-recording destinations. Use short Decay with Cowbell for sharp phonk attacks; increase FM for a harder, more metallic bell.
 
 On the Modulation screen, press **EDIT** on a source to choose a family (Envelopes, LFO or Sticks), then its source. **Left** and **Right** still cycle sources directly.
 
@@ -627,16 +627,21 @@ Several VCO types are available:
 
 Each instrument feeds its VCO into a multimode filter.
 
-The filter has a switchable `12 dB` or `24 dB` slope and can work as a low-pass (LP), band-pass (BP) or high-pass (HP) filter.
+The filter can work as a low-pass (LP), band-pass (BP) or high-pass (HP) filter, with cutoff from 20 Hz to 20 kHz. Clean, Classic, Aggro and Acid have a `12 dB`/`24 dB` slope switch. The three creative characters use that slot for a Color control instead.
 
 Several filter characters are available:
 
 - **Clean**: sterile and digital
 - **Classic**: inspired by classic American analogue synths
-- **Aggro**: inspired by roaring Japanese analogue synths
-- **Acid**: inspired by psychedelics
+- **Aggro**: gritty MS-20-style KORG-35 filter, with resonant LP, BP and HP
+- **Acid**: Open303's TB-303 low-pass in LP/24; its other modes and slopes are Open303-based adaptations. Acid reaches an effective maximum cutoff of 12 kHz (slightly lower below a 48 kHz output rate), even though the shared cutoff control reaches 20 kHz.
+- **Roar**: saturated filter feedback; Color increases the feedback
+- **Snarl**: an extra resonant peak around the cutoff; Color moves the peak
+- **Prism**: two moving peaks for a formant-like colour; Color shifts their positions
 
-Classic, Aggro and Acid can get seriously resonant in this alpha. Start low and turn them up gently.
+For Roar, Snarl and Prism, Color runs from `00` (0%) through `80` (150%) to `FF` (300%). The upper half pushes the feedback and resonant peaks into more extreme, sometimes unstable sounds.
+
+Aggro, Acid and the creative characters can get strongly resonant. Start low and turn them up gently. Existing Aggro and Acid instruments use these new sounds when loaded.
 
 The filter feeds a VCA controlled by an ADSR envelope. The envelope shape can morph between exponential, linear and logarithmic curves.
 
