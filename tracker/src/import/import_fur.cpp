@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <algorithm>
+#include <array>
 #include <map>
 #include <memory>
 #include <string>
@@ -1026,6 +1027,8 @@ struct Slot {
   std::vector<uint8_t> wav;
   int rate = 0;
   bool loop = false;
+  // SID parameters set by 1Exy effects: attack, decay, sustain, release, ring, sync (-1: instrument's own).
+  int sidOv[6] = {-1, -1, -1, -1, -1, -1};
 };
 
 struct Converter {
@@ -1101,9 +1104,11 @@ struct Converter {
   }
 
   // Slot of a Furnace instrument on a channel of the given kind.
-  int slotFor(int fi, const std::string& kind, bool canSample) {
-    char key[40];
-    snprintf(key, sizeof(key), "%d,%s", fi, kind.c_str());
+  int slotFor(int fi, const std::string& kind, bool canSample, const int* sidOv = NULL) {
+    char key[80];
+    int n = snprintf(key, sizeof(key), "%d,%s", fi, kind.c_str());
+    if (sidOv)
+      for (int i = 0; i < 6; i++) n += snprintf(key + n, sizeof(key) - n, ",%d", sidOv[i]);
     auto it = slotOf.find(key);
     if (it != slotOf.end()) return it->second;
     if (slots.size() >= PROJECT_MAX_INSTRUMENTS) {
@@ -1118,6 +1123,7 @@ struct Converter {
     s.kind = kind;
     s.name = nm;
     s.furIns = fi;
+    if (sidOv) memcpy(s.sidOv, sidOv, sizeof(s.sidOv));
     if (ins && ins->type == 4 && ins->sample >= 0) {
       const FurSample* smp = ins->sample < (int)mod.samples.size() ? &mod.samples[ins->sample] : NULL;
       std::vector<uint8_t> wav;
@@ -1358,6 +1364,9 @@ int projectLoadFurChannels(Project* project, const char* path, const char* sampl
   int clamped = 0;
   std::map<std::string, int> dropped;
   std::vector<int> curVol(chans.size(), -1);
+  // SID channels: instrument in use and the 1Exy parameters set since it was selected.
+  std::vector<int> curIns(chans.size(), -1);
+  std::vector<std::array<int, 6>> sidOv(chans.size(), std::array<int, 6>{-1, -1, -1, -1, -1, -1});
 
   for (int i = 0; i < PROJECT_MAX_LENGTH; i++)
     for (int t = 0; t < PROJECT_MAX_TRACKS; t++) p.song[i][t] = EMPTY_VALUE_16;
@@ -1394,7 +1403,22 @@ int projectLoadFurChannels(Project* project, const char* path, const char* sampl
                   realNote = true;
                 }
               }
-              if (cell.ins >= 0) dest.instrument = (uint8_t)conv.slotFor(cell.ins, kindName, canSample);
+              bool isSid = kindName == "sid";
+              if (isSid) {
+                // Furnace keeps 1Exy values until another instrument is selected.
+                if (cell.ins >= 0 && cell.ins != curIns[ci]) {
+                  curIns[ci] = cell.ins;
+                  sidOv[ci].fill(-1);
+                }
+                for (const auto& fx : cell.fx)
+                  if (fx.cmd == 0x1E && fx.val >= 0 && (fx.val >> 4) <= 5)
+                    sidOv[ci][fx.val >> 4] = (fx.val >> 4) < 4 ? (fx.val & 15) : (fx.val & 1);
+              }
+              bool hasOv = isSid && curIns[ci] >= 0 &&
+                           std::any_of(sidOv[ci].begin(), sidOv[ci].end(), [](int x) { return x >= 0; });
+              if (hasOv && (cell.ins >= 0 || realNote))
+                dest.instrument = (uint8_t)conv.slotFor(curIns[ci], kindName, canSample, sidOv[ci].data());
+              else if (cell.ins >= 0) dest.instrument = (uint8_t)conv.slotFor(cell.ins, kindName, canSample);
               bool hasVol = cell.vol >= 0;
               if (hasVol) {
                 int v = (int)(cell.vol * 127.0 / volMax[ci] + 0.5);
@@ -1405,6 +1429,7 @@ int projectLoadFurChannels(Project* project, const char* path, const char* sampl
               for (const auto& fx : cell.fx) {
                 if (fx.cmd < 0) continue;
                 int val = fx.val < 0 ? 0 : fx.val;
+                if (kindName == "sid" && fx.cmd == 0x1E && (val >> 4) <= 5) continue;
                 FXCell m;
                 if (!mapEffect(fx.cmd, val, grooves, &m)) {
                   char key[8];
@@ -1533,6 +1558,19 @@ int projectLoadFurChannels(Project* project, const char* path, const char* sampl
       }
     }
     if (!done) conv.buildKind(inst, slot.kind, fin, slot.furIns, slot.name);
+    if (!done) {
+      // Furnace macros advance once per song tick, the converter assumed 60 Hz.
+      ChipProgram* prog = inst->type == InstrumentType::SID ? &inst->chip.sid.program
+                          : inst->type == InstrumentType::SegaPSG ? &inst->chip.simpleChip.program : NULL;
+      float hz = (song.tickRate > 0 && song.tickRate < 1000) ? song.tickRate : 50.0f;
+      if (prog && prog->format == 1 && prog->size) prog->rate = (uint8_t)std::min(255, std::max(1, (int)(hz + 0.5f)));
+    }
+    if (!done && inst->type == InstrumentType::SID) {
+      auto* v = inst->chip.sid.value;
+      const int fields[6] = {sidAttack, sidDecay, sidSustain, sidRelease, sidRing, sidSync};
+      for (int k = 0; k < 6; k++)
+        if (slot.sidOv[k] >= 0) v[fields[k]] = (uint16_t)slot.sidOv[k];
+    }
   }
 
   snprintf(p.title, sizeof(p.title), "%.24s", mod.name.c_str());

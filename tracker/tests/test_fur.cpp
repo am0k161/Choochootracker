@@ -6,6 +6,7 @@
 #include <project_utils.h>
 #include <four_op_patch.h>
 #include <opl_patch.h>
+#include <sid_patch.h>
 
 #include <algorithm>
 #include <cstdio>
@@ -227,6 +228,33 @@ TEST_CASE("a file that is not a Furnace module is refused") {
   auto p = newProject();
   CHECK(projectLoadFur(p.get(), FUR_PATH, NULL) != 0);
   remove(FUR_PATH);
+  projectFree(p.get());
+}
+
+TEST_CASE("SID 1Exy effects become instrument variants and the macro rate follows the song") {
+  const char* demo = "/opt/furnace-0.6pre5/demos/c64/The_Snippet.fur";
+  if (readFile(demo).empty()) return;
+  auto p = newProject();
+  REQUIRE(projectLoadFur(p.get(), demo, "snippet_samples") == 0);
+  CHECK(std::string(projectLoadFurWarnings()).find("1E") == std::string::npos);
+  // The bell notes set another decay or sustain with 1Exy after selecting
+  // the instrument, which gives one instrument variant per combination.
+  int variants = 0, decays = 0;
+  uint16_t first = 0xffff;
+  int sustains = 0;
+  uint16_t firstSustain = 0xffff;
+  for (int i = 0; i < PROJECT_MAX_INSTRUMENTS; i++) {
+    const Instrument& in = p->instruments[i];
+    if (in.type != InstrumentType::SID || std::string(in.name) != "bell in agony") continue;
+    variants++;
+    if (first == 0xffff) first = in.chip.sid.value[sidDecay];
+    if (in.chip.sid.value[sidDecay] != first) decays++;
+    if (firstSustain == 0xffff) firstSustain = in.chip.sid.value[sidSustain];
+    if (in.chip.sid.value[sidSustain] != firstSustain) sustains++;
+    if (in.chip.sid.program.size) CHECK(in.chip.sid.program.rate == 60);
+  }
+  CHECK(variants > 1);
+  CHECK(decays + sustains > 0);
   projectFree(p.get());
 }
 
