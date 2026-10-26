@@ -57,6 +57,9 @@ static const LinkBackend kLinkStubBackend = {
   linkBackendRequestBeatAtLaunch,
   linkBackendOnAudioFrame,
   linkBackendResetHostTimeFilter,
+  nullptr, // Tempo publishing is unavailable on this platform.
+  nullptr,
+  nullptr,
 };
 
 const LinkBackend* linkBackendRealGet(void) {

@@ -123,6 +123,8 @@ static uint64_t midiClockPhaseLastPulse;
 // pattern as clockBpmAppliedSerial/clockTransportAppliedSerial).
 static uint32_t linkBpmAppliedSerial;
 static uint32_t linkTransportAppliedSerial;
+static int linkLocalPlaying = 0;
+static int linkPendingTransport = -1;
 // Link phase follower: Link owns the shared musical timeline, while the
 // tracker advances at its audio device's actual clock. Once per 4/4 bar we
 // measure the difference and slew the next bar by at most two percent. This
@@ -378,22 +380,21 @@ static void applyLoopRange(void) {
   }
 }
 
-/**
-* @brief Queue a song start, aligned to the Link session when Link is the
-*        clock source and we are connected (T41). Receiver-only: this never
-*        pushes tempo or transport to peers - linkClientRequestBeatAtLaunch
-*        only aligns OUR timeline to the next quantum boundary (local
-*        requestBeatAtTime + commit of our own state). Returns 0 if no
-*        timed start was queued (caller should start immediately), 1 if a
-*        timed start was queued.
-*/
-static int queueLinkAlignedSongStart(int songRow, int chainRow, int loop) {
+// With peers, launch on the shared downbeat. Alone, establish beat zero
+// at launch so later participants align to the song already playing.
+static int queueLinkAlignedStart(int songRow, int chainRow, int loop, ScreenPlaybackLevel level = ScreenPlaybackLevel::song, int trackIdx = 0) {
   if (appSettings.clockSource != ClockSource::link) return 0;
-  uint32_t serial = 0;
-  if (linkClientGetStatus(chipnomadState->linkClient, &serial) != LinkStatus::connected) return 0;
+  if (!linkClientIsEnabled(chipnomadState->linkClient)) return 0;
   const uint64_t launchTime = linkClientRequestBeatAtLaunch(chipnomadState->linkClient, 4);
   if (launchTime == 0) return 0;
-  chipnomadQueuePlaybackStartSongAtTime(chipnomadState, songRow, chainRow, loop, launchTime);
+  int queued;
+  if (level == ScreenPlaybackLevel::chain)
+    queued = chipnomadQueuePlaybackStartChain(chipnomadState, trackIdx, songRow, chainRow, loop, launchTime);
+  else if (level == ScreenPlaybackLevel::phrase)
+    queued = chipnomadQueuePlaybackStartPhrase(chipnomadState, trackIdx, songRow, chainRow, loop, launchTime);
+  else
+    queued = chipnomadQueuePlaybackStartSongAtTime(chipnomadState, songRow, chainRow, loop, launchTime);
+  if (!queued) return 0;
   screenMessage(MESSAGE_TIME, "Link: waiting for downbeat");
   return 1;
 }
@@ -425,15 +426,17 @@ static int inputPlayback(int keys, int tapCount) {
 
     if (playbackLevel == ScreenPlaybackLevel::song) {
       int startRow = range.enabled ? range.startSongRow : *pSongRow;
-      if (!queueLinkAlignedSongStart(startRow, 0, 1))
+      if (!queueLinkAlignedStart(startRow, 0, 1))
         chipnomadQueuePlaybackStartSong(chipnomadState, startRow, 0, 1);
       applyLoopRange();
     } else if (playbackLevel == ScreenPlaybackLevel::chain) {
       int startRow = range.enabled ? range.startChainRow : *pChainRow;
-      chipnomadQueuePlaybackStartChain(chipnomadState, *pSongTrack, *pSongRow, startRow, 1);
+      if (!queueLinkAlignedStart(*pSongRow, startRow, 1, playbackLevel, *pSongTrack))
+        chipnomadQueuePlaybackStartChain(chipnomadState, *pSongTrack, *pSongRow, startRow, 1);
       applyLoopRange();
     } else if (playbackLevel == ScreenPlaybackLevel::phrase) {
-      chipnomadQueuePlaybackStartPhrase(chipnomadState, *pSongTrack, *pSongRow, *pChainRow, 1);
+      if (!queueLinkAlignedStart(*pSongRow, *pChainRow, 1, playbackLevel, *pSongTrack))
+        chipnomadQueuePlaybackStartPhrase(chipnomadState, *pSongTrack, *pSongRow, *pChainRow, 1);
       applyLoopRange();
     }
     return 1;
@@ -451,12 +454,12 @@ static int inputPlayback(int keys, int tapCount) {
 
     if (playbackLevel == ScreenPlaybackLevel::song) {
       int startRow = range.enabled ? range.startSongRow : *pSongRow;
-      if (!queueLinkAlignedSongStart(startRow, 0, 1))
+      if (!queueLinkAlignedStart(startRow, 0, 1))
         chipnomadQueuePlaybackStartSong(chipnomadState, startRow, 0, 1);
       applyLoopRange();
     } else if (playbackLevel == ScreenPlaybackLevel::chain || playbackLevel == ScreenPlaybackLevel::phrase) {
       int startChainRow = range.enabled ? range.startChainRow : *pChainRow;
-      if (!queueLinkAlignedSongStart(*pSongRow, startChainRow, 1))
+      if (!queueLinkAlignedStart(*pSongRow, startChainRow, 1))
         chipnomadQueuePlaybackStartSong(chipnomadState, *pSongRow, startChainRow, 1);
       applyLoopRange();
     }
@@ -694,6 +697,7 @@ void appSetup(void) {
   int savedOutputPort = findMidiPortByName(0, appSettings.midiOutputDeviceName);
   if (savedOutputPort >= 0 && midiRouterOpenOutput(savedOutputPort) == 0) appSettings.midiOutputDevice = savedOutputPort;
   midiRouterSetChannelInstrumentMap(chipnomadState->midiRouter, appSettings.midiChannelInstrument);
+  linkClientSetTransportSync(chipnomadState->linkClient, appSettings.linkTransport);
   midiRouterSetSyncOutput(chipnomadState->midiRouter, appSettings.midiSendClock, appSettings.midiSendTransport);
   midiRouterSetOutputDelayMs(appSettings.midiOutputDelayMs);
   midiRouterSetClockMode(chipnomadState->midiRouter,
@@ -1098,7 +1102,7 @@ void appOnEvent(MainLoopEventData eventData) {
       updateMidiClockPhaseFollowing();
 
       // Ableton Link mode: follow the session tempo published by the Link
-      // client (receiver-only - we never push tempo back). Same
+      // client. User tempo edits publish via the Project screen. Same
       // serial-bumped exactly-once pattern as the MIDI clock block above.
       // Poll drives the connecting -> connected/noPeers status resolution
       // (3s discovery threshold); cheap, so run it every UI frame while
@@ -1121,25 +1125,42 @@ void appOnEvent(MainLoopEventData eventData) {
       } else {
         resetLinkPhaseFollowing();
       }
-      // Link transport follow (start/stop sync): the session's play
-      // state drives song playback, mirroring the MIDI clock block
-      // above. The serial bumps only on transport change, so each
-      // session start/stop is applied exactly once. A manual local stop
-      // while the session keeps playing stays stopped until the session
-      // itself stops and starts again (the serial does not move while
-      // the session state is unchanged).
-      if (appSettings.clockSource == ClockSource::link) {
-        int linkPlaying = 0; uint32_t linkTransportSerial = 0;
-        linkClientGetTransport(chipnomadState->linkClient, &linkPlaying, &linkTransportSerial);
-        if (linkTransportSerial != linkTransportAppliedSerial) {
-          linkTransportAppliedSerial = linkTransportSerial;
-          if (linkPlaying && !chipnomadGetPlaybackStatus(chipnomadState)->isPlaying) {
-            if (!queueLinkAlignedSongStart(*pSongRow, 0, 1))
-              chipnomadQueuePlaybackStartSong(chipnomadState, *pSongRow, 0, 1);
-          } else if (!linkPlaying && chipnomadGetPlaybackStatus(chipnomadState)->isPlaying) {
-            chipnomadQueuePlaybackStop(chipnomadState);
+      // Follow remote transport once, and publish real local playback changes.
+      // Waiting for an audio command must not echo the old local state back.
+      const PlaybackStatus* linkPlayback = chipnomadGetPlaybackStatus(chipnomadState);
+      int localPlaying = 0;
+      for (int t = 0; t < chipnomadState->project.tracksCount; ++t) {
+        const auto mode = linkPlayback->tracks[t].mode;
+        if (mode != PlaybackMode::stopped && mode != PlaybackMode::phraseRow && mode != PlaybackMode::none)
+          localPlaying = 1;
+      }
+      int linkPlaying = 0; uint32_t transportSerial = 0;
+      linkClientGetTransport(chipnomadState->linkClient, &linkPlaying, &transportSerial);
+      if (appSettings.clockSource == ClockSource::link && appSettings.linkTransport &&
+          linkClientIsEnabled(chipnomadState->linkClient)) {
+        if (transportSerial != linkTransportAppliedSerial) {
+          linkTransportAppliedSerial = transportSerial;
+          if ((linkPlaying != localPlaying || linkPendingTransport >= 0) && linkClientGetStatus(chipnomadState->linkClient, nullptr) == LinkStatus::connected) {
+            linkPendingTransport = linkPlaying;
+            if (linkPlaying) {
+              if (!queueLinkAlignedStart(*pSongRow, 0, 1))
+                chipnomadQueuePlaybackStartSong(chipnomadState, *pSongRow, 0, 1);
+            } else chipnomadQueuePlaybackStop(chipnomadState);
           }
         }
+        if (linkPendingTransport >= 0) {
+          if (localPlaying == linkPendingTransport) {
+            linkPendingTransport = -1;
+            linkLocalPlaying = localPlaying;
+          }
+        } else if (localPlaying != linkLocalPlaying) {
+          linkClientSetPlaying(chipnomadState->linkClient, localPlaying, linkPlayback->linkPhaseTickMicros);
+          linkLocalPlaying = localPlaying;
+        }
+      } else {
+        linkTransportAppliedSerial = transportSerial;
+        linkLocalPlaying = localPlaying;
+        linkPendingTransport = -1;
       }
       for (int i = 0; i < PROJECT_MAX_MIDI_CC_MAPPINGS; ++i) {
         MidiCCMapping& mapping = chipnomadState->project.midiCCMappings[i];

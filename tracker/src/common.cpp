@@ -87,6 +87,7 @@ void initDefaultAppSettings(void) {
   appSettings.clockSource = ClockSource::internal;
   appSettings.midiSendClock = 0;
   appSettings.midiSendTransport = 0;
+  appSettings.linkTransport = 1; // Preserve transport following from older settings.
   appSettings.midiOutputDelayMs = 0;
   for (int i = 0; i < MIDI_CHANNEL_COUNT; i++) appSettings.midiChannelInstrument[i] = -1;
   appSettings.persistentWaveform = 0;
@@ -262,6 +263,7 @@ int settingsSave(void) {
   // that read the old field still load the Internal/Midi-Clock choice.
   fprintf(file, "midiSendClock: %d\n", appSettings.midiSendClock);
   fprintf(file, "midiSendTransport: %d\n", appSettings.midiSendTransport);
+  fprintf(file, "linkTransport: %d\n", appSettings.linkTransport);
   fprintf(file, "midiOutputDelayMs: %d\n", appSettings.midiOutputDelayMs);
   fprintf(file, "clockSource: %d\n", (int)appSettings.clockSource);
   fprintf(file, "midiClockMode: %d\n",
@@ -354,6 +356,7 @@ int settingsLoad(void) {
   FILE* file = fopen(settingsPath, "r");
   if (file == NULL) return 1;
 
+  bool hasClockSource = false;
   while (fgets(lineBuffer, sizeof(lineBuffer), file) != NULL) {
     char* line = lineBuffer;
     // Strip newline characters from the end of the line
@@ -452,6 +455,10 @@ int settingsLoad(void) {
     } else if (strncmp(line, "midiOutputDeviceName: ", 22) == 0) {
       strncpy(appSettings.midiOutputDeviceName, line + 22, MIDI_DEVICE_NAME_LENGTH);
       appSettings.midiOutputDeviceName[MIDI_DEVICE_NAME_LENGTH] = 0;
+    } else if (strncmp(line, "linkTransport: ", 15) == 0) {
+      int value = 0;
+      if (sscanf(line + 15, "%d", &value) == 1 && (value == 0 || value == 1))
+        appSettings.linkTransport = (uint8_t)value;
     } else if (strncmp(line, "midiSendClock: ", 15) == 0) {
       int value = 0;
       if (sscanf(line + 15, "%d", &value) == 1 && (value == 0 || value == 1))
@@ -467,17 +474,19 @@ int settingsLoad(void) {
     } else if (strncmp(line, "clockSource: ", 13) == 0) {
       // Canonical v3+ setting. Read before the legacy `midiClockMode:`
       // alias below; if both lines exist (new binaries write both), the
-      // canonical one wins because it appears first in the file.
+      // canonical one wins regardless of their order.
       int source = 0;
       if (sscanf(line + 13, "%d", &source) == 1 &&
-          (source == 0 || source == 1 || source == 2))
+          (source == 0 || source == 1 || source == 2)) {
         appSettings.clockSource = (ClockSource)source;
+        hasClockSource = true;
+      }
     } else if (strncmp(line, "midiClockMode: ", 15) == 0) {
       // Legacy alias from v2 settings.txt: 0 -> internal, 1 -> midiClock.
       // Only applied when the canonical `clockSource:` line was absent,
       // so a file written by a new binary keeps its Link selection.
       int mode = 0;
-      if (sscanf(line + 15, "%d", &mode) == 1 && (mode == 0 || mode == 1))
+      if (!hasClockSource && sscanf(line + 15, "%d", &mode) == 1 && (mode == 0 || mode == 1))
         appSettings.clockSource = mode == 1 ? ClockSource::midiClock : ClockSource::internal;
     } else if (strncmp(line, "audioInputDeviceCount: ", 23) == 0) {
       int count;

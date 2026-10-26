@@ -12,16 +12,16 @@ static int getColumnCount(int row) {
 static void drawStatic(void) {
   projectCommonDrawStatic();
   gfxSetFgColor(appSettings.colorScheme.textDefault);
-  gfxPrint(0, 12, "Pitch table");
-  gfxPrint(0, 13, "Scale");
+  gfxPrint(0, 17, "Pitch table");
+  gfxPrint(0, 18, "Scale");
 }
 
 static void drawCursor(int col, int row) {
   if (row < SCR_PROJECT_ROWS) return projectCommonDrawCursor(col, row);
   if (row == SCR_PROJECT_ROWS) {
-    gfxCursor(13, 12, strlen(chipnomadState->project.pitchTable.name));
+    gfxCursor(13, 17, strlen(chipnomadState->project.pitchTable.name));
   } else if (row == SCR_PROJECT_ROWS + 1) {
-    gfxCursor(0, 13, 5);
+    gfxCursor(0, 18, 5);
   }
 }
 
@@ -31,10 +31,10 @@ static void drawField(int col, int row, CellState state) {
   gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
 
   if (row == SCR_PROJECT_ROWS) {
-    gfxClearRect(13, 12, PROJECT_PITCH_TABLE_TITLE_LENGTH, 1);
-    gfxPrint(13, 12, chipnomadState->project.pitchTable.name);
+    gfxClearRect(13, 17, PROJECT_PITCH_TABLE_TITLE_LENGTH, 1);
+    gfxPrint(13, 17, chipnomadState->project.pitchTable.name);
   } else if (row == SCR_PROJECT_ROWS + 1) {
-    gfxPrint(0, 13, "Scale");
+    gfxPrint(0, 18, "Scale");
   }
 }
 

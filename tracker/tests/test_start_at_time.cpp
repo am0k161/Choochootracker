@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <initializer_list>
 
 // T40: chipnomadQueuePlaybackStartSongAtTime - a queued song start fires on
 // the first audio tick frame at or after its target host time, not before.
@@ -66,7 +67,7 @@ struct StartAtTimeFixture {
 
 }  // namespace
 
-TEST_SUITE("timed song start") {
+TEST_SUITE("timed playback start") {
 
 TEST_CASE("start at time fires at the target, not immediately") {
   StartAtTimeFixture fixture;
@@ -154,4 +155,24 @@ TEST_CASE("a newer timed start replaces an older pending one") {
   CHECK(started == 1);
 }
 
+}
+
+TEST_CASE("timed Chain and Phrase starts wait and retain their playback mode") {
+  for (const auto mode : {PlaybackMode::chain, PlaybackMode::phrase}) {
+    StartAtTimeFixture fixture;
+    auto* state = fixture.state;
+    const uint64_t target = nowMicros() + 5000;
+    if (mode == PlaybackMode::chain)
+      REQUIRE(chipnomadQueuePlaybackStartChain(state, 0, 0, 0, 1, target));
+    else
+      REQUIRE(chipnomadQueuePlaybackStartPhrase(state, 0, 0, 0, 1, target));
+    float buffer[2] = {};
+    chipnomadRender(state, buffer, 1);
+    CHECK_FALSE(chipnomadGetPlaybackStatus(state)->isPlaying);
+    for (int i = 0; i < 200000 && !chipnomadGetPlaybackStatus(state)->isPlaying; ++i)
+      chipnomadRender(state, buffer, 1);
+    CHECK(chipnomadGetPlaybackStatus(state)->isPlaying);
+    CHECK(nowMicros() >= target);
+    CHECK(chipnomadGetPlaybackStatus(state)->tracks[0].mode == mode);
+  }
 }

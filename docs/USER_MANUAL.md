@@ -1341,7 +1341,8 @@ With the cursor resting on **Mode**, the status bar shows a fixed description of
 Both modes share the same root, scale, **Custom** note editing and track checkboxes. Each of the eight track checkboxes decides which tracks the mode applies to. The scale engine is bypassed for non-12-note pitch tables and for Sampler instruments whose **Slice** mode is EQUAL, AUTO or LAZY (their notes select slices chromatically from C-0); MIDI input is not part of this version.
 
 - **Linear pitch** selects the pitch-table mode. **Off** is the default and the hardware-validated setting for correct AY, Braids and Plaits octave tracking.
-- **Clock source** selects between **Internal** (the project's own tempo), **Midi Clock** (the sequencer follows an incoming MIDI clock) and **Ableton Link** (the sequencer follows the tempo of a Link session on the local network). When **Midi Clock** is active, the **Tempo** row is greyed out and shows the tempo measured from the incoming clock instead; transport (play/stop) is driven by the sender's Start/Continue/Stop messages, so the app's own PLAY control is not needed. When **Ableton Link** is active, the row becomes the **Link** row: it holds the session connect/disconnect toggle instead of a tempo field (see below). The clock source is saved to settings.txt and applies to all projects.
+- **Sync** selects **Off** (local tempo), **MIDI** (incoming MIDI clock and transport) or **Link** (shared network tempo). With MIDI selected, Tempo is read-only and shows the measured incoming tempo. With Link selected, Tempo remains editable: edits are shared with the other participants, and their edits update this field too. This setting applies to all projects.
+- **Sync out** selects **Off** or **MIDI**. MIDI sends clock at the current tempo, including a shared Link tempo. Select the MIDI output device and optionally enable **Send transport** in Settings > MIDI. Output is suppressed while Sync is MIDI; the saved output preference is retained.
 - **Tempo** sets the project tempo in whole BPM (`3-500`). Internally the tracker still stores its tick rate in Hz (`tick rate = BPM x 0.4`), so existing projects load and save unchanged; a project with a fractional tempo displays it rounded and snaps to a whole BPM on the first tempo edit. Coarse adjustment steps by 5 BPM, fine adjustment by 1 BPM; clearing resets to the default 125 BPM.
 - ChooChooTracker saves projects as `.cct`. This format is not compatible with ChipNomad.
 
@@ -1349,30 +1350,23 @@ Use **Save** before changing instrument types or loading another project.
 
 ### Ableton Link
 
-Ableton Link lets ChooChooTracker follow the tempo of other Link-enabled apps (Ableton Live, LinkHut, etc.) running on the same local network (Wi-Fi or Ethernet). It is a receiver only: the tracker adjusts its own tempo to the session, and never pushes tempo or transport to other participants.
+Ableton Link shares tempo and beat phase between apps on the same local network (Wi-Fi or Ethernet). Two ChooChooTracker devices can connect directly without Ableton Live or a computer. Each participant can change the shared tempo; there is no fixed leader. Joining an existing session adopts its tempo.
 
-**What is synced:**
+1. In Project, select **Sync: Link**.
+2. Press EDIT on **[Connect]**. The right-hand status shows `Searching`, then the number of peers. `0 peers` means Link is enabled and waiting for another participant. The first device uses its current project tempo.
+3. Edit **Tempo** on either device to update the shared session. Tempo stays visible at all times, within the tracker's 3-500 BPM range.
+4. Press PLAY in Song, Chain or Phrase to launch that playback mode on the session's next four-beat boundary. Shift+PLAY launches the song on that boundary too; note and row previews remain immediate. When the first participant starts alone, its launch establishes the shared downbeat for later joiners. **Transport: On** also shares play/stop with participants that enable Link start/stop sync; **Off** keeps playback controls independent while retaining tempo and beat sync.
+5. Press EDIT on **[Disconnect]**, or choose another Sync mode, to leave.
 
-- Session tempo — the tracker follows the Link session tempo continuously (within the tracker's 3-500 BPM range).
-- Beat phase — pressing PLAY aligns playback to the session's beat grid: the song starts on the next bar (4-beat quantum).
+Older CCT versions that receive Link tempo can follow tempo changes from this version. Their transport behavior remains the behavior implemented by that version.
 
-**What is not synced:**
+For **Link to MIDI**, select **Sync: Link**, connect, and set **Sync out: MIDI**. Choose a MIDI Out device in Settings > MIDI and enable external MIDI sync on the receiving device. Enable **Send transport** there if the MIDI device should also start and stop with CCT. Clock is sent during sequencer playback.
 
-While Link playback is running, ChooChooTracker checks the shared beat phase once per 4/4 bar and gently adjusts its own tick rate when needed. This compensates small device-clock differences without skipping or repeating tracker ticks, and never changes another participant's Link session.
-
-- Grooves, `SPD` and `DELAY` values are not affected — they stay relative to the followed tempo.
-- Song/chain/phrase cursor positions and mixer settings are never shared.
-
-**How to use:**
-
-1. Open the Project screen and set **Clock source** to **Ableton Link**. The row below it becomes the **Link** row.
-2. Press EDIT on **[Connect]** to join the session. The status message on the right shows the progress: `Wait...` while connecting, `No net` when no network is available, `No sess` when no session is found, `Err` on an internal failure. While connected the button reads **[Disconnect]** and the status alternates between `connected` and `Peers: N` (N = number of peers) about once a second.
-3. Wait for `connected`, then press PLAY — playback starts aligned to the next bar of the session.
-4. Press EDIT on **[Disconnect]** (or set the clock source back to Internal) to leave the session.
-
-In Link mode the session owns the tempo: the row shows no BPM field, and the session tempo is applied to the project automatically (within the tracker's 3-500 BPM range).
+During Link playback, CCT gently corrects its local tick rate once per four-beat bar to keep beat phase aligned without skipping tracker ticks. Grooves, `SPD` and `DELAY` remain relative to tempo. Song positions, patterns and mixer settings are not shared.
 
 **Platform availability:** PortMaster (primary target), Windows, Linux, macOS and Android are supported. The Web build and Miyoo builds do not include Link.
+
+**Android note:** a constant audible offset can remain on the built-in speaker even when tempo stays synchronized. The current output-latency estimate does not measure the complete Android audio path.
 
 **PortMaster note:** on PortMaster devices the audio buffer is larger (512 frames at 48 kHz), so beat alignment is best-effort within roughly 10-15 ms rather than sample-accurate. Tempo sync itself is unaffected.
 
@@ -1419,9 +1413,9 @@ Desktop and PortMaster. Settings > **MIDI** opens this submenu: **MIDI In** / **
 - **Channel mapping**: opens a list of the 16 MIDI channels; assign each one an instrument (`OFF` by default) so notes received on that channel preview that instrument regardless of which one is selected on the Instrument screen - e.g. channel `01` -> instrument `05`. A channel left `OFF` falls back to the currently selected instrument, the original behavior. This mapping is saved to settings.txt.
 - **MIDI CC mapping**: maps an incoming controller to an instrument parameter, including its **Volume**, or to global controls. Global rows show `TRK 1`-`TRK 8` instead of an instrument and provide track **Mute**, **Solo**, **Volume**, **Reverb send**, and **Delay send**; **Song play/stop** has no target. A new mapping ignores the CC that learned/configured it and takes effect on the next physical movement, so setting up mappings during playback cannot reset a patch to zero. Mute and solo use `0-63` = off, `64-127` = on.
 - **Driving an external MIDI device**: give a track the [MIDI Out](#midi-out) instrument type and set its Channel; triggering notes on that track sends real MIDI to the selected MIDI Out device instead of making sound in ChooChooTracker.
-- **Send clock / Send transport**: in Settings > MIDI, select a **MIDI Out** device and enable either switch as needed. Both default to OFF and are remembered for this device. **Send clock** sends 24 pulses per quarter note during sequencer playback, following the internal tempo or the Ableton Link session. **Send transport** sends **Start** when playback begins and **Stop** when it ends; note and row previews do not start external gear. Each playback starts the receiver from its beginning; Continue and song-position pointers are not sent. Both outputs are suppressed while **Clock source** is **Midi Clock** to prevent feedback; the switches retain their settings. Enable external MIDI sync on the receiving device.
+- **Send clock / Send transport**: in Settings > MIDI, select a **MIDI Out** device and enable either switch as needed. Both default to OFF and are remembered for this device. **Send clock** sends 24 pulses per quarter note during sequencer playback, following the internal tempo or the Ableton Link session. **Send transport** sends **Start** when playback begins and **Stop** when it ends; note and row previews do not start external gear. Each playback starts the receiver from its beginning; Continue and song-position pointers are not sent. Both outputs are suppressed while **Sync** is **MIDI** to prevent feedback; the switches retain their settings. Enable external MIDI sync on the receiving device.
 - **MIDI delay**: delay the outgoing notes, controllers, clock and transport together by `0–200 ms` to align an external synth with ChooChooTracker's audio output. Start at `0 ms`, then increase it if the external synth sounds early. Compare short attacks recorded together and fine-tune in `1 ms` steps; larger edits move by `10 ms`. The setting is saved. Switching between the console jack and a USB audio interface may require a different value.
-- **MIDI clock sync**: with a MIDI In device selected, set the Project screen's **Clock source** to **Midi Clock** to follow an external sequencer. The tracker measures tempo from the incoming clock (24 pulses per quarter note) and shows it on the greyed-out **Tempo** row; **Start**, **Continue** and **Stop** messages control playback. The clock source is remembered in settings.txt.
+- **MIDI clock sync**: with a MIDI In device selected, set the Project screen's **Sync** to **MIDI** to follow an external sequencer. The tracker measures tempo from the incoming clock (24 pulses per quarter note) and shows it on the greyed-out **Tempo** row; **Start**, **Continue** and **Stop** messages control playback. The clock source is remembered in settings.txt.
 
 ## 15. Credits and licensing
 

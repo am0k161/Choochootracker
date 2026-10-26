@@ -134,6 +134,7 @@ struct AppSettings {
   ClockSource clockSource;
   uint8_t midiSendClock;
   uint8_t midiSendTransport;
+  uint8_t linkTransport;
   uint8_t midiOutputDelayMs;
   // Saved to settings.txt: which instrument a MIDI-in note on a given
   // channel (0-15) plays during preview, e.g. channel 0 -> instrument 5.

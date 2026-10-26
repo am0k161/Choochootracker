@@ -19,7 +19,7 @@
 #include <string.h>
 #include <strings.h>
 
-#include <chrono>
+#include <initializer_list>
 
 #ifdef WEB_BUILD
 #include <emscripten/emscripten.h>
@@ -233,54 +233,14 @@ static LinkStatus currentLinkStatus(void) {
   return linkClientGetStatus(chipnomadState->linkClient, &statusSerialScratch);
 }
 
-// Alternating "connected" / "Peers: N" status on the Link row: the phase
-// flips roughly once a second while connected, and a status transition
-// resets it so a fresh connection always shows "connected" first.
-static LinkStatus linkStatusPhaseStatus = LinkStatus::disabled;
-static std::chrono::steady_clock::time_point linkStatusPhaseFlip = {};
-static int linkStatusShowPeers = 0;
-
-static void updateLinkStatusPhase(void) {
-  const LinkStatus status = currentLinkStatus();
-  const auto now = std::chrono::steady_clock::now();
-  if (status != linkStatusPhaseStatus) {
-    linkStatusPhaseStatus = status;
-    linkStatusPhaseFlip = now;
-    linkStatusShowPeers = 0;
-    return;
-  }
-  if (status == LinkStatus::connected &&
-      (linkStatusPhaseFlip == std::chrono::steady_clock::time_point() ||
-        std::chrono::duration<float>(now - linkStatusPhaseFlip).count() >= 1.0f)) {
-    linkStatusPhaseFlip = now;
-    linkStatusShowPeers = !linkStatusShowPeers;
-  }
-}
-
 static void draw(void) {
-  // Row 6 is asynchronous in both clock-slave modes: MIDI clock shows the
-  // live measured tempo, Link shows the connect toggle and session status
-  // (discovery threshold, peer joins/leaves, the 1 s alternation).
-  // fullRedraw only runs on navigation/edit, so refresh the field here
-  // every frame. gfxClearRect erases the cursor underline together with
-  // the field and the framework does not redraw the cursor after draw(),
-  // so restore it whenever it rests on this row (same pattern as the
-  // song screen's live refresh).
   if (!clockSourceMirror) return;
-  if (clockSourceMirror == 2) updateLinkStatusPhase();
-
   ScreenData* screen = projectScreen();
-  const int focused = screen->cursorRow == 6;
-  if (clockSourceMirror == 1) {
-    // MIDI clock: live followed tempo in the info color, as before.
-    const ColorScheme cs = appSettings.colorScheme;
-    gfxSetFgColor(cs.textInfo);
-    gfxClearRect(13, 11, 27, 1);
-    gfxPrintf(13, 11, "%u BPM", liveClockBpm());
-  } else {
-    projectCommonDrawField(0, 6, focused ? CellState::focus : CellState::normal);
+  for (int row : {5, 7, 8, 9}) {
+    const bool focused = screen->cursorRow == row;
+    projectCommonDrawField(0, row, focused ? CellState::focus : CellState::normal);
+    if (focused) screen->drawCursor(screen->cursorCol, row);
   }
-  if (focused) screen->drawCursor(screen->cursorCol, 6);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -299,9 +259,9 @@ int projectCommonColumnCount(int row) {
   } else if (row == 4) {
     return 1; // Linear pitch
   } else if (row == 5) {
-    return 1; // Clock source
+    return 1; // Tempo
   } else if (row == 6) {
-    return 1; // Tempo (BPM), or the Link connect toggle in Link mode
+    return 1; // Sync in
   }
   return 1; // Default value
 }
@@ -321,10 +281,11 @@ void projectCommonDrawStatic(void) {
   gfxPrint(0, 7, "Author");
 
   gfxPrint(0, 9, "Linear pitch");
-  gfxPrint(0, 10, "Clock source");
-  // Row 6 doubles as the Link connect row; the label follows the mode
-  // (a full redraw runs whenever the clock source changes).
-  gfxPrint(0, 11, clockSourceMirror == 2 ? "Link" : "Tempo");
+  gfxPrint(0, 10, "Tempo");
+  gfxPrint(0, 11, "Sync");
+  gfxPrint(0, 12, "Sync out");
+  gfxPrint(0, 14, "Link");
+  gfxPrint(0, 15, "Transport");
 }
 
 void projectCommonDrawCursor(int col, int row) {
@@ -346,18 +307,10 @@ void projectCommonDrawCursor(int col, int row) {
   } else if (row == 4) {
     // Linear pitch
     gfxCursor(13, 9, 3);
-  } else if (row == 5) {
-    // Clock source ("Internal" / "Midi Clock" / "Ableton Link")
-    gfxCursor(13, 10, 12);
-  } else if (row == 6) {
-    // Tempo ("500.0 BPM"), or in Link mode the connect toggle whose
-    // underline follows the label width.
-    if (clockSourceMirror == 2) {
-      const LinkStatus status = currentLinkStatus();
-      gfxCursor(13, 11, status == LinkStatus::connected || status == LinkStatus::connecting ? 12 : 9);
-    } else {
-      gfxCursor(13, 11, 8);
-    }
+  } else if (row >= 5 && row <= 9) {
+    static const int y[] = {10, 11, 12, 14, 15};
+    const int width = row == 5 ? 3 : row == 8 ? (linkClientIsEnabled(chipnomadState->linkClient) ? 12 : 9) : 4;
+    gfxCursor(13, y[row - 5], width);
   }
 }
 
@@ -391,51 +344,41 @@ void projectCommonDrawField(int col, int row, CellState state) {
   } else if (row == 4) {
     // Linear pitch
     gfxPrint(13, 9, chipnomadState->project.linearPitch ? "ON " : "OFF");
-  } else if (row == 5) {
-    // Clock source: Internal / Midi Clock / Ableton Link
-    gfxClearRect(13, 10, 27, 1);
-    gfxPrint(13, 10,
-      clockSourceMirror == 2 ? "Ableton Link" :
-      clockSourceMirror == 1 ? "Midi Clock"  :
-      "Internal");
-  } else if (row == 6) {
-    gfxClearRect(13, 11, 27, 1);
-    if (clockSourceMirror == 2) {
-      // Link mode: the row is the session connect/disconnect toggle. The
-      // session owns the tempo (app.cpp applies it to the project), so no
-      // BPM is shown or edited here.
+  } else if (row >= 5 && row <= 9) {
+    static const int y[] = {10, 11, 12, 14, 15};
+    const int line = y[row - 5];
+    gfxClearRect(13, line, 27, 1);
+    if (row == 5) {
+      uint32_t serial = 0;
+      const float shared = clockSourceMirror == 2 ? linkClientGetSessionTempo(chipnomadState->linkClient, &serial) : 0;
+      const int bpm = shared > 0 ? (int)(shared + 0.5f) : liveClockBpm();
+      if (clockSourceMirror == 1) gfxSetFgColor(appSettings.colorScheme.textInfo);
+      gfxPrintf(13, line, "%3d BPM", bpm);
+      gfxSetFgColor(appSettings.colorScheme.textInfo);
+      if (clockSourceMirror == 1) gfxPrint(25, line, "received");
+      else if (clockSourceMirror == 2 && linkClientIsEnabled(chipnomadState->linkClient)) gfxPrint(25, line, "shared");
+    } else if (row == 6) {
+      gfxPrint(13, line, clockSourceMirror == 2 ? "Link" : clockSourceMirror == 1 ? "MIDI" : "Off");
+    } else if (row == 7) {
+      if (clockSourceMirror == 1) gfxSetFgColor(appSettings.colorScheme.textInfo);
+      gfxPrint(13, line, clockSourceMirror != 1 && appSettings.midiSendClock ? "MIDI" : "Off");
+      if (clockSourceMirror == 1) gfxPrint(25, line, "MIDI input");
+    } else if (clockSourceMirror != 2) {
+      gfxSetFgColor(appSettings.colorScheme.textInfo);
+      gfxPrint(13, line, "--");
+    } else if (row == 8) {
+      gfxPrint(13, line, linkClientIsEnabled(chipnomadState->linkClient) ? "[Disconnect]" : "[Connect]");
+      gfxSetFgColor(appSettings.colorScheme.textInfo);
       const LinkStatus status = currentLinkStatus();
-      const char* label = (status == LinkStatus::connected) ? "[Disconnect]" :
-                          (status == LinkStatus::connecting) ? "[Connecting]" :
-                          "[Connect]";
-      gfxPrint(13, 11, label);
-      // Status message on the right, in the info color. While connected,
-      // alternate between "connected" and the peer count roughly once a
-      // second (phase kept by draw()) so both the link state and the
-      // session size stay visible without widening the row.
-      gfxSetFgColor(appSettings.colorScheme.textInfo);
-      if (status == LinkStatus::connected) {
-        if (linkStatusShowPeers) {
-          gfxPrintf(26, 11, "Peers: %d", linkClientGetPeerCount(chipnomadState->linkClient));
-        } else {
-          gfxPrint(26, 11, "connected");
-        }
-      } else {
-        const char* statusStr =
-          status == LinkStatus::noNetwork  ? "No net"  :
-          status == LinkStatus::connecting ? "Wait..." :
-          status == LinkStatus::noPeers    ? "No sess" :
-          status == LinkStatus::error      ? "Err"     : "";
-        if (statusStr[0]) gfxPrint(26, 11, statusStr);
-      }
-    } else if (clockSourceMirror == 1) {
-      // Slaved to MIDI clock: read-only live tempo measured from the
-      // incoming clock, shown in the info color (draw() refreshes it
-      // every frame with the same color).
-      gfxSetFgColor(appSettings.colorScheme.textInfo);
-      gfxPrintf(13, 11, "%u BPM", liveClockBpm());
+      if (status == LinkStatus::connected || status == LinkStatus::noPeers)
+        gfxPrintf(26, line, "%d peers", linkClientGetPeerCount(chipnomadState->linkClient));
+      else if (status == LinkStatus::connecting) gfxPrint(26, line, "Searching");
+      else if (status == LinkStatus::error) gfxPrint(26, line, "Unavailable");
+      else if (status == LinkStatus::noNetwork) gfxPrint(26, line, "No network");
     } else {
-      gfxPrintf(13, 11, "%u BPM", bpmValue);
+      gfxPrint(13, line, appSettings.linkTransport ? "On" : "Off");
+      gfxSetFgColor(appSettings.colorScheme.textInfo);
+      gfxPrint(25, line, "Link play/stop");
     }
   }
 }
@@ -520,13 +463,8 @@ int projectCommonOnEdit(int col, int row, enum CellEditAction action) {
       chipnomadQueuePlaybackStop(chipnomadState);
       reinitializePitchTable(&chipnomadState->project);
     }
-  } else if (row == 5) {
-    // Clock source: Internal / Midi Clock / Ableton Link. Persisted in
-    // settings.txt as `clockSource: 0|1|2` (the `midiClockMode:` line is
-    // also written as a backwards-compat alias for older binaries).
-    // Applied to the router live; the audio thread picks it up through
-    // the regular project refresh. The connect/disconnect toggle lives
-    // on row 6 in Link mode.
+  } else if (row == 6) {
+    // Keep the saved source values compatible with previous versions.
     action = convertMultiAction(action);
     switch (action) {
       case CellEditAction::tap:
@@ -557,57 +495,30 @@ int projectCommonOnEdit(int col, int row, enum CellEditAction action) {
         appSettings.clockSource == ClockSource::midiClock ? MidiClockMode::slave : MidiClockMode::off);
       // Link mode: selecting arms the client (status -> selected, no
       // network I/O); leaving Link mode disconnects. Actual Connect is
-      // the toggle on row 6.
+      // the separate connection row.
       if (appSettings.clockSource == ClockSource::link) {
         linkClientSelect(chipnomadState->linkClient);
       } else {
         linkClientDeselect(chipnomadState->linkClient);
       }
-      // Row 6 switches between the tempo field and the Link toggle (and
-      // the row label changes with it), so redraw the whole form.
-      // Re-sync the BPM mirror from the project's tick rate first: while
-      // slaved (MIDI clock or Link) app.cpp drives tickRate, and leaving
-      // a slaved mode should display the tempo actually in effect.
+      // Keep the effective tempo when changing sync source.
       int bpm = (int)(chipnomadState->project.tickRate * 2.5f + 0.5f);
       if (bpm < BPM_MIN) bpm = BPM_MIN;
       if (bpm > BPM_MAX) bpm = BPM_MAX;
       bpmValue = (uint16_t)bpm;
       fullRedraw();
     }
-  } else if (row == 6) {
-    if (clockSourceMirror == 2) {
-      // Link mode: the row is the connect/disconnect toggle (the session
-      // owns the tempo, so there is nothing to edit here). Tap connects
-      // (from selected/noNetwork/noPeers/error) or disconnects (from
-      // connected); taps during connecting are swallowed so the pending
-      // discovery isn't torn down mid-flight.
-      action = convertMultiAction(action);
-      if (action == CellEditAction::tap || action == CellEditAction::doubleTap) {
-        const LinkStatus status = currentLinkStatus();
-        if (status == LinkStatus::connected) {
-          linkClientDisconnect(chipnomadState->linkClient);
-          handled = 1;
-        } else if (status == LinkStatus::selected || status == LinkStatus::noNetwork ||
-                   status == LinkStatus::noPeers || status == LinkStatus::error) {
-          linkClientConnect(chipnomadState->linkClient);
-          handled = 1;
-        } else if (status == LinkStatus::connecting) {
-          handled = 1; // swallow: connection attempt already in flight
-        }
-      } else if (action == CellEditAction::clear) {
-        // Clear = disconnect if connected, otherwise no-op.
-        if (currentLinkStatus() == LinkStatus::connected) {
-          linkClientDisconnect(chipnomadState->linkClient);
-        }
-        handled = 1;
-      }
-    } else if (clockSourceMirror == 1) {
+  } else if (row == 5) {
+    if (clockSourceMirror == 1) {
       // Slaved to MIDI clock: the tempo is driven by the incoming clock,
       // so edits are swallowed (the field shows the live followed tempo).
       handled = 1;
     } else {
       // Tempo in whole BPM. Fine steps are 1 BPM, coarse 5 BPM; clear
       // restores the old default 50 Hz = 125 BPM.
+      uint32_t serial = 0;
+      const float shared = clockSourceMirror == 2 ? linkClientGetSessionTempo(chipnomadState->linkClient, &serial) : 0;
+      bpmValue = (uint16_t)(shared > 0 ? shared + 0.5f : liveClockBpm());
       action = convertMultiAction(action);
       switch (action) {
         case CellEditAction::tap:
@@ -643,10 +554,37 @@ int projectCommonOnEdit(int col, int row, enum CellEditAction action) {
         // Backwards compatible writeback: the project file keeps storing
         // Hz ("- Frame rate"), BPM * 0.4 in Hz.
         chipnomadState->project.tickRate = (float)bpmValue * 0.4f;
+        if (clockSourceMirror == 2) linkClientSetTempo(chipnomadState->linkClient, bpmValue);
         projectModified = 1;
       }
     }
+  } else if (row == 7) {
+    if (clockSourceMirror == 1) return 0;
+    action = convertMultiAction(action);
+    if (action == CellEditAction::tap || action == CellEditAction::doubleTap) { appSettings.midiSendClock ^= 1; handled = 1; }
+    else handled = edit8noLast(action, &appSettings.midiSendClock, 1, 0, 1);
+    if (handled) midiRouterSetSyncOutput(chipnomadState->midiRouter, appSettings.midiSendClock, appSettings.midiSendTransport);
+  } else if (row == 8 && clockSourceMirror == 2) {
+    action = convertMultiAction(action);
+    if (action == CellEditAction::tap || action == CellEditAction::doubleTap) {
+      if (linkClientIsEnabled(chipnomadState->linkClient)) linkClientDisconnect(chipnomadState->linkClient);
+      else {
+        linkClientSetTempo(chipnomadState->linkClient, chipnomadState->project.tickRate * 2.5);
+        linkClientSetTransportSync(chipnomadState->linkClient, appSettings.linkTransport);
+        linkClientConnect(chipnomadState->linkClient);
+      }
+      handled = 1;
+    } else if (action == CellEditAction::clear) {
+      linkClientDisconnect(chipnomadState->linkClient);
+      handled = 1;
+    }
+  } else if (row == 9 && clockSourceMirror == 2) {
+    action = convertMultiAction(action);
+    if (action == CellEditAction::tap || action == CellEditAction::doubleTap) { appSettings.linkTransport ^= 1; handled = 1; }
+    else handled = edit8noLast(action, &appSettings.linkTransport, 1, 0, 1);
+    if (handled) linkClientSetTransportSync(chipnomadState->linkClient, appSettings.linkTransport);
   }
+  if (handled && row >= 6) settingsSave();
 
   return handled;
 }

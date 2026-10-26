@@ -6,8 +6,7 @@
 
 // Platform-neutral Ableton Link backend vtable, mirroring MidiBackend in
 // midi/midi_router.h: the client layer (link_client.cpp) owns musical
-// semantics (status state machine, serial-bumped getters, receiver-only
-// contract); a backend only talks to the Link library (or stubs it out).
+// semantics (status state machine and serial-bumped getters); a backend only talks to the Link library (or stubs it out).
 // No ableton:: type appears anywhere in this header, so the client layer
 // compiles unchanged on platforms where Link is stubbed out.
 //
@@ -42,8 +41,8 @@ struct LinkBackend {
   // Requests a local beat-0 alignment at (now + outputLatencyMicros +
   // schedulingHeadroomMicros) and returns the absolute host time in
   // microseconds at which playback should begin (the quantized beat-0
-  // time on the app's steady_clock scale), or 0 when there are no peers
-  // (immediate start). quantum is in beats (4.0 for 4/4).
+  // time on the app's steady_clock scale), or 0 when disabled. With no peers,
+  // this establishes beat zero for later joiners. quantum is in beats (4.0 for 4/4).
   uint64_t (*requestBeatAtLaunch)(void* userdata, void* state, double quantum);
   // Feeds the backend's HostTimeFilter with one (sampleCounter,
   // hostTimeMicros) pair from the audio callback entry. Stub ignores it.
@@ -51,6 +50,10 @@ struct LinkBackend {
   // Resets the HostTimeFilter window (enable, sample-rate or buffer-size
   // change). Stub ignores it.
   void (*resetHostTimeFilter)(void* userdata, void* state);
+  // UI-thread writes to the shared Link timeline. App clock for transport.
+  int (*setTempo)(void* userdata, void* state, double bpm);
+  void (*setTransportSync)(void* userdata, void* state, int enabled);
+  void (*setPlaying)(void* userdata, void* state, int playing, uint64_t atMicros);
 };
 
 // Registers the active backend. Global rather than per-client-state:

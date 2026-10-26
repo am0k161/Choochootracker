@@ -548,7 +548,7 @@ TEST_CASE_FIXTURE(StickLiveFixture, "screenMidi shows device rows and links to c
   CHECK(std::string(mockGfxCells[8] + 16, 2) == "ON");
   appSettings.clockSource = ClockSource::midiClock;
   screen->drawField(0, 5, CellState::focus);
-  CHECK(std::string(mockGfxCells[9] + 20, 12) == "(MIDI slave)");
+  CHECK(std::string(mockGfxCells[9] + 20, 12) == "(MIDI input)");
   screen->drawField(0, 6, CellState::focus);
   CHECK(std::string(mockGfxCells[10], 10) == "MIDI delay");
   CHECK(screen->onEdit(0, 6, CellEditAction::increaseBig) == 1);
@@ -740,4 +740,22 @@ TEST_CASE_FIXTURE(StickLiveFixture, "audio input Refresh restarts the output thr
   REQUIRE(mockScreenData != nullptr);
   CHECK(mockScreenData->onEdit(1, 0, CellEditAction::tap) == 1);
   CHECK(mockAudioRefreshCalls == 1);
+}
+
+TEST_CASE_FIXTURE(StickLiveFixture, "Link transport preference and source survive settings reload") {
+  CHECK(appSettings.linkTransport == 1);
+  appSettings.linkTransport = 0;
+  appSettings.clockSource = ClockSource::link;
+  REQUIRE(settingsSave() == 0);
+  initDefaultAppSettings();
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.linkTransport == 0);
+  CHECK(appSettings.clockSource == ClockSource::link);
+  FILE* file = fopen(realSettingsPath.c_str(), "w");
+  REQUIRE(file != nullptr);
+  fprintf(file, "clockSource: 2\n");
+  fclose(file);
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.clockSource == ClockSource::link);
+  CHECK(appSettings.linkTransport == 1); // Older settings retain transport following.
 }

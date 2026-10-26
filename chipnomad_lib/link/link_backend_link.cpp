@@ -3,11 +3,7 @@
 // that ship Link (DESKTOP_BUILD / PORTMASTER_BUILD / ANDROID_BUILD);
 // every other platform gets link_backend_stub.cpp instead.
 //
-// RECEIVER-ONLY CONTRACT: this file never calls setTempo,
-// setIsPlaying, commitAudioSessionState, startPlaying or stopPlaying.
-// It only enables/disables the client, reads session state, and (for
-// local phase alignment at Play) calls requestBeatAtTime, which aligns
-// THIS client's timeline without pushing anything to peers.
+// Shared tempo and optional transport use Link's App-thread session API.
 
 #include "link_backend.h"
 #include "link_backend_internal.h"
@@ -42,6 +38,7 @@ struct RealLinkState {
   // Latest sample counter reported by the audio thread; the launch-time
   // estimator maps it through the regression to a host time.
   std::atomic<uint64_t> lastSampleCounter{0};
+  bool transportSync = true;
   // Headroom added on top of the measured output latency when scheduling
   // a beat-0 alignment (see linkClientRequestBeatAtLaunch). 10 ms covers
   // callback scheduling jitter on the platforms we ship.
@@ -68,7 +65,7 @@ int linkBackendEnable(void*, void* state) {
   // Follow the session-wide transport (peers' start/stop propagate to
   // us). Without this, Link ignores start/stop state entirely and the
   // app can never observe session transport changes.
-  s->link.enableStartStopSync(true);
+  s->link.enableStartStopSync(s->transportSync);
   s->link.enable(true);
   return 1;
 }
@@ -116,7 +113,7 @@ int linkBackendCaptureAudioSessionState(void*, void* state, double* tempo, doubl
 
 uint64_t linkBackendRequestBeatAtLaunch(void*, void* state, double quantum) {
   RealLinkState* s = (RealLinkState*)state;
-  if (!s->link.isEnabled() || s->link.numPeers() == 0) return 0;
+  if (!s->link.isEnabled()) return 0;
 
   // Clock-scale bridge: Link's timeline lives on its platform clock
   // (CLOCK_MONOTONIC_RAW on Linux), while the app schedules playback on
@@ -165,6 +162,32 @@ uint64_t linkBackendRequestBeatAtLaunch(void*, void* state, double quantum) {
   return (uint64_t)steadyLaunch;
 }
 
+int linkBackendSetTempo(void*, void* state, double bpm) {
+  auto* s = (RealLinkState*)state;
+  auto session = s->link.captureAppSessionState();
+  session.setTempo(bpm, s->link.clock().micros());
+  s->link.commitAppSessionState(session);
+  return 1;
+}
+
+void linkBackendSetTransportSync(void*, void* state, int enabled) {
+  auto* s = (RealLinkState*)state;
+  s->transportSync = enabled != 0;
+  s->link.enableStartStopSync(s->transportSync);
+}
+
+void linkBackendSetPlaying(void*, void* state, int playing, uint64_t atMicros) {
+  auto* s = (RealLinkState*)state;
+  if (!s->link.isEnabled() || !s->transportSync) return;
+  const auto steadyNow = std::chrono::duration_cast<std::chrono::microseconds>(
+    std::chrono::steady_clock::now().time_since_epoch());
+  const auto rawNow = s->link.clock().micros();
+  const auto when = atMicros ? std::chrono::microseconds((int64_t)atMicros + rawNow.count() - steadyNow.count()) : rawNow;
+  auto session = s->link.captureAppSessionState();
+  session.setIsPlaying(playing != 0, when);
+  s->link.commitAppSessionState(session);
+}
+
 void linkBackendOnAudioFrame(void*, void* state, uint64_t sampleCounter, uint64_t hostTimeMicros) {
   RealLinkState* s = (RealLinkState*)state;
   s->lastSampleCounter.store(sampleCounter, std::memory_order_relaxed);
@@ -194,6 +217,9 @@ static const LinkBackend kLinkBackend = {
   linkBackendRequestBeatAtLaunch,
   linkBackendOnAudioFrame,
   linkBackendResetHostTimeFilter,
+  linkBackendSetTempo,
+  linkBackendSetTransportSync,
+  linkBackendSetPlaying,
 };
 
 const LinkBackend* linkBackendRealGet(void) {

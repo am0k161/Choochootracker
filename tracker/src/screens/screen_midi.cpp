@@ -109,7 +109,7 @@ static void drawField(int col, int row, CellState state) {
     gfxClearRect(16, row + 4, 24, 1);
     gfxPrint(16, row + 4, enabled ? "ON" : "OFF");
     if (appSettings.clockSource == ClockSource::midiClock)
-      gfxPrint(20, row + 4, "(MIDI slave)");
+      gfxPrint(20, row + 4, "(MIDI input)");
   } else if (row == 6 && col == 0) {
     gfxSetFgColor(appSettings.colorScheme.textDefault);
     gfxPrint(0, 10, "MIDI delay");

@@ -208,8 +208,8 @@ int chipnomadQueuePlaybackStartSongIfStopped(ChipNomadState* state, int songRow,
 // immediately. Used by the Ableton Link quantized launch to align song
 // start to a session beat boundary.
 int chipnomadQueuePlaybackStartSongAtTime(ChipNomadState* state, int songRow, int chainRow, int loop, uint64_t waitUntilMicros);
-int chipnomadQueuePlaybackStartChain(ChipNomadState* state, int trackIdx, int songRow, int chainRow, int loop);
-int chipnomadQueuePlaybackStartPhrase(ChipNomadState* state, int trackIdx, int songRow, int chainRow, int loop);
+int chipnomadQueuePlaybackStartChain(ChipNomadState* state, int trackIdx, int songRow, int chainRow, int loop, uint64_t waitUntilMicros = 0);
+int chipnomadQueuePlaybackStartPhrase(ChipNomadState* state, int trackIdx, int songRow, int chainRow, int loop, uint64_t waitUntilMicros = 0);
 int chipnomadQueuePlaybackStartPhraseRow(ChipNomadState* state, int trackIdx, const PhraseRow* row);
 int chipnomadQueuePlaybackStartPhraseRowFull(ChipNomadState* state, int trackIdx, const PhraseRow* row);
 int chipnomadQueuePlaybackQueuePhrase(ChipNomadState* state, int trackIdx, int songRow, int chainRow);

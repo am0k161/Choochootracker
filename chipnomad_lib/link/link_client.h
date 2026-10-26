@@ -3,29 +3,8 @@
 
 #include <stdint.h>
 
-// Receiver-only Ableton Link client. Mirrors the architectural shape of
-// chipnomad_lib/midi/midi_router.{h,cpp}: a backend-abstracted client
-// that the UI thread polls, with serial-bumped getters so callers apply
-// each state change exactly once.
-//
-// RECEIVER-ONLY CONTRACT — ChooChooTracker never acts as a Link session
-// host. This module MUST NOT call:
-//   - ableton::Link::setTempo()
-//   - ableton::Link::Client::setIsPlaying()
-//   - ableton::Link::Client::commitAudioSessionState()
-//   - ableton::Link::startPlaying() / stopPlaying()
-// Allowed calls:
-//   - enable() / disable() / isEnabled() / enableStartStopSync()
-//   - captureAppSessionState() (read-only, thread-safe App variant)
-//   - sessionState.tempo() / beatAtTime() / phaseAtTime() / numPeers()
-//   - sessionState.requestBeatAtTime() (LOCAL alignment only — does not
-//     push to peers)
-// User BPM edits while slaved are swallowed by the UI (BPM row is
-// blurred); they are NOT propagated to the session.
-//
-// The header never includes <ableton/Link.hpp> and exposes no
-// ableton:: type, so it compiles unchanged on platforms where Link is
-// stubbed out (Web, Miyoo, RG35xx).
+// Shared Link tempo and optional transport. Platform-neutral UI-thread API;
+// the backend is stubbed on platforms without Link support.
 
 enum class LinkStatus : int {
   disabled   = 0,  // not selected as clock source, link disabled
@@ -55,6 +34,12 @@ void linkClientDeselect(LinkClientState*);
 // within the discovery threshold, go to noPeers; if peers appear, go
 // to connected.
 void linkClientConnect(LinkClientState*);
+// Set before connecting to seed a new session, or on a user BPM edit to
+// publish a shared tempo. Joining an existing session adopts its timeline.
+int linkClientSetTempo(LinkClientState*, double bpm);
+void linkClientSetTransportSync(LinkClientState*, int enabled);
+void linkClientSetPlaying(LinkClientState*, int playing, uint64_t atMicros);
+int linkClientIsEnabled(const LinkClientState*);
 
 // Pressing Disconnect = leave the session but stay selected as Link.
 // Status transitions: any -> selected. link.disable() is called.
@@ -94,8 +79,8 @@ int linkClientCaptureAudioSessionState(LinkClientState*, double* tempo, uint64_t
 // schedulingHeadroomMicros (skew-corrected to Link's clock), and returns
 // the absolute host time (microseconds, app steady_clock scale) at which
 // playback should begin: the quantized beat-0 time, never earlier than
-// the target. If no peers, returns 0 (immediate start, per locked
-// decision).
+// the target. Without peers, establishes beat zero at the launch time.
+// Disabled Link returns 0, allowing an immediate local start.
 //
 // NOTE: requestBeatAtTime takes THREE args (beat, hostTime, quantum) —
 // not two. The research note's shorthand "(0, quantum)" was wrong.

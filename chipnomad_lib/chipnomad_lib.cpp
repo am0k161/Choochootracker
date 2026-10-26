@@ -78,7 +78,7 @@ class AudioCommandQueue {
             return true;
     return false;
   }
-  struct PendingStart { int songRow; int chainRow; int loop; uint64_t waitUntilMicros; };
+  struct PendingStart { PlaybackMode mode; int trackIdx; int songRow; int chainRow; int loop; uint64_t waitUntilMicros; };
   void requestStop() { stopRequested_.store(1, std::memory_order_release); }
 
   int takeStopRequest() { return stopRequested_.exchange(0, std::memory_order_acq_rel); }
@@ -164,18 +164,20 @@ class AudioCommandQueue {
     return 1;
   }
 
-  // Timed song start (T40): a dedicated single-slot handoff (same
+  // Timed playback start: a dedicated single-slot handoff (same
   // pattern as the project/settings slots) because the wait time is a
   // full 64-bit host timestamp that does not fit the command's int
   // fields. waitUntilMicros == 0 means "fire immediately" (the caller
   // should use pushCommand(kStartSong) for that instead, but a 0 here
   // degrades to an immediate start too). A later request replaces an
   // earlier pending one.
-  int pushPendingStart(int songRow, int chainRow, int loop, uint64_t waitUntilMicros) {
+  int pushPendingStart(int songRow, int chainRow, int loop, uint64_t waitUntilMicros, PlaybackMode mode = PlaybackMode::song, int trackIdx = 0) {
     int old = pendingStartPublished_.exchange(-1, std::memory_order_acq_rel);
     if (old >= 0) releasePublished(pendingStartSlots_, old);
     int slot = findFree(pendingStartSlots_);
     if (slot < 0) return 0;
+    pendingStartSlots_[slot].value.mode = mode;
+    pendingStartSlots_[slot].value.trackIdx = trackIdx;
     pendingStartSlots_[slot].value.songRow = songRow;
     pendingStartSlots_[slot].value.chainRow = chainRow;
     pendingStartSlots_[slot].value.loop = loop;
@@ -206,7 +208,12 @@ class AudioCommandQueue {
     }
     if (!heldValid_) return;
     if (heldStart_.waitUntilMicros == 0 || dueMicros >= heldStart_.waitUntilMicros) {
-      playbackStartSong(playback, heldStart_.songRow, heldStart_.chainRow, heldStart_.loop);
+      if (heldStart_.mode == PlaybackMode::chain)
+        playbackStartChain(playback, heldStart_.trackIdx, heldStart_.songRow, heldStart_.chainRow, heldStart_.loop);
+      else if (heldStart_.mode == PlaybackMode::phrase)
+        playbackStartPhrase(playback, heldStart_.trackIdx, heldStart_.songRow, heldStart_.chainRow, heldStart_.loop);
+      else
+        playbackStartSong(playback, heldStart_.songRow, heldStart_.chainRow, heldStart_.loop);
       heldValid_ = 0;
     }
   }
@@ -1290,10 +1297,14 @@ int chipnomadQueuePlaybackStartSongAtTime(ChipNomadState* state, int songRow, in
   // immediately (same as chipnomadQueuePlaybackStartSong).
   return state && state->audioCommands ? state->audioCommands->pushPendingStart(songRow, chainRow, loop, waitUntilMicros) : 0;
 }
-int chipnomadQueuePlaybackStartChain(ChipNomadState* state, int trackIdx, int songRow, int chainRow, int loop) {
+int chipnomadQueuePlaybackStartChain(ChipNomadState* state, int trackIdx, int songRow, int chainRow, int loop, uint64_t waitUntilMicros) {
+  if (waitUntilMicros)
+    return state && state->audioCommands ? state->audioCommands->pushPendingStart(songRow, chainRow, loop, waitUntilMicros, PlaybackMode::chain, trackIdx) : 0;
   return state && state->audioCommands ? state->audioCommands->pushCommand(1, trackIdx, songRow, chainRow, loop) : 0;
 }
-int chipnomadQueuePlaybackStartPhrase(ChipNomadState* state, int trackIdx, int songRow, int chainRow, int loop) {
+int chipnomadQueuePlaybackStartPhrase(ChipNomadState* state, int trackIdx, int songRow, int chainRow, int loop, uint64_t waitUntilMicros) {
+  if (waitUntilMicros)
+    return state && state->audioCommands ? state->audioCommands->pushPendingStart(songRow, chainRow, loop, waitUntilMicros, PlaybackMode::phrase, trackIdx) : 0;
   return state && state->audioCommands ? state->audioCommands->pushCommand(2, trackIdx, songRow, chainRow, loop) : 0;
 }
 int chipnomadQueuePlaybackStartPhraseRow(ChipNomadState* state, int trackIdx, const PhraseRow* row) {
@@ -1389,7 +1400,7 @@ static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
   const int wasPlaying = playbackIsPlaying(&state->playbackState);
   state->audioCommands->applyProject(state);
   state->playbackState.p = &state->audioProject;
-  // Timed song start (T40): a queued start-at-time fires on the first
+  // Timed playback start: a queued start-at-time fires on the first
   // tick frame at or after its target host time. Uses the frame's
   // dueMicros (the wall-clock time of this tick's first sample) rather
   // than a second now() call, so the start lands within one tick frame

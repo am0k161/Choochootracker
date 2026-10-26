@@ -1,4 +1,4 @@
-// Receiver-only Ableton Link client: owns the status state machine and
+// Ableton Link client: owns the status state machine and
 // the serial-bumped getters the UI polls, delegating actual Link library
 // work to the registered LinkBackend (see link_backend.h). Mirrors
 // midi/midi_router.cpp's shape: global backend registration, per-state
@@ -10,6 +10,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 
 // Discovery threshold: how long Connect waits before reporting noPeers.
 // mDNS discovery typically completes within a second on a healthy LAN;
@@ -151,6 +152,28 @@ void linkClientConnect(LinkClientState* state) {
   state->enabled = 1;
   state->connectPending = 1;
   state->connectStartedMicros = linkClientNowMicros();
+}
+
+int linkClientIsEnabled(const LinkClientState* state) { return state && state->enabled; }
+
+int linkClientSetTempo(LinkClientState* state, double bpm) {
+  const auto* backend = activeBackend();
+  if (!state || !std::isfinite(bpm) || bpm < 3 || bpm > 500 || !backend->setTempo) return 0;
+  if (!backend->setTempo(backend->userdata, state->backendState, bpm)) return 0;
+  if (state->enabled) linkClientCaptureAudioSessionState(state, nullptr, nullptr, nullptr);
+  return 1;
+}
+
+void linkClientSetTransportSync(LinkClientState* state, int enabled) {
+  const auto* backend = activeBackend();
+  if (state && backend->setTransportSync)
+    backend->setTransportSync(backend->userdata, state->backendState, enabled);
+}
+
+void linkClientSetPlaying(LinkClientState* state, int playing, uint64_t atMicros) {
+  const auto* backend = activeBackend();
+  if (state && state->enabled && backend->setPlaying)
+    backend->setPlaying(backend->userdata, state->backendState, playing, atMicros);
 }
 
 void linkClientDisconnect(LinkClientState* state) {

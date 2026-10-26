@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <cstdint>
+#include <limits>
 
 // LinkClient tests through a hand-built fake LinkBackend, mirroring
 // test_midi_router.cpp's approach: the real backend only exists under
@@ -14,6 +15,10 @@
 namespace {
 
 struct FakeLinkState {
+  int tempoWrites = 0;
+  int transportSync = 1;
+  int transportWrites = 0;
+  uint64_t transportTime = 0;
   int enabled = 0;
   int peers = 0;
   double sessionTempo = 0.0;
@@ -78,7 +83,7 @@ int fakeCapture(void*, void*, double* tempo, double* beat, uint64_t* capturedAtM
 uint64_t fakeRequestBeatAtLaunch(void*, void*, double quantum) {
   ++g_fake.requestBeatCalls;
   g_fake.lastQuantum = quantum;
-  if (!g_fake.enabled || g_fake.peers == 0) return 0;
+  if (!g_fake.enabled) return 0;
   return 1234567;
 }
 
@@ -90,6 +95,19 @@ void fakeOnAudioFrame(void*, void*, uint64_t sampleCounter, uint64_t hostTime) {
 
 void fakeResetFilter(void*, void*) {
   ++g_fake.resetFilterCalls;
+}
+
+int fakeSetTempo(void*, void*, double bpm) {
+  ++g_fake.tempoWrites;
+  g_fake.sessionTempo = bpm;
+  return 1;
+}
+void fakeSetTransportSync(void*, void*, int enabled) { g_fake.transportSync = enabled; }
+void fakeSetPlaying(void*, void*, int playing, uint64_t atMicros) {
+  if (!g_fake.transportSync) return;
+  ++g_fake.transportWrites;
+  g_fake.sessionIsPlaying = playing;
+  g_fake.transportTime = atMicros;
 }
 
 const LinkBackend kFakeBackend = {
@@ -104,6 +122,9 @@ const LinkBackend kFakeBackend = {
   fakeRequestBeatAtLaunch,
   fakeOnAudioFrame,
   fakeResetFilter,
+  fakeSetTempo,
+  fakeSetTransportSync,
+  fakeSetPlaying,
 };
 
 }  // namespace
@@ -266,15 +287,15 @@ TEST_CASE("Capture returns 0 when Link is not enabled") {
   linkClientDestroy(client);
 }
 
-TEST_CASE("RequestBeatAtLaunch returns 0 with no peers, target time with peers") {
+TEST_CASE("RequestBeatAtLaunch establishes a downbeat with or without peers") {
   resetFake();
   linkClientSetBackend(&kFakeBackend);
   LinkClientState* client = linkClientCreate();
 
   linkClientSelect(client);
   linkClientConnect(client);
-  // No peers yet: immediate start.
-  CHECK(linkClientRequestBeatAtLaunch(client, 4) == 0);
+  // No peers yet: establish a timed downbeat for later joiners.
+  CHECK(linkClientRequestBeatAtLaunch(client, 4) == 1234567);
   CHECK(g_fake.requestBeatCalls == 1);
 
   // With peers: backend returns its scheduled target time.
@@ -515,4 +536,56 @@ TEST_CASE("Poll downgrades connected to noPeers when the session empties") {
   linkClientDestroy(client);
 }
 
+}
+
+TEST_CASE("Link shared tempo can be seeded offline and edited with peers") {
+  resetFake();
+  linkClientSetBackend(&kFakeBackend);
+  auto* client = linkClientCreate();
+  CHECK(linkClientSetTempo(client, 140));
+  CHECK(g_fake.sessionTempo == 140);
+  CHECK(g_fake.enableCalls == 0);
+  CHECK_FALSE(linkClientIsEnabled(client));
+  linkClientSelect(client);
+  linkClientConnect(client);
+  CHECK(linkClientIsEnabled(client));
+  g_fake.peers = 1;
+  g_fake.sessionTempo = 123; // Existing session wins on join.
+  linkClientPoll(client);
+  CHECK(linkClientGetSessionTempo(client, nullptr) == 123);
+  CHECK(linkClientSetTempo(client, 136));
+  CHECK(linkClientGetSessionTempo(client, nullptr) == 136);
+  CHECK(g_fake.requestBeatCalls == 0); // Tempo edits never reset beat phase.
+  g_fake.sessionTempo = 127;
+  linkClientPoll(client);
+  CHECK(linkClientGetSessionTempo(client, nullptr) == 127);
+  CHECK_FALSE(linkClientSetTempo(client, 0));
+  CHECK_FALSE(linkClientSetTempo(client, 501));
+  CHECK_FALSE(linkClientSetTempo(client, std::numeric_limits<double>::quiet_NaN()));
+  CHECK(g_fake.tempoWrites == 2);
+  linkClientDestroy(client);
+}
+
+TEST_CASE("Link transport publishing requires connection and respects sync toggle") {
+  resetFake();
+  linkClientSetBackend(&kFakeBackend);
+  auto* client = linkClientCreate();
+  linkClientSetPlaying(client, 1, 1234);
+  CHECK(g_fake.transportWrites == 0);
+  linkClientSelect(client);
+  linkClientConnect(client);
+  linkClientSetTransportSync(client, 0);
+  linkClientSetPlaying(client, 1, 1234);
+  CHECK(g_fake.transportWrites == 0);
+  linkClientSetTransportSync(client, 1);
+  linkClientSetPlaying(client, 1, 1234);
+  CHECK(g_fake.transportWrites == 1);
+  CHECK(g_fake.sessionIsPlaying == 1);
+  CHECK(g_fake.transportTime == 1234);
+  linkClientSetPlaying(client, 0, 2345);
+  CHECK(g_fake.sessionIsPlaying == 0);
+  linkClientDisconnect(client);
+  linkClientSetPlaying(client, 1, 3456);
+  CHECK(g_fake.transportWrites == 2);
+  linkClientDestroy(client);
 }
