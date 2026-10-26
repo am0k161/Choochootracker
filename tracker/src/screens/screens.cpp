@@ -334,6 +334,13 @@ static int screenTouchEnvelopeAt(int col, int row, int* targetCol) {
 
 static int screenTouchCellAt(int col, int row, int* targetCol, int* targetRow) {
   if (!touchScreenData || touchScreenData->selectMode == 1) return 0;
+  if (currentScreen == &screenMixer && screenMixerGetPage() == 0 && row == 12) {
+    int column = col >= 10 && col <= 17 ? 0 : col >= 22 && col <= 31 ? 1 : -1;
+    if (column < 0) return 0;
+    if (targetCol) *targetCol = column;
+    if (targetRow) *targetRow = PROJECT_MAX_TRACKS;
+    return 1;
+  }
   if (currentScreen == &screenInstrument &&
       chipnomadState->project.instruments[cInstrument].type == InstrumentType::SoundFont && row >= 5) {
     if ((row != 6 && row != 7) || col < 0 || col > 31 || (row == 7 && col == 27)) return 0;

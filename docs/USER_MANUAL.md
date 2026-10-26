@@ -1265,6 +1265,8 @@ Use it to balance the 8 tracks, shape each track with Tilt EQ, and send audio to
 
 The mixer is track-based, not instrument-based. If a track changes instruments, its level, PAN, Tilt and sends remain attached to the track. Instruments also have their own `00-FF` **Vol** and **Pan** in the top row of the Instrument screen. Instrument PAN is applied first, then track PAN. Both preserve an existing stereo image at centre; they progressively attenuate the opposite side when moved left or right.
 
+On the **MASTER FX** row, select **LEVEL** to adjust the overall output volume from `001%` to `100%`. This is the same **Mix volume** setting found in Settings > Mixer and is saved for the device, so it is useful on consoles without a physical volume control. Select **EDIT** to open the master effects.
+
 ### Auto Mix
 
 The Mixer contains an **AUTO MIX** button. It renders `6 seconds` offline,

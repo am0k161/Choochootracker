@@ -101,7 +101,7 @@ int screenMixerGetPage(void) { return mixerPage; }
 static bool beadsReverb() { return chipnomadState->project.reverbAlgorithm == 1; }
 static bool tapeEcho() { return chipnomadState->project.delayAlgorithm == 1; }
 static int effectRows() { return mixerPage == 0 ? 0 : mixerPage == 1 ? (beadsReverb() ? 5 : 6) : (tapeEcho() ? 9 : 6); }
-static int columnCount(int row) { return mixerPage == 0 ? (row == PROJECT_MAX_TRACKS ? 1 : 7) : 1; }
+static int columnCount(int row) { return mixerPage == 0 ? (row == PROJECT_MAX_TRACKS ? 2 : 7) : 1; }
 static void drawRowHeader(int row, CellState state) {}
 static void drawColHeader(int col, CellState state) {}
 
@@ -122,6 +122,7 @@ static void drawStatic(void) {
     gfxPrint(0, 2, "TRK"); gfxPrint(4, 2, "LVL"); gfxPrint(9, 2, "REV"); gfxPrint(14, 2, "DLY");
     gfxPrint(19, 2, "TLT"); gfxPrint(24, 2, "PAN"); gfxPrint(29, 2, "M"); gfxPrint(32, 2, "S");
     gfxPrint(0, 12, "MASTER FX");
+    gfxPrint(22, 12, "LEVEL");
   } else if (mixerPage == 1) {
     gfxPrint(0, 0, beadsReverb() ? "BEADS REVERB" : "CLOUDS REVERB");
     gfxPrint(0, 3, "Algorithm"); gfxPrint(0, 4, "Return"); gfxPrint(0, 5, "Time");
@@ -143,7 +144,7 @@ static void drawCursor(int col, int row) {
   if (mixerPage == 0) {
     static const int x[] = {4, 9, 14, 19, 24, 29, 32};
     static const int width[] = {2, 2, 2, 2, 2, 1, 1};
-    if (row == PROJECT_MAX_TRACKS) { gfxCursor(10, 12, 16); return; }
+    if (row == PROJECT_MAX_TRACKS) { gfxCursor(col == 0 ? 10 : 28, 12, col == 0 ? 8 : 4); return; }
     if (col < 0 || col >= 7 || row < 0 || row >= PROJECT_MAX_TRACKS) return;
     gfxCursor(x[col], 3 + row, width[col]);
   } else if (row >= 0 && row < effectRows()) {
@@ -170,8 +171,8 @@ static void drawField(int col, int row, CellState state) {
   gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
   if (mixerPage == 0) {
     if (row == PROJECT_MAX_TRACKS) {
-      gfxClearRect(10, 12, 16, 1);
-      gfxPrint(10, 12, state == CellState::focus ? "> EDIT MASTER FX <" : "[ EDIT MASTER FX ]");
+      if (col == 0) gfxPrint(10, 12, state == CellState::focus ? "> EDIT <" : "[ EDIT ]");
+      else gfxPrintf(28, 12, "%03d%%", (int)(appSettings.mixVolume * 100.0f + .5f));
       return;
     }
     if (col < 0 || col >= 7 || row < 0 || row >= PROJECT_MAX_TRACKS) return;
@@ -222,9 +223,18 @@ static int onEdit(int col, int row, CellEditAction action) {
   int handled = 0;
   if (mixerPage == 0) {
     if (row == PROJECT_MAX_TRACKS) {
-      if (action != CellEditAction::tap) return 0;
-      screenInsertFXOpenMaster();
-      return 1;
+      if (col == 0) {
+        if (action != CellEditAction::tap) return 0;
+        screenInsertFXOpenMaster();
+        return 1;
+      }
+      uint8_t value = (uint8_t)(appSettings.mixVolume * 100.0f + .5f);
+      handled = edit8noLast(action, &value, 10, 1, 100);
+      if (handled) {
+        appSettings.mixVolume = (float)value / 100.0f;
+        chipnomadState->mixVolume = appSettings.mixVolume;
+      }
+      return handled;
     }
     if (col < 0 || col >= 7 || row < 0 || row >= PROJECT_MAX_TRACKS) return 0;
     // These values are stored as 0-100 percentages.  Do not round-trip them

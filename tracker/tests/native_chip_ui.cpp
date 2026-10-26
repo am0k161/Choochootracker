@@ -300,6 +300,16 @@ int main(int argc,char** argv){
     screenSetup(&screenMixer,0);eventKey(keyShift,true);eventKey(keyUp,true);eventKey(keyUp,false);
     require(screenMixerGetPage()==1,"reverb page entered");eventKey(keyLeft,true);eventKey(keyLeft,false);eventKey(keyShift,false);
     require(currentScreen==&screenMixer&&screenMixerGetPage()==0,"left edge returns to mixer");
+    appSettings.mixVolume=chipnomadState->mixVolume=1.0f;projectModified=0;
+    require(screenTouchTap(29,12),"master level is selectable beside EDIT");
+    eventKey(keyEdit|keyDown,true);eventKey(keyEdit|keyDown,false);
+    require(std::abs(appSettings.mixVolume-0.9f)<0.001f&&
+            std::abs(chipnomadState->mixVolume-0.9f)<0.001f,"master level changes output gain");
+    require(!projectModified,"device volume does not modify the project");
+    capture("mixer-master-level");
+    require(screenTouchTap(12,12),"short master EDIT is selectable");
+    eventKey(keyEdit,true);eventKey(keyEdit,false);
+    require(currentScreen==&screenInsertFX,"master EDIT opens master effects");
     printf("Insert popup production UI and Shift spine navigation passed: all modules, both slots, active-only selection, waveform off/on\n");
     chipnomadDestroy(chipnomadState);SDL_Quit();return 0;
   }
