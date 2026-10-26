@@ -15,6 +15,9 @@
 #include "selection_popup.h"
 #include "simple_chip_presets.h"
 #include "audio_manager.h"
+#include "screen_audio_input.h"
+#include "audio_input_manager.h"
+#include "monitor_display.h"
 #include <string.h>
 #include <stdio.h>
 #include <strings.h>
@@ -80,15 +83,16 @@ static SelectionItem instrumentTypeFM[] = {
   {"Arcade / YM2151", (int)InstrumentType::ArcadeFM, NULL, 0},
   {"DX7 FM", (int)InstrumentType::DX7, NULL, 0},
 };
-static SelectionItem instrumentTypeMidi[] = {
+static SelectionItem instrumentTypeExternal[] = {
   {NULL, (int)InstrumentType::Midi, NULL, 0},
+  {NULL, (int)InstrumentType::AudioIn, NULL, 0},
 };
 static const SelectionItem instrumentTypeCategories[] = {
   {"CHIP", -1, instrumentTypeChip, 7},
   {"DRUMS", -1, instrumentTypeDrums, 2},
   {"SAMPLE", -1, instrumentTypeSample, 4},
   {"SYNTH", -1, instrumentTypeSynth, sizeof(instrumentTypeSynth) / sizeof(instrumentTypeSynth[0])},
-  {"MIDI", -1, instrumentTypeMidi, 1},
+  {"EXTERNAL", -1, instrumentTypeExternal, 2},
   {"FM", -1, instrumentTypeFM, sizeof(instrumentTypeFM) / sizeof(instrumentTypeFM[0])},
 };
 
@@ -101,7 +105,7 @@ static const InstrumentType instrumentTypesQuickCycle[] = {
   InstrumentType::MME, InstrumentType::Monk,
   InstrumentType::SegaPSG, InstrumentType::GBPulse, InstrumentType::GBNoise,
   InstrumentType::GenesisFM, InstrumentType::ArcadeFM, InstrumentType::DX7, InstrumentType::Midi, InstrumentType::OPLL, InstrumentType::VRC7, InstrumentType::OPL2, InstrumentType::OPL3,
-  InstrumentType::SID,
+  InstrumentType::SID, InstrumentType::AudioIn,
 };
 
 static int editInstrumentType(CellEditAction action, InstrumentType* type) {
@@ -321,6 +325,65 @@ static ScreenData screenInstrumentNone = {
   .getLoopRange = NULL,
 };
 
+static int audioInColumns(int row) {
+  return row < 3 ? instrumentCommonColumnCount(row) : row == 3 ? 1 : row == 9 ? 5 : 2;
+}
+static int audioInCellValid(int col, int row) {
+  return row < 3 || row == 4 || row == 9 || (row >= 5 && row <= 8 && col == 1);
+}
+static void audioInDrawInputMeter() {
+  gfxClearRect(0, 11, 16, 1);
+  for (int slot = 0; slot < AUDIO_INPUT_MAX_ARMED; ++slot) {
+    if (audioInputManager.armedDeviceIndex(slot) < 0) continue;
+    monitorDisplayDrawHorizontalMeter(slot, 0, 11, 16);
+    break;
+  }
+}
+static void audioInStatic() {
+  instrumentCommonDrawStatic();
+  gfxSetFgColor(appSettings.colorScheme.textTitles);
+  gfxPrint(0, 6, "Input");
+  gfxPrint(0, 7, "SOURCE");
+  gfxSetFgColor(appSettings.colorScheme.textDefault);
+  gfxPrint(12, 6, "Stereo");
+  gfxPrint(0, 8, "Device");
+  gfxPrint(0, 10, "Input level");
+  instrumentCommonDrawVoicePostStatic(1);
+  audioInDrawInputMeter();
+}
+static void audioInCursor(int col, int row) {
+  if (row < 3) return instrumentCommonDrawCursor(col, row);
+  if (instrumentCommonDrawVoicePostCursor(col, row)) return;
+  if (row == 4 && !col) gfxCursor(11, 8, 6);
+}
+static void audioInField(int col, int row, CellState state) {
+  if (row < 3) return instrumentCommonDrawField(col, row, state);
+  if (instrumentCommonDrawVoicePostField(col, row, state,
+      &chipnomadState->project.instruments[cInstrument].chip.audioIn)) return;
+  gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
+  if (row == 4 && !col) gfxPrint(11, 8, "[Open]");
+}
+static int audioInEdit(int col, int row, CellEditAction action) {
+  if (row < 3) return instrumentCommonOnEdit(col, row, action);
+  if (row == 4 && !col) {
+    if (convertMultiAction(action) != CellEditAction::tap) return 0;
+    screenSetup(&screenAudioInput, AUDIO_INPUT_FROM_INSTRUMENT);
+    return 1;
+  }
+  int changed = instrumentCommonOnEditVoicePost(col, row, action,
+    &chipnomadState->project.instruments[cInstrument].chip.audioIn);
+  if (changed) projectModified = 1;
+  return changed;
+}
+static ScreenData screenInstrumentAudioIn = {
+  .rows = 10, .cursorRow = 0, .cursorCol = 0, .topRow = 0, .selectMode = -1,
+  .selectStartRow = 0, .selectStartCol = 0, .selectAnchorRow = 0, .selectAnchorCol = 0,
+  .playbackLevel = ScreenPlaybackLevel::none, .getColumnCount = audioInColumns,
+  .drawStatic = audioInStatic, .drawCursor = audioInCursor, .drawSelection = NULL,
+  .drawRowHeader = NULL, .drawColHeader = NULL, .drawField = audioInField, .onEdit = audioInEdit,
+  .onInput = NULL, .onRawInput = NULL, .isCellValid = audioInCellValid, .getLoopRange = NULL,
+};
+
 static ScreenData* instrumentScreen(void) {
   // Slot navigation can redraw directly without running setup().
   instrumentFMSetContext(cInstrument, chipnomadState->project.instruments[cInstrument].type);
@@ -330,7 +393,7 @@ static ScreenData* instrumentScreen(void) {
     &screenInstrumentSCWF, &screenInstrumentBYOWTBL, &screenInstrumentPlaits, &screenInstrumentAChChid,
     &screenInstrumentDrumSynth, &screenInstrumentMME,
     &screenInstrumentSintered,
-    &screenInstrumentMidi, &screenInstrumentOPLL, &screenInstrumentOPL, &screenInstrumentSimpleChip, &screenInstrumentOPL, &screenInstrumentSoundFont, &screenInstrumentMonk,
+    &screenInstrumentMidi, &screenInstrumentOPLL, &screenInstrumentOPL, &screenInstrumentSimpleChip, &screenInstrumentOPL, &screenInstrumentSoundFont, &screenInstrumentMonk, &screenInstrumentAudioIn,
   };
   InstrumentScreenKind kind = getInstrumentDefinition(chipnomadState->project.instruments[cInstrument].type)->screen;
   ScreenData* data = screens[(int)kind];
@@ -344,8 +407,8 @@ static void init(void) {
   typeButtonDown = 0;
   screenInstrumentNone.cursorRow = 0;
   screenInstrumentNone.cursorCol = 0;
-  SelectionItem* groups[] = {instrumentTypeChip, instrumentTypeSample, instrumentTypeSynth, instrumentTypeDrums, instrumentTypeMidi};
-  const int counts[] = {7, 4, sizeof(instrumentTypeSynth) / sizeof(instrumentTypeSynth[0]), 2, 1};
+  SelectionItem* groups[] = {instrumentTypeChip, instrumentTypeSample, instrumentTypeSynth, instrumentTypeDrums, instrumentTypeExternal};
+  const int counts[] = {7, 4, sizeof(instrumentTypeSynth) / sizeof(instrumentTypeSynth[0]), 2, 2};
   for (int group = 0; group < 5; ++group)
     for (int item = 0; item < counts[group]; ++item)
       groups[group][item].label = getInstrumentDefinition((InstrumentType)groups[group][item].value)->uiName;
@@ -382,6 +445,8 @@ static void draw(void) {
   // Field redraws may paint their static preview. The live scope owns this
   // region for the frame, including frames between waveform refreshes.
   instrumentCommonDrawLivePreview();
+  if (chipnomadState->project.instruments[cInstrument].type == InstrumentType::AudioIn)
+    audioInDrawInputMeter();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

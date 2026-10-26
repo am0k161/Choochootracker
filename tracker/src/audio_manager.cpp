@@ -140,7 +140,8 @@ static void audioCallback(int16_t* buffer, int stereoSamples) {
   // A short render is normal when a song ends. Preserve its valid prefix;
   // pre-clear also makes an early render failure safe without stale samples.
   memset(floatBuffer, 0, stereoSamples * 2 * sizeof(*floatBuffer));
-  chipnomadRender(chipnomadState, floatBuffer, stereoSamples);
+  audioInputManager.readLiveInput(samplePreviewBuffer, stereoSamples);
+  chipnomadRender(chipnomadState, floatBuffer, stereoSamples, samplePreviewBuffer);
   renderPreview(samplePreviewBuffer, stereoSamples);
   for (int i = 0; i < stereoSamples * 2; ++i) floatBuffer[i] += samplePreviewBuffer[i];
 

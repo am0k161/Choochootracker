@@ -86,6 +86,7 @@ const char* instrumentTypeName(InstrumentType type) {
     case InstrumentType::DrumSynth:
       return "Bogie";
     case InstrumentType::Monk: return "MonkSynth";
+    case InstrumentType::AudioIn: return "Audio in";
     case InstrumentType::MME:
       return "MME";
     case InstrumentType::Sintered:

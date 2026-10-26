@@ -40,6 +40,7 @@ enum class InstrumentType : uint8_t {
   SID = 27,
   SoundFont = 28,
   Monk = 29,
+  AudioIn = 30,
   totalCount,
 };
 
@@ -553,6 +554,7 @@ union InstrumentChipData {
   InstrumentMonk monk;
   InstrumentSintered sintered;
   InstrumentMidi midi;
+  InstrumentVoicePostSettings audioIn;
 };
 
 struct Instrument {
@@ -577,8 +579,8 @@ struct InstrumentFunctions {
 
 // This is metadata, not an audio abstraction: renderers keep their typed
 // paths while screens, validation and motion routing share this one catalogue.
-enum class InstrumentCategory : uint8_t { none, chip, sample, synth, drums, midi, fm };
-enum class InstrumentScreenKind : uint8_t { none, ay1, ay2, aySample, braids, sample, scwf, byowtbl, plaits, achchid, drumSynth, mme, sintered, midi, opll, opl, simpleChip, dx7, soundfont, monk };
+enum class InstrumentCategory : uint8_t { none, chip, sample, synth, drums, external, fm };
+enum class InstrumentScreenKind : uint8_t { none, ay1, ay2, aySample, braids, sample, scwf, byowtbl, plaits, achchid, drumSynth, mme, sintered, midi, opll, opl, simpleChip, dx7, soundfont, monk, audioIn };
 enum class InstrumentMotionValue : uint8_t { raw, speed, cutoff };
 
 static constexpr FXId instrumentNoFX = FX_ID_EMPTY;

@@ -24,6 +24,7 @@
 
 // Marquee state for long device names: while the cursor rests on a name
 // that does not fit the field, the full name scrolls through it.
+static bool returnToInstrument = false;
 static int marqueeDevice = -1;
 static int marqueeOffset = 0;
 static int marqueeFrameCounter = 0;
@@ -251,6 +252,7 @@ static int onEdit(int col, int row, CellEditAction action) {
 
 
 static void setup(int input) {
+  returnToInstrument = input == AUDIO_INPUT_FROM_INSTRUMENT;
   screenAudioInputData.cursorRow = 0;
   screenAudioInputData.cursorCol = 0;
   audioInputManager.enumerate();
@@ -329,7 +331,7 @@ static void draw(void) {
 
 static int audioInputScreenInput(int isKeyDown, int keys, int taps) {
   if (keys == keyOpt) {
-    screenSetup(&screenAudioSettings, 0);
+    screenSetup(returnToInstrument ? &screenInstrument : &screenAudioSettings, returnToInstrument ? -1 : 0);
     return 1;
   }
   // The meter column is display-only: horizontal moves step over it

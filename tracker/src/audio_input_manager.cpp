@@ -9,6 +9,7 @@
 #include "audio_input_diagnostics.h"
 
 #include <cstring>
+#include <algorithm>
 
 AudioInputManager audioInputManager;
 static std::atomic<int> g_captureRecordingSlot{-1};
@@ -17,8 +18,8 @@ AudioInputManager::AudioInputManager() {
   for (int i = 0; i < AUDIO_INPUT_MAX_ARMED; ++i) armed_[i] = -1;
 }
 
-bool AudioInputRing::push(const int16_t* stereo, int stereoSampleCount) {
-  if (!stereo || stereoSampleCount <= 0) return false;
+bool AudioInputRing::push(const int16_t* stereo, int stereoSampleCount, int channels) {
+  if (!stereo || stereoSampleCount <= 0 || (channels != 1 && channels != 2)) return false;
   unsigned int localHead = head.load(std::memory_order_relaxed);
   const unsigned int localTail = tail.load(std::memory_order_acquire);
   const unsigned int free = (localTail + CAPACITY - localHead - 1) % CAPACITY;
@@ -32,8 +33,8 @@ bool AudioInputRing::push(const int16_t* stereo, int stereoSampleCount) {
   }
   unsigned int next = localHead;
   for (int i = 0; i < stereoSampleCount; ++i) {
-    samples[next * 2] = stereo[i * 2];
-    samples[next * 2 + 1] = stereo[i * 2 + 1];
+    samples[next * 2] = stereo[i * channels];
+    samples[next * 2 + 1] = stereo[i * channels + (channels == 1 ? 0 : 1)];
     next = (next + 1) % CAPACITY;
   }
   head.store(next, std::memory_order_release);
@@ -135,6 +136,7 @@ int AudioInputManager::reconfigureRate(int sampleRate) {
     audioInputCleanup();
     captureOpen_ = false;
     monitorRing_.clear();
+    liveRing_.clear();
     for (auto& ring : rings_) ring.clear();
   }
   captureRate_ = sampleRate;
@@ -213,12 +215,13 @@ void AudioInputManager::onCapture(const int16_t* buffer, int stereoSamples, int 
   // Only the active take needs recording data. Idle input still feeds meters
   // and the separate monitor ring, without filling recorder rings.
   const int recordingSlot = g_captureRecordingSlot.load(std::memory_order_acquire);
-  if (recordingSlot >= 0) rings_[recordingSlot].push(buffer, stereoSamples);
+  if (recordingSlot >= 0) rings_[recordingSlot].push(buffer, stereoSamples, ch);
   // Monitor ring: only when monitoring is on (saves the copy otherwise).
   if (monitor_.load(std::memory_order_acquire)) {
-    monitorRing_.push(buffer, stereoSamples);
+    monitorRing_.push(buffer, stereoSamples, ch);
   }
 
+  liveRing_.push(buffer, stereoSamples, ch);
   publishLevels();
 }
 
@@ -396,4 +399,24 @@ unsigned int AudioInputManager::droppedCount() const {
 AudioInputRing* AudioInputManager::ring(int armedSlot) {
   if (armedSlot < 0 || armedSlot >= AUDIO_INPUT_MAX_ARMED) return nullptr;
   return &rings_[armedSlot];
+}
+
+void AudioInputManager::readLiveInput(float* stereo, int frames) {
+  // Capture and output clocks can drift. Bound live latency without touching
+  // the recorder ring; only the output consumer advances this read cursor.
+  unsigned int available = (liveRing_.head.load(std::memory_order_acquire) + AudioInputRing::CAPACITY -
+    liveRing_.tail.load(std::memory_order_relaxed)) % AudioInputRing::CAPACITY;
+  int excess = (int)available - frames - 1024;
+  while (excess > 0) {
+    int dropped = liveRing_.pop(liveChunk_, std::min(excess, 1024));
+    if (!dropped) break;
+    excess -= dropped;
+  }
+  for (int offset = 0; offset < frames;) {
+    int want = std::min(frames - offset, 1024);
+    int got = liveRing_.pop(liveChunk_, want);
+    for (int i = 0; i < want * 2; ++i)
+      stereo[offset * 2 + i] = i < got * 2 ? liveChunk_[i] / 32768.0f : 0.0f;
+    offset += want;
+  }
 }

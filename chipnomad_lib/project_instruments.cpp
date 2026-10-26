@@ -175,6 +175,18 @@ static void initVoicePostSettings(InstrumentVoicePostSettings* post) {
   post->envelopeShape = 0x80;
 }
 
+static int initAudioInInstrument(Instrument* instrument) {
+  initCommon(instrument);
+  instrument->type = InstrumentType::AudioIn;
+  instrument->transposeEnabled = 0;
+  initVoicePostSettings(&instrument->chip.audioIn);
+  return 0;
+}
+static const char* modNameAudioIn(int index) {
+  static const char* names[] = {"Off", "Volume", "Cutoff", "Reso"};
+  return index >= 0 && index < 4 ? names[index] : "Off";
+}
+
 static int initBraidsInstrument(Instrument* instrument) {
   initCommon(instrument);
   instrument->type = InstrumentType::Braids;
@@ -406,6 +418,11 @@ static int freeMidiInstrument(Instrument* instrument) { freeCommon(instrument); 
 // typed code below; no union member is addressed by an offset.
 #define D(n, f, r, v) {n, (FXId)(f), r, v}
 #define N D("-", instrumentNoFX, 0, InstrumentMotionValue::raw)
+static const InstrumentModDestination destAudioIn[] = {N,
+  D("Volume", instrumentNoFX, 255, InstrumentMotionValue::raw),
+  D("Cutoff", fxSCF, 255, InstrumentMotionValue::cutoff),
+  D("Reso", fxSRS, 255, InstrumentMotionValue::raw)};
+static const InstrumentFX fxAudioIn[] = {{fxSCF, "SCF"}, {fxSRS, "SRS"}};
 static const InstrumentModDestination destNone[] = {N};
 static const InstrumentModDestination destAY1[] = {N, D("Volume", instrumentNoFX, 255, InstrumentMotionValue::raw), D("Pitch", instrumentNoFX, 0, InstrumentMotionValue::raw), D("Noise", instrumentNoFX, 0, InstrumentMotionValue::raw), D("EnvPrd", instrumentNoFX, 0, InstrumentMotionValue::raw)};
 static const InstrumentModDestination destAY2[] = {N, D("Volume", instrumentNoFX,255,InstrumentMotionValue::raw), D("Pitch",instrumentNoFX,0,InstrumentMotionValue::raw), D("TonePit",instrumentNoFX,0,InstrumentMotionValue::raw), D("Noise",instrumentNoFX,0,InstrumentMotionValue::raw), D("EnvPit",instrumentNoFX,0,InstrumentMotionValue::raw), D("SoftPit",instrumentNoFX,0,InstrumentMotionValue::raw), D("FMDepth",instrumentNoFX,0,InstrumentMotionValue::raw), D("PulseW",instrumentNoFX,0,InstrumentMotionValue::raw), D("PulseL",instrumentNoFX,0,InstrumentMotionValue::raw), D("WavIdx",instrumentNoFX,0,InstrumentMotionValue::raw)};
@@ -460,7 +477,7 @@ static const InstrumentDefinition instrumentDefinitions[] = {
   // Keep the retired PD slots so existing MIDI instruments retain their on-disk type ID.
   {"Retired",InstrumentCategory::none,InstrumentScreenKind::none,destNone,COUNT(destNone),NULL,0,{0,modNameNone,initNoneInstrument,freeNoneInstrument,0,0}},
   {"Retired",InstrumentCategory::none,InstrumentScreenKind::none,destNone,COUNT(destNone),NULL,0,{0,modNameNone,initNoneInstrument,freeNoneInstrument,0,0}},
-  {"MIDI Out",InstrumentCategory::midi,InstrumentScreenKind::midi,destMidi,COUNT(destMidi),fxMidi,COUNT(fxMidi),{0,modNameMidi,initMidiInstrument,freeMidiInstrument,0,0}},
+  {"MIDI Out",InstrumentCategory::external,InstrumentScreenKind::midi,destMidi,COUNT(destMidi),fxMidi,COUNT(fxMidi),{0,modNameMidi,initMidiInstrument,freeMidiInstrument,0,0}},
   {"OPLL / MSX",InstrumentCategory::fm,InstrumentScreenKind::opl,destOPLL,COUNT(destOPLL),NULL,0,{2,modNameOPLL,initOPLLInstrument,freeNoneInstrument,1,0}},
   {"VRC7",InstrumentCategory::fm,InstrumentScreenKind::opl,destOPLL,COUNT(destOPLL),NULL,0,{2,modNameOPLL,initVRC7Instrument,freeNoneInstrument,1,0}},
   {"AdLib / OPL2",InstrumentCategory::fm,InstrumentScreenKind::opl,destOPLL,COUNT(destOPLL),NULL,0,{2,modNameOPLL,initOPL2Instrument,freeNoneInstrument,1,0}},
@@ -474,6 +491,7 @@ static const InstrumentDefinition instrumentDefinitions[] = {
   {"SID",InstrumentCategory::chip,InstrumentScreenKind::opl,destOPLL,COUNT(destOPLL),NULL,0,{2,modNameOPLL,initSIDInstrument,freeNoneInstrument,0,0}},
   {"SOUNDFONT",InstrumentCategory::sample,InstrumentScreenKind::soundfont,destOPLL,COUNT(destOPLL),fxSoundFont,COUNT(fxSoundFont),{2,modNameOPLL,initSoundFontInstrument,freeNoneInstrument,0,0}},
   {"MonkSynth",InstrumentCategory::synth,InstrumentScreenKind::monk,destMonk,COUNT(destMonk),fxMonk,COUNT(fxMonk),{8,modNameMonk,initMonkInstrument,freeNoneInstrument,1,0}},
+  {"Audio in",InstrumentCategory::external,InstrumentScreenKind::audioIn,destAudioIn,COUNT(destAudioIn),fxAudioIn,COUNT(fxAudioIn),{3,modNameAudioIn,initAudioInInstrument,freeNoneInstrument,1,0}},
 };
 #undef COUNT
 
@@ -569,6 +587,7 @@ InstrumentVoicePostSettings* instrumentVoicePostSettings(Instrument* instrument)
     case InstrumentType::GBNoise: return &instrument->chip.simpleChip;
     case InstrumentType::Braids: return &instrument->chip.braids;
     case InstrumentType::Sample: return &instrument->chip.sample;
+    case InstrumentType::AudioIn: return &instrument->chip.audioIn;
     case InstrumentType::SCWF: return &instrument->chip.scwf;
     case InstrumentType::BYOWTBL: return &instrument->chip.byowtbl;
     case InstrumentType::Plaits:
@@ -599,6 +618,8 @@ int instrumentMotionDestination(const Instrument* instrument, int destination, F
       *base = destination == 3 ? (instrument->chip.braids.timbre + 64) / 129 : destination == 4 ? (instrument->chip.braids.color + 64) / 129 : destination == 5 ? instrument->chip.braids.filterCutoffHz : instrument->chip.braids.filterResonance; break;
     case InstrumentType::Plaits: case InstrumentType::PlaitsAlt:
       *base = destination == 3 ? (instrument->chip.plaits.harmonics + 64) / 129 : destination == 4 ? (instrument->chip.plaits.timbre + 64) / 129 : destination == 5 ? (instrument->chip.plaits.morph + 64) / 129 : destination == 6 ? instrument->chip.plaits.auxMix : destination == 7 ? instrument->chip.plaits.filterCutoffHz : instrument->chip.plaits.filterResonance; break;
+    case InstrumentType::AudioIn:
+      *base = destination == 2 ? instrument->chip.audioIn.filterCutoffHz : instrument->chip.audioIn.filterResonance; break;
     case InstrumentType::Sample:
       *base = destination == 3 ? instrument->chip.sample.start : destination == 4 ? instrument->chip.sample.end : destination == 5 ? instrument->chip.sample.speedPercent : destination == 6 ? instrument->chip.sample.loopMode : destination == 7 ? instrument->chip.sample.filterCutoffHz : instrument->chip.sample.filterResonance; break;
     case InstrumentType::SCWF:
@@ -633,7 +654,7 @@ int instrumentCCDestinationAvailable(const Instrument* instrument, int destinati
   if (destination >= midiCCDestinationAttack && destination <= midiCCDestinationRelease)
     return instrumentVoicePostSettings(const_cast<Instrument*>(instrument)) != NULL;
   if (destination == 1) return 1; // Volume is shared by every instrument.
-  if (destination < 3) return 0;
+  if (destination < 3 && !(instrument->type == InstrumentType::AudioIn && destination == 2)) return 0;
   const InstrumentModDestination* d = instrumentModDestination(instrument->type, destination);
   if (!d || (!d->range && instrument->type != InstrumentType::AY2 &&
              instrument->type != InstrumentType::AYSample)) return 0;
@@ -741,6 +762,11 @@ int instrumentSetCCDestination(Instrument* instrument, int destination, uint8_t 
       else if (destination == 8) instrument->chip.drumSynth.drive = value;
       else if (destination == 9) instrument->chip.drumSynth.filterCutoffHz = value;
       else if (destination == 10) instrument->chip.drumSynth.filterResonance = value;
+      else return 0;
+      break;
+    case InstrumentType::AudioIn:
+      if (destination == 2) instrument->chip.audioIn.filterCutoffHz = value;
+      else if (destination == 3) instrument->chip.audioIn.filterResonance = value;
       else return 0;
       break;
     case InstrumentType::Monk:

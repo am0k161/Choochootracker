@@ -420,6 +420,15 @@ static int loadInstrumentBYOWTBL(FILE* file, Instrument* instrument) {
   return 0;
 }
 
+static int loadInstrumentAudioIn(FILE* file, Instrument* instrument) {
+  while (const char* line = peekLine(file)) {
+    if (line[0] == '#') break;
+    loadVoicePostSetting(line, &instrument->chip.audioIn);
+    consumeLine(file);
+  }
+  return 0;
+}
+
 static int loadInstrumentPlaits(FILE* file, Instrument* instrument) {
   InstrumentPlaits* p = &instrument->chip.plaits;
   while (1) {
@@ -704,6 +713,9 @@ int instrumentLoadData(FILE* file, Instrument* instrument, Project* p) {
         break;
       case InstrumentType::Monk:
         if (loadInstrumentMonk(file, instrument)) return 1;
+        break;
+      case InstrumentType::AudioIn:
+        if (loadInstrumentAudioIn(file, instrument)) return 1;
         break;
       case InstrumentType::MME:
         if (loadInstrumentMME(file, instrument)) return 1;
@@ -1094,6 +1106,9 @@ int instrumentSaveData(FILE* file, int idx, Instrument* instrument) {
       break;
     case InstrumentType::Monk:
       saveInstrumentMonk(file, instrument);
+      break;
+    case InstrumentType::AudioIn:
+      saveVoicePostSettings(file, &instrument->chip.audioIn);
       break;
     case InstrumentType::MME:
       saveInstrumentMME(file, instrument);

@@ -519,7 +519,7 @@ static int screenTouchCellAt(int col, int row, int* targetCol, int* targetRow) {
     if (row >= 2 && row <= 4) {
       instrumentCommonRow = row - 2;
       row = instrumentCommonRow;
-    } else if (touchScreenData == &screenInstrumentSample) {
+    } else if (touchScreenData == &screenInstrumentSample || type == InstrumentType::AudioIn) {
       // Sampler page: the Sample row sits at y=6 and the SOURCE separator
       // at y=7 shifts Pitch..Reso down to y=8..12 (rows 4..8). The ADSR
       // strip is matched earlier by the envelope handler.
