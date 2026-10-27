@@ -5,8 +5,10 @@
 #include <chipnomad_lib.h>
 #include <four_op_patch.h>
 
+#include <cctype>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 namespace {
@@ -211,7 +213,11 @@ TEST_CASE("sampler finds its WAV near the song or in the sample folder") {
   fclose(f);
   projectInit(&p);
   REQUIRE(projectLoadM8SWithSamples(&p, path, "m8s_t/lib") == 0);
-  CHECK((strstr(p.instruments[0].chip.sample.path, "samples/Pack/Kick_4.wav") != nullptr) == true);
+  // The M8 spelling "Samples" is tried first; on a file system that ignores
+  // case (macOS, Windows) it already finds the "samples" folder.
+  std::string found = p.instruments[0].chip.sample.path;
+  for (char& c : found) c = (char)tolower((unsigned char)c);
+  CHECK(found.find("m8s_t/lib/samples/pack/kick_4.wav") != std::string::npos);
   CHECK(p.instruments[0].chip.sample.frameCount == 2);
   projectFree(&p);
   system("rm -rf m8s_t");
