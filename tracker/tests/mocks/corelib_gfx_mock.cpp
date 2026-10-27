@@ -16,6 +16,7 @@ int gfxSetup(int *screenWidth, int* screenHeight) { return 0; }
 void gfxCleanup(void) {}
 void gfxSetFgColor(int rgb) {}
 void gfxSetCursorColor(int rgb) {}
+void gfxSetCursorBrackets(int brackets) {}
 void gfxSetBgColor(int rgb) {}
 void gfxClear(void) {
   memset(mockGfxCells, ' ', sizeof(mockGfxCells));

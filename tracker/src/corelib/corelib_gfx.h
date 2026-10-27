@@ -51,6 +51,13 @@ void gfxSetFgColor(int rgb);
 void gfxSetCursorColor(int rgb);
 
 /**
+ * @brief Set how the cursor is drawn
+ *
+ * @param brackets 0 for a line under the field, 1 for corner brackets
+ */
+void gfxSetCursorBrackets(int brackets);
+
+/**
  * @brief Set background color
  *
  * @param rgb

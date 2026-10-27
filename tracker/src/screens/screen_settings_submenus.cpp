@@ -273,8 +273,8 @@ static int mixerEdit(int, int row, CellEditAction action) {
 static ScreenData mixerData = {2, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, mixerStatic, mixerCursor, NULL, noHeader, noHeader, mixerField, mixerEdit, NULL, NULL, NULL, NULL};
 
 static void graphicsStatic(void) { gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "GRAPHICS"); }
-static int graphicsRowY(int row) { return 2 + row + (row >= 2) + (row >= 6) + (row >= 7); }
-static void graphicsCursor(int, int row) { gfxCursor(row == 2 || row >= 4 ? 23 : 0, graphicsRowY(row), row == 0 ? 16 : row == 1 ? 9 : row == 2 ? 3 : row == 3 ? 13 : row == 4 ? 6 : row == 7 ? 4 : row == 8 ? 2 : 3); }
+static int graphicsRowY(int row) { return 2 + row + (row >= 2) + (row >= 6) + (row >= 8); }
+static void graphicsCursor(int, int row) { gfxCursor(row == 2 || row >= 4 ? 23 : 0, graphicsRowY(row), row == 0 ? 16 : row == 1 ? 9 : row == 2 ? 3 : row == 3 ? 13 : row == 4 ? 6 : row == 7 ? 8 : row == 8 ? 4 : row == 9 ? 2 : 3); }
 static void graphicsField(int, int row, CellState state) {
   const ColorScheme cs = appSettings.colorScheme;
   const int y = graphicsRowY(row);
@@ -298,14 +298,18 @@ static void graphicsField(int, int row, CellState state) {
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     gfxPrint(23, y, appSettings.bootScreenNight ? "Night   " : "Original");
   } else if (row == 7) {
+    gfxSetFgColor(cs.textLabel); gfxPrint(0, y, "Cursor");
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
+    gfxPrint(23, y, appSettings.cursorBrackets ? "Brackets" : "Line    ");
+  } else if (row == 8) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, "Playback counter");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     gfxPrint(23, y, appSettings.playbackCounterMode ? "Time" : "Bars");
-  } else if (row == 8) {
+  } else if (row == 9) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, " - Rows per bar");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     gfxPrintf(23, y, "%02u", appSettings.playbackBarRows);
-  } else if (row == 9) {
+  } else if (row == 10) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, " - Ticks per row");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     gfxPrintf(23, y, "%03u", appSettings.playbackBarTicks);
@@ -323,16 +327,26 @@ static void fontLoaded(const char* path) {
 }
 static void fontCancelled(void) { screenSetup(&screenGraphicsSettings, 0); }
 static int graphicsEdit(int, int row, CellEditAction action) {
-  if (row >= 7 && row <= 9) {
-    uint8_t value = row == 7 ? appSettings.playbackCounterMode :
-      row == 8 ? appSettings.playbackBarRows : appSettings.playbackBarTicks;
-    if (row == 7 && (action == CellEditAction::tap || action == CellEditAction::doubleTap)) value ^= 1;
-    else if (!edit8noLast(action, &value, 1, row == 7 ? 0 : 1,
-                          row == 7 ? 1 : row == 8 ? 16 : 254)) return 0;
-    if (row == 7) appSettings.playbackCounterMode = value;
-    else if (row == 8) appSettings.playbackBarRows = value;
+  if (row >= 8 && row <= 10) {
+    uint8_t value = row == 8 ? appSettings.playbackCounterMode :
+      row == 9 ? appSettings.playbackBarRows : appSettings.playbackBarTicks;
+    if (row == 8 && (action == CellEditAction::tap || action == CellEditAction::doubleTap)) value ^= 1;
+    else if (!edit8noLast(action, &value, 1, row == 8 ? 0 : 1,
+                          row == 8 ? 1 : row == 9 ? 16 : 254)) return 0;
+    if (row == 8) appSettings.playbackCounterMode = value;
+    else if (row == 9) appSettings.playbackBarRows = value;
     else appSettings.playbackBarTicks = value;
     if (settingsSave() != 0) screenMessage(MESSAGE_TIME, "Could not save counter setting");
+    return 1;
+  }
+  if (row == 7) {
+    uint8_t value = appSettings.cursorBrackets;
+    if (action == CellEditAction::tap || action == CellEditAction::doubleTap) value ^= 1;
+    else if (!edit8noLast(action, &value, 1, 0, 1)) return 0;
+    appSettings.cursorBrackets = value;
+    gfxSetCursorBrackets(value);
+    if (settingsSave() != 0) screenMessage(MESSAGE_TIME, "Could not save cursor setting");
+    currentScreen->fullRedraw();  // shows the new cursor straight away
     return 1;
   }
   if (row == 6) {
@@ -365,7 +379,7 @@ static int graphicsEdit(int, int row, CellEditAction action) {
   return 0;
 }
 static int graphicsCellValid(int, int) { return 1; }
-static ScreenData graphicsData = {10, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, graphicsStatic, graphicsCursor, NULL, noHeader, noHeader, graphicsField, graphicsEdit, NULL, NULL, graphicsCellValid, NULL};
+static ScreenData graphicsData = {11, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, graphicsStatic, graphicsCursor, NULL, noHeader, noHeader, graphicsField, graphicsEdit, NULL, NULL, graphicsCellValid, NULL};
 
 static int menuInput(ScreenData* data, int isKeyDown, int keys, int taps) { if (keys == keyOpt) { screenSetup(&screenSettings, 0); return 1; } return screenInput(data, isKeyDown, keys, taps); }
 static void audioRedraw(void) { displayedCpuLoad = -1; screenFullRedraw(&audioData); }

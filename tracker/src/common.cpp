@@ -99,6 +99,7 @@ void initDefaultAppSettings(void) {
   appSettings.touchHaptics = 0;
 #endif
   appSettings.bootScreenNight = 0;
+  appSettings.cursorBrackets = 0;
 
   // Audio input recording defaults: nothing enumerated, nothing armed,
   // monitoring off, no recording folder override.
@@ -252,6 +253,7 @@ int settingsSave(void) {
   fprintf(file, "hideTouchPadWithGamepad: %d\n", appSettings.hideTouchPadWithGamepad);
   fprintf(file, "touchHaptics: %d\n", appSettings.touchHaptics);
   fprintf(file, "bootScreenNight: %d\n", appSettings.bootScreenNight);
+  fprintf(file, "cursorBrackets: %d\n", appSettings.cursorBrackets);
   for (int track = 0; track < PROJECT_MAX_TRACKS; ++track)
     fprintf(file, "trackVisuals%d: %d\n", track + 1, (int)appSettings.trackVisuals[track].mode);
 
@@ -378,6 +380,10 @@ int settingsLoad(void) {
       int enabled;
       if (sscanf(line + 17, "%d", &enabled) == 1 && (enabled == 0 || enabled == 1))
         appSettings.bootScreenNight = (uint8_t)enabled;
+    } else if (strncmp(line, "cursorBrackets: ", 16) == 0) {
+      int enabled;
+      if (sscanf(line + 16, "%d", &enabled) == 1 && (enabled == 0 || enabled == 1))
+        appSettings.cursorBrackets = (uint8_t)enabled;
     } else if (strncmp(line, "persistentWaveform: ", 20) == 0) {
       int enabled;
       if (sscanf(line + 20, "%d", &enabled) == 1 && (enabled == 0 || enabled == 1))

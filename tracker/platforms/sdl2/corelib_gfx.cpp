@@ -771,13 +771,125 @@ void gfxSetCursorColor(int rgb) {
   cursorColor = rgb;
 }
 
+static bool cursorBrackets = false;
+
 static void setColor(int rgb) {
   SDL_SetRenderDrawColor(renderer, (rgb & 0xff0000) >> 16, (rgb & 0xff00) >> 8, rgb & 0xff, 255);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+// Bracket cursor: four corner brackets around the focused field. When the
+// cursor lands somewhere new (or the page was redrawn), the brackets briefly
+// dim and recover so the eye can find them. Settings > Graphics > Cursor
+// chooses between them and the classic line under the field.
+//
+// Where the tracker draws into its own canvas (compositionTexture), the
+// brackets are not part of it: they are drawn over the canvas each time a
+// frame is shown, a little outside the field, so they leave no marks on the
+// cells around it. Painting over the field hides them until the screen draws
+// the cursor again, just as it would erase them from the canvas. The Miyoo and
+// web builds draw straight to the window, so there the brackets are drawn
+// into the field's own cells.
+#if !defined(WEB_BUILD) && !defined(MIYOOPORTS_BUILD)
+#define CURSOR_OVERLAY 1
+#endif
+
+static constexpr uint32_t cursorPulseMs = 240;
+static constexpr float cursorPulseDepth = 0.6f;  // dims to 40% at mid-pulse
+
+static struct {
+  SDL_Rect rect;          // Field area in render-target pixels
+  uint32_t background;    // Field background when drawn, for dimming
+  uint32_t movedAt;       // SDL_GetTicks() when it last moved
+  bool shown;             // Brackets are still on screen
+  bool pulsing;
+  bool pageCleared;       // A full clear since the last cursor draw
+} cursorState = {{0, 0, 0, 0}, 0, 0, false, false, true};
+
+static uint32_t blendColor(uint32_t from, uint32_t to, float amount) {
+  int r = (int)(((from >> 16) & 0xff) + ((int)((to >> 16) & 0xff) - (int)((from >> 16) & 0xff)) * amount);
+  int g = (int)(((from >> 8) & 0xff) + ((int)((to >> 8) & 0xff) - (int)((from >> 8) & 0xff)) * amount);
+  int b = (int)((from & 0xff) + ((int)(to & 0xff) - (int)(from & 0xff)) * amount);
+  return (uint32_t)((r << 16) | (g << 8) | b);
+}
+
+static float cursorPulseLevel(void) {
+  uint32_t elapsed = SDL_GetTicks() - cursorState.movedAt;
+  if (elapsed >= cursorPulseMs) return 1.0f;
+  return 1.0f - cursorPulseDepth * sinf(3.14159265f * elapsed / cursorPulseMs);
+}
+
+#ifdef ANDROID_BUILD
+// Android shows the canvas scaled into this part of the window.
+static SDL_Rect cursorWindowViewport = {0, 0, 0, 0};
+#endif
+
+static void drawCursorBrackets(uint32_t color) {
+  const int thickness = 2;
+#ifdef CURSOR_OVERLAY
+  const int gap = 2;  // pixels between the field and the brackets
+#else
+  const int gap = 0;
+#endif
+  SDL_Rect r = cursorState.rect;
+  r.x -= gap; r.y -= gap; r.w += 2 * gap; r.h += 2 * gap;
+  const int armX = (charW / 3 >= 2 ? charW / 3 : 2) + 1;
+  const int armY = (charH / 4 >= 2 ? charH / 4 : 2) + 1;
+  const int right = r.x + r.w, bottom = r.y + r.h;
+  SDL_Rect arms[8] = {
+    {r.x, r.y, armX, thickness}, {r.x, r.y, thickness, armY},                                // top left
+    {right - armX, r.y, armX, thickness}, {right - thickness, r.y, thickness, armY},          // top right
+    {r.x, bottom - thickness, armX, thickness}, {r.x, bottom - armY, thickness, armY},        // bottom left
+    {right - armX, bottom - thickness, armX, thickness}, {right - thickness, bottom - armY, thickness, armY},
+  };
+#ifdef ANDROID_BUILD
+  const SDL_Rect& v = cursorWindowViewport;
+  if (v.w > 0) {
+    for (SDL_Rect& arm : arms) {
+      const int x0 = v.x + arm.x * v.w / logicalW, x1 = v.x + (arm.x + arm.w) * v.w / logicalW;
+      const int y0 = v.y + arm.y * v.h / logicalH, y1 = v.y + (arm.y + arm.h) * v.h / logicalH;
+      arm = {x0, y0, x1 > x0 ? x1 - x0 : 1, y1 > y0 ? y1 - y0 : 1};
+    }
+  }
+#endif
+  setColor(color);
+  SDL_RenderFillRects(renderer, arms, 8);
+}
+
+static uint32_t cursorBracketColor(void) {
+  return cursorState.pulsing
+    ? blendColor(cursorState.background, cursorColor, cursorPulseLevel()) : cursorColor;
+}
+
+// Something was drawn over this area: brackets inside it are gone.
+static void cursorAreaPainted(const SDL_Rect& area) {
+  if (cursorState.shown && SDL_HasIntersection(&area, &cursorState.rect)) cursorState.shown = false;
+}
+
+// Called once per frame before presenting: redraw a pulsing cursor.
+static void animateCursor(void) {
+  if (!cursorState.pulsing) return;
+  if (!cursorState.shown) return;
+  float level = cursorPulseLevel();
+  if (level >= 1.0f) cursorState.pulsing = false;
+#ifndef CURSOR_OVERLAY
+  drawCursorBrackets(blendColor(cursorState.background, cursorColor, level));
+#endif
+  isDirty = 1;
+}
+
+#ifdef CURSOR_OVERLAY
+// Called with the canvas copied to the window, before presenting.
+static void drawCursorOverlay(void) {
+  if (cursorBrackets && cursorState.shown) drawCursorBrackets(cursorBracketColor());
+}
+#endif
+
 void gfxClear(void) {
   setColor(bgColor);
   SDL_RenderClear(renderer);
+  cursorState.shown = false;
+  cursorState.pageCleared = true;
   isDirty = 1;
 }
 
@@ -791,6 +903,7 @@ void gfxClearRect(int x, int y, int w, int h) {
   SDL_Rect rect = { CHAR_X(x), CHAR_Y(y), w * charW, h * charH };
   setColor(bgColor);
   SDL_RenderFillRect(renderer, &rect);
+  cursorAreaPainted(rect);
   isDirty = 1;
 }
 
@@ -812,6 +925,7 @@ void gfxPrint(int x, int y, const char* text) {
     }
     SDL_Rect bgRect = {cx, cy, charW, charH};
     SDL_RenderFillRect(renderer, &bgRect);
+    cursorAreaPainted(bgRect);
     cx += charW;
     if (cx >= offsetX + TEXT_COLS * charW) {
       cx = CHAR_X(x);
@@ -858,10 +972,36 @@ void gfxPrintf(int x, int y, const char* format, ...) {
   gfxPrint(x, y, printBuffer);
 }
 
+void gfxSetCursorBrackets(int brackets) {
+  cursorBrackets = brackets != 0;
+  // A line cursor leaves nothing for the pulse to redraw.
+  cursorState.shown = false;
+  cursorState.pulsing = false;
+  cursorState.pageCleared = true;
+}
+
 void gfxCursor(int x, int y, int w) {
-  SDL_Rect rect = { CHAR_X(x), CHAR_Y(y) + charH - 1, w * charW, 1 };
-  setColor(cursorColor);
-  SDL_RenderFillRect(renderer, &rect);
+  if (w <= 0) return;
+  if (!cursorBrackets) {
+    SDL_Rect line = { CHAR_X(x), CHAR_Y(y) + charH - 1, w * charW, 1 };
+    setColor(cursorColor);
+    SDL_RenderFillRect(renderer, &line);
+    isDirty = 1;
+    return;
+  }
+  SDL_Rect rect = { CHAR_X(x), CHAR_Y(y), w * charW, charH };
+  const bool moved = cursorState.pageCleared || !SDL_RectEquals(&rect, &cursorState.rect);
+  cursorState.rect = rect;
+  cursorState.background = bgColor;
+  cursorState.shown = true;
+  cursorState.pageCleared = false;
+  if (moved) {
+    cursorState.movedAt = SDL_GetTicks();
+    cursorState.pulsing = true;
+  }
+#ifndef CURSOR_OVERLAY
+  drawCursorBrackets(cursorBracketColor());
+#endif
   isDirty = 1;
 }
 
@@ -900,6 +1040,7 @@ void gfxUpdateScreen(void) {
     return;
   }
 #endif
+  animateCursor();
   if (isDirty) {
 #ifndef WEB_BUILD
 #ifdef MIYOOPORTS_BUILD
@@ -915,10 +1056,13 @@ void gfxUpdateScreen(void) {
     useWindowPixels();
     SDL_Rect viewport = getTrackerViewport();
     SDL_RenderCopy(renderer, compositionTexture, NULL, &viewport);
+    cursorWindowViewport = viewport;
+    drawCursorOverlay();
 #else
     SDL_RenderSetLogicalSize(renderer, logicalW, logicalH);
     SDL_Rect destination = {0, 0, logicalW, logicalH};
     SDL_RenderCopy(renderer, compositionTexture, NULL, &destination);
+    drawCursorOverlay();
 #endif
     gfxDrawHUD();
     SDL_RenderPresent(renderer);
@@ -935,6 +1079,8 @@ void gfxUpdateScreen(void) {
 void gfxDrawCharBitmap(uint8_t* bitmap, int col, int row) {
   int cx = CHAR_X(col);
   int cy = CHAR_Y(row);
+  SDL_Rect area = {cx, cy, charW, charH};
+  cursorAreaPainted(area);
 
   uint8_t fgR = (fgColor >> 16) & 0xFF;
   uint8_t fgG = (fgColor >> 8) & 0xFF;
@@ -1009,6 +1155,8 @@ void gfxBitmapFree(Bitmap* bitmap) {
 
 void gfxDrawBitmap(Bitmap* bitmap, int col, int row) {
   if (!bitmap || !bitmap->data) return;
+  SDL_Rect paintedArea = {CHAR_X(col), CHAR_Y(row), bitmap->widthPixels, bitmap->heightPixels};
+  cursorAreaPainted(paintedArea);
 
   SDL_Texture* texture = (SDL_Texture*)bitmap->userdata;
   if (!texture) return;
