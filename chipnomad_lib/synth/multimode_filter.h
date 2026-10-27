@@ -44,6 +44,8 @@ class MultimodeFilter {
   float k35G_ = 0.0f, k35K_ = 0.0f;
   k35_t k35_[2][4] = {};
   rosic::TeeBeeFilter acid_[2];
+  float acidBassState_[2] = {};
+  float acidBassAlpha_ = 0.0f, acidBassGain_ = 0.0f;
   int acidMode_ = -1;
   float acidCutoff_ = -1.0f, acidResonance_ = -1.0f;
 };

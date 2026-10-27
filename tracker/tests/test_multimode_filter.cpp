@@ -6,10 +6,10 @@
 
 namespace {
 float toneRms(uint8_t character, uint8_t mode, bool slope24, float frequency,
-              uint8_t color = 128) {
+              uint8_t color = 128, float resonance = 0.4f, float cutoff = 1000.0f) {
   MultimodeFilter filter;
   filter.init(48000.0f);
-  filter.configure(true, character, mode, slope24, 1000.0f, 0.4f, color);
+  filter.configure(true, character, mode, slope24, cutoff, resonance, color);
   double power = 0.0;
   for (int i = 0; i < 8192; ++i) {
     const float input = 0.35f * sinf(6.28318530718f * frequency * i / 48000.0f);
@@ -50,6 +50,17 @@ TEST_CASE("Aggro and Acid provide distinct LP BP HP responses at both slopes") {
     CHECK(toneRms(character, 2, true, 120.0f) <
           toneRms(character, 2, false, 120.0f));
   }
+}
+
+TEST_CASE("Acid resonance restores low-frequency level at both slopes") {
+  for (bool slope24 : {false, true})
+    for (float cutoff : {400.0f, 1000.0f}) {
+      const float baseline = toneRms(4, 0, slope24, 100.0f, 128, 0.0f, cutoff);
+      const float resonant = toneRms(4, 0, slope24, 100.0f, 128, 1.0f, cutoff);
+      INFO("slope24=", slope24, " cutoff=", cutoff);
+      CHECK(resonant > baseline * 0.65f);
+      CHECK(resonant < baseline * 1.5f);
+    }
 }
 
 TEST_CASE("Classic slope switches between one and two filter stages") {

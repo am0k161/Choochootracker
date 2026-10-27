@@ -638,7 +638,7 @@ Several filter characters are available:
 - **Clean**: sterile and digital
 - **Classic**: inspired by classic American analogue synths
 - **Aggro**: gritty MS-20-style KORG-35 filter, with resonant LP, BP and HP
-- **Acid**: Open303's TB-303 low-pass in LP/24; its other modes and slopes are Open303-based adaptations. Acid reaches an effective maximum cutoff of 12 kHz (slightly lower below a 48 kHz output rate), even though the shared cutoff control reaches 20 kHz.
+- **Acid**: Open303's TB-303 low-pass in LP/24; its other modes and slopes are Open303-based adaptations. In LP mode, notes keep more bass as resonance rises. Acid reaches an effective maximum cutoff of 12 kHz (slightly lower below a 48 kHz output rate), even though the shared cutoff control reaches 20 kHz.
 - **Roar**: inspired by Massive's Scream filter; a saturated filter with a separate high-pass feedback path. Color increases its growl and drive.
 - **Snarl**: inspired by Bitwig's Rasp; a short saturated delay loop creates moving resonant teeth around the cutoff. Color changes their spacing and intensity.
 

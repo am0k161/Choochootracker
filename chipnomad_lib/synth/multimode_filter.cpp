@@ -73,6 +73,11 @@ void MultimodeFilter::configure(bool enabled, uint8_t character, uint8_t mode,
       for (auto& filter : acid_) filter.setResonance(percent);
       acidResonance_ = percent;
     }
+    // Restore the bass attenuated by TeeBee's resonance feedback.
+    const float bassCutoff = fminf(150.0f, cutoffHz_ * 0.35f);
+    acidBassAlpha_ = 1.0f - expf(-2.0f * kPi * bassCutoff / sampleRate_);
+    const float bassLevel = slope24dB_ ? fminf(1.0f, 0.4f + cutoffHz_ / 1600.0f) : 0.8f;
+    acidBassGain_ = 0.8f * bassLevel * (1.0f - expf(-5.0f * resonance_));
   } else {
     // Preserve the previous Clean/Classic resonance taper.
     const float r2 = resonance_ * resonance_;
@@ -117,6 +122,7 @@ void MultimodeFilter::reset() {
   for (auto& channel : k35_)
     for (auto& cell : channel) k35_reset(&cell);
   for (auto& filter : acid_) filter.reset();
+  memset(acidBassState_, 0, sizeof(acidBassState_));
 }
 
 float MultimodeFilter::processStage(float input, int channel, int stage,
@@ -207,6 +213,9 @@ float MultimodeFilter::process(float input, int channel) {
     for (int step = 0; step < 2; ++step)
       output += 0.5f * (float)acid_[channel].getSample(input);
     if (!isfinite(output)) { acid_[channel].reset(); return 0.0f; }
+    float& bass = acidBassState_[channel];
+    bass += acidBassAlpha_ * (input - bass);
+    if (mode_ == 0) output += acidBassGain_ * bass;
     return audioTanh(0.7f * output);
   }
   if (character_ >= 5) return processCreative(input, channel);
