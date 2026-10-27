@@ -262,7 +262,18 @@ void gfxPrintf(int x, int y, const char* format, ...) {
   gfxPrint(x, y, printBuffer);
 }
 
+static int lastCursorX, lastCursorY, lastCursorW;
+
+void gfxGetCursor(int* x, int* y, int* w) {
+  *x = lastCursorX;
+  *y = lastCursorY;
+  *w = lastCursorW;
+}
+
 void gfxCursor(int x, int y, int w) {
+  lastCursorX = x;
+  lastCursorY = y;
+  lastCursorW = w;
   SDL_Rect rect = { CHAR_X(x), CHAR_Y(y) + fontH - 1, CHAR_X(w), 1 };
 #ifdef MIYOOPORTS_BUILD
   SDL_FillRect(offscreenSurface, &rect, cursorColor);

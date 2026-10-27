@@ -17,10 +17,13 @@
 #include "selection_popup.h"
 #include "simple_chip_presets.h"
 #include "audio_manager.h"
+#include "synth/instrument_eq.h"
 #include "screen_audio_input.h"
 #include "audio_input_manager.h"
 #include "monitor_display.h"
 #include <string.h>
+#include <algorithm>
+#include <stdlib.h>
 #include <stdio.h>
 #include <strings.h>
 #include <math.h>
@@ -254,9 +257,12 @@ static void setInstrumentType(InstrumentType newType) {
   InstrumentVoicePostSettings* oldPost = voicePostSettings(instrument, oldType);
   int preserveEnvelope = oldPost && (oldPost->attack || oldPost->decay || oldPost->sustain || oldPost->release);
   if (preserveEnvelope) savedEnvelope = *oldPost;
+  const uint8_t savedEQ = instrument->eq;
   getInstrumentFunctions(oldType).free(instrument);
   instrument->type = newType;
   getInstrumentFunctions(newType).init(instrument);
+  // The EQ stays when trying another sound source; clearing the type resets it.
+  if (newType != InstrumentType::none) instrument->eq = savedEQ;
   if (preserveEnvelope && !isSimpleChip(newType)) {
     InstrumentVoicePostSettings* post = voicePostSettings(instrument, newType);
     if (post) {
@@ -571,13 +577,19 @@ static void draw(void) {
 static void drawRowHeader(int row, CellState state) {}
 static void drawColHeader(int col, CellState state) {}
 
+// MIDI instruments make no sound here, so they have no EQ.
+static int instrumentHasEQ(void) {
+  InstrumentType type = chipnomadState->project.instruments[cInstrument].type;
+  return type != InstrumentType::none && type != InstrumentType::Midi;
+}
+
 int instrumentCommonColumnCount(int row) {
   if (row == 0) {
     return 3; // Instrument type, load, save
   } else if (row == 1) {
     return 15; // Instrument name
   } else if (row == 2) {
-    return 4; // Transpose, table speed, volume, pan
+    return instrumentHasEQ() ? 5 : 4; // Transpose, table speed, volume, pan, EQ bank
   }
   return 1; // Default value
 }
@@ -598,6 +610,7 @@ void instrumentCommonDrawStatic(void) {
   gfxPrint(14, 4, "TIC");
   gfxPrint(28, 3, "PAN");
   gfxPrint(28, 4, "VOL");
+  if (instrumentHasEQ()) gfxPrint(28, 5, "EQ");
 }
 
 void instrumentCommonDrawCursor(int col, int row) {
@@ -623,6 +636,8 @@ void instrumentCommonDrawCursor(int col, int row) {
     gfxCursor(32, 4, 2);
   } else if (row == 2 && col == 3) {
     gfxCursor(32, 3, 2);
+  } else if (row == 2 && col == 4) {
+    gfxCursor(32, 5, 2);
   }
 }
 
@@ -630,7 +645,8 @@ void instrumentCommonDrawField(int col, int row, CellState state) {
   const Instrument& instrument = chipnomadState->project.instruments[cInstrument];
   // The selected field's label lights up with its value.
   static const struct { int row, col, x, y; const char* text; } labels[] = {
-    {0, 0, 0, 2, "Type"}, {2, 0, 0, 4, "Transp."}, {2, 1, 14, 4, "TIC"}, {2, 2, 28, 4, "VOL"}, {2, 3, 28, 3, "PAN"}};
+    {0, 0, 0, 2, "Type"}, {2, 0, 0, 4, "Transp."}, {2, 1, 14, 4, "TIC"}, {2, 2, 28, 4, "VOL"}, {2, 3, 28, 3, "PAN"},
+    {2, 4, 28, 5, "EQ"}};
   for (const auto& label : labels)
     if (label.row == row && label.col == col) fieldDrawLabel(label.x, label.y, label.text, state);
   if (row == 1) fieldDrawLabel(0, 3, "Name", state);
@@ -664,6 +680,8 @@ void instrumentCommonDrawField(int col, int row, CellState state) {
     gfxPrint(32, 4, byteToHex(chipnomadState->project.instruments[cInstrument].volume));
   } else if (row == 2 && col == 3) {
     gfxPrint(32, 3, byteToHex(chipnomadState->project.instruments[cInstrument].pan));
+  } else if (row == 2 && col == 4) {
+    gfxPrint(32, 5, byteToHexOrEmpty(chipnomadState->project.instruments[cInstrument].eq));
   }
 }
 
@@ -897,6 +915,28 @@ void instrumentCommonDrawLivePreview(void) {
   livePreviewWasActive = 1;
 }
 
+// The EQ field holds an EQ bank number. EDIT on "--" picks an unused bank;
+// EDIT + d-pad changes the number. A short EDIT on a number opens the EQ
+// screen when released (inputEQField), so it is not handled here.
+static int editEQBank(CellEditAction action, uint8_t* bank) {
+  action = convertMultiAction(action);
+  if (action == CellEditAction::clear) {
+    *bank = EMPTY_VALUE_8;
+    return 1;
+  }
+  const int step = action == CellEditAction::increase ? 1 : action == CellEditAction::decrease ? -1 :
+                   action == CellEditAction::increaseBig ? 16 : action == CellEditAction::decreaseBig ? -16 : 0;
+  if (*bank >= PROJECT_EQ_BANKS) {
+    if (!step && action != CellEditAction::tap && action != CellEditAction::doubleTap) return 0;
+    *bank = instrumentEQUnusedBank(&chipnomadState->project, cInstrument);
+    if (*bank == EMPTY_VALUE_8) screenMessage(MESSAGE_TIME, "All EQ banks are in use");
+    return *bank != EMPTY_VALUE_8;
+  }
+  if (!step) return 0;
+  *bank = (uint8_t)std::clamp(*bank + step, 0, PROJECT_EQ_BANKS - 1);
+  return 1;
+}
+
 int instrumentCommonOnEdit(int col, int row, enum CellEditAction action) {
   int handled = 0;
   if (row == 0 && col == 0) {
@@ -956,10 +996,131 @@ int instrumentCommonOnEdit(int col, int row, enum CellEditAction action) {
       chipnomadState->project.instruments[cInstrument].pan = 0x80;
       handled = 1;
     } else handled = edit8noLast(action, &chipnomadState->project.instruments[cInstrument].pan, 16, 0, 255);
+  } else if (row == 2 && col == 4) {
+    handled = editEQBank(action, &chipnomadState->project.instruments[cInstrument].eq);
   }
 
   if (handled) projectModified = 1;
   return handled;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+//
+// Header navigation
+//
+// The top rows are laid out in two areas: Type and Name on the left, and
+// Load, Save, PAN, VOL and EQ on the right. Arrow keys there go to the field
+// that is on screen in that direction rather than the next one in order.
+
+struct HeaderField {
+  int row, col, x, y, width;
+};
+
+static const int kHeaderReach = 2;  // how far sideways up/down may look for a field
+
+static int headerFields(HeaderField* fields) {
+  const Instrument& instrument = chipnomadState->project.instruments[cInstrument];
+  int count = 0;
+  auto add = [&](int row, int col, int x, int y, int width) { fields[count++] = {row, col, x, y, width}; };
+  add(0, 0, 8, 2, (int)strlen(instrumentTypeName(instrument.type)));
+  add(0, 1, 23, 2, 4);
+  add(0, 2, 29, 2, 4);
+  if (instrument.type == InstrumentType::none) return count;
+  if (instrument.type == InstrumentType::Monk) {
+    // MonkSynth's own header (instrument_monk.cpp): TR, TIC, VOL, PAN, then EQ.
+    const int x[] = {3, 12, 22, 31}, width[] = {3, 2, 2, 2};
+    for (int col = 0; col < 4; ++col) add(1, col, x[col], 3, width[col]);
+    if (instrumentHasEQ()) add(1, 4, 31, 4, 2);
+    return count;
+  }
+  for (int col = 0; col < PROJECT_INSTRUMENT_NAME_LENGTH; ++col) add(1, col, 8 + col, 3, 1);
+  add(2, 0, 8, 4, 3);
+  add(2, 1, 18, 4, 2);
+  add(2, 2, 32, 4, 2);
+  add(2, 3, 32, 3, 2);
+  if (instrumentHasEQ()) add(2, 4, 32, 5, 2);
+  return count;
+}
+
+static int horizontalGap(int x0, int w0, int x1, int w1) {
+  return std::max(0, std::max(x1 - (x0 + w0), x0 - (x1 + w1)));
+}
+
+// A short EDIT on an EQ number opens that EQ bank's screen when EDIT is
+// released; EDIT + d-pad changes the number instead.
+static int eqEditPressed = 0;
+
+static int inputEQField(ScreenData* screen, int isKeyDown, int keys) {
+  const int row = chipnomadState->project.instruments[cInstrument].type == InstrumentType::Monk ? 1 : 2;
+  const uint8_t bank = chipnomadState->project.instruments[cInstrument].eq;
+  if (screen->cursorRow != row || screen->cursorCol != 4 || !instrumentHasEQ()) {
+    eqEditPressed = 0;
+    return 0;
+  }
+  if (isKeyDown && keys == keyEdit) {
+    eqEditPressed = bank < PROJECT_EQ_BANKS;  // a press on "--" picks a bank instead
+    return 0;
+  }
+  if (isKeyDown && keys != keyEdit) eqEditPressed = 0;
+  if (!isKeyDown && keys == 0 && eqEditPressed) {
+    eqEditPressed = 0;
+    screenSetup(&screenInstrumentEQ, bank);
+    return 1;
+  }
+  return 0;
+}
+
+static int inputHeaderNavigation(ScreenData* screen, int isKeyDown, int keys) {
+  const int dx = keys == keyLeft ? -1 : keys == keyRight ? 1 : 0;
+  const int dy = keys == keyUp ? -1 : keys == keyDown ? 1 : 0;
+  if (!isKeyDown || (!dx && !dy) || screen->selectMode == 1 || screen->topRow != 0) return 0;
+  HeaderField fields[PROJECT_INSTRUMENT_NAME_LENGTH + 16];
+  const int count = headerFields(fields);
+  const int firstRow = chipnomadState->project.instruments[cInstrument].type == InstrumentType::Monk ? 2 : 3;
+  int x = 0, y = 0, width = 0, fromHeader = 0;
+  for (int i = 0; i < count; ++i)
+    if (fields[i].row == screen->cursorRow && fields[i].col == screen->cursorCol) {
+      x = fields[i].x; y = fields[i].y; width = fields[i].width; fromHeader = 1;
+    }
+  if (!fromHeader) {
+    // Up from the first row below the header starts from where its cursor is.
+    if (dy >= 0 || screen->cursorRow != firstRow) return 0;
+    screen->drawCursor(screen->cursorCol, screen->cursorRow);
+    gfxGetCursor(&x, &y, &width);
+  }
+
+  const HeaderField* target = NULL;
+  int best = 0, bestTie = 0;
+  if (dx) {
+    for (int i = 0; i < count; ++i) {
+      const HeaderField& f = fields[i];
+      if (f.y != y || (dx > 0 ? f.x < x + width : f.x + f.width > x)) continue;
+      int gap = dx > 0 ? f.x - (x + width) : x - (f.x + f.width);
+      if (!target || gap < best) { target = &f; best = gap; }
+    }
+  } else {
+    // The nearest line in that direction with a field close enough sideways.
+    // The header fields are on lines 2 to 5.
+    for (int line = dy < 0 ? std::min(y - 1, 5) : y + 1; line >= 2 && line <= 5 && !target; line += dy)
+      for (int i = 0; i < count; ++i) {
+        const HeaderField& f = fields[i];
+        if (f.y != line) continue;
+        int gap = horizontalGap(x, width, f.x, f.width), tie = abs(f.x - x);
+        if (gap > kHeaderReach) continue;
+        if (!target || gap < best || (gap == best && tie < bestTie)) { target = &f; best = gap; bestTie = tie; }
+      }
+  }
+  if (!target) {
+    // Down from the header's lowest fields leaves it the usual way; other
+    // dead ends stay put rather than jump across the screen.
+    return fromHeader && dy <= 0;
+  }
+  screen->drawField(screen->cursorCol, screen->cursorRow, CellState::normal);
+  screen->cursorRow = target->row;
+  screen->cursorCol = target->col;
+  screen->drawField(screen->cursorCol, screen->cursorRow, CellState::focus);
+  screen->drawCursor(screen->cursorCol, screen->cursorRow);
+  return 1;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1059,6 +1220,10 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
     if (instrumentTypePopupInput(isKeyDown, keys, screen)) return 1;
 
     if (inputScreenNavigation(keys, tapCount)) return 1;
+
+    if (inputHeaderNavigation(screen, isKeyDown, keys)) return 1;
+
+    if (inputEQField(screen, isKeyDown, keys)) return 1;
 
     if (screenInput(screen, isKeyDown, keys, tapCount)) return 1;
   }

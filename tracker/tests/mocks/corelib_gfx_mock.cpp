@@ -29,6 +29,7 @@ void gfxClearRect(int x, int y, int w, int h) {
       if (row >= 0 && col >= 0) mockGfxCells[row][col] = ' ';
 }
 void gfxCursor(int x, int y, int w) { mockCursorX = x; mockCursorY = y; mockCursorWidth = w; }
+void gfxGetCursor(int* x, int* y, int* w) { *x = mockCursorX; *y = mockCursorY; *w = mockCursorWidth; }
 void gfxRect(int x, int y, int w, int h) {}
 void gfxPrint(int x, int y, const char* text) {
   if (*text) {

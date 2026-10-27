@@ -523,6 +523,13 @@ static int screenTouchCellAt(int col, int row, int* targetCol, int* targetRow) {
   int instrumentCommonRow = -1;
   if (currentScreen == &screenInstrument) {
     InstrumentType type = chipnomadState->project.instruments[cInstrument].type;
+    // PAN sits on the Name line and EQ below VOL; all are in common row 2.
+    if (type != InstrumentType::none && type != InstrumentType::Monk && col >= 28 && col <= 33 &&
+        (row == 3 || (row == 5 && touchScreenData->getColumnCount(2) == 5))) {
+      if (targetCol) *targetCol = row == 3 ? 3 : 4;
+      if (targetRow) *targetRow = 2;
+      return 1;
+    }
     // Instrument pages deliberately leave visual separator rows. Their
     // envelopes are not at the generic spreadsheet row offsets.
     if (row >= 2 && row <= 4) {
@@ -562,7 +569,7 @@ static int screenTouchCellAt(int col, int row, int* targetCol, int* targetRow) {
     mappedCol = col - 8; // Instrument name begins at character 8
     if (mappedCol < 0) mappedCol = 0;
   } else if (instrumentCommonRow == 2) {
-    mappedCol = col < 18 ? 0 : col < 29 ? 1 : 2; // Transpose, tick, volume
+    mappedCol = col < 18 ? 0 : col < 28 ? 1 : 2; // Transpose, tick, volume
   } else if (currentScreen == &screenInstrument && columns == 2) {
     mappedCol = col >= kColumnNameX[1]; // the two columns of a sound page
   }
