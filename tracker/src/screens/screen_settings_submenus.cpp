@@ -47,8 +47,8 @@ static int audioInputArmedCount(void) {
 }
 
 static void audioCursor(int, int row) {
-  if (row == 0) gfxCursor(23, 2, 6);
-  else if (row == 1) gfxCursor(23, 3, appSettings.audioBufferSize == 1024 ? 4 : 3);
+  if (row == 0) gfxCursor(23, 2, appSettings.audioSampleRate == 44100 ? 8 : 6);
+  else if (row == 1) gfxCursor(23, 3, appSettings.audioBufferSize >= 1024 ? 4 : 3);
   else if (row == 2) gfxCursor(14, 4, 16);
   else if (row == 4) gfxCursor(23, 6, 3); // "OFF"/"ON" value width
 }
