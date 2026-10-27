@@ -1,4 +1,5 @@
 #include "screen_instrument.h"
+#include "field_style.h"
 #include "corelib_gfx.h"
 #include "corelib_file.h"
 #include "user_preset_browser.h"
@@ -31,28 +32,42 @@ int homeColumns(int row) {
   return row == 0 ? 3 : row == 1 ? 4 : row == 3 ? 2 :
     row >= 4 && homeParameters[row - 4][1] >= 0 ? 2 : 1;
 }
-int homeX(int col, int row) { return row == 1 ? commonX[col] : row == 3 && col ? 29 : row < 4 ? 8 : col ? 31 : 11; }
+int homeX(int col, int row) { return row == 1 ? commonX[col] : row == 3 && col ? 29 : row < 4 ? 8 : kColumnValueX[col]; }
+// The page's names for controls whose full names are longer than the
+// seven characters a name may take on the page.
+const char* homeName(int parameter) {
+  return parameter == monkVibrato ? "Vibrato" : parameter == monkVibRate ? "VibRate" : monkControls[parameter].name;
+}
 int homeWidth(int col, int row) { return row == 1 ? (col ? 2 : 3) : row == 2 ? 7 : row == 3 ? (col ? 4 : 19) : 2; }
 void homeStatic() {
   gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrintf(0, 0, "INSTRUMENT %02X", cInstrument);
-  gfxSetFgColor(appSettings.colorScheme.textDefault);
+  gfxSetFgColor(appSettings.colorScheme.textLabel);
   gfxPrint(0, 2, "Type"); gfxPrint(0, 3, "TR"); gfxPrint(8, 3, "TIC");
   gfxPrint(18, 3, "VOL"); gfxPrint(27, 3, "PAN");
   gfxPrint(0, homeY[2], "Bank"); gfxPrint(0, homeY[3], "Preset");
   for (int row = 4; row < 10; ++row) for (int col = 0; col < homeColumns(row); ++col)
-    gfxPrint(col ? 20 : 0, homeY[row], monkControls[homeParameters[row-4][col]].name);
+    gfxPrint(kColumnNameX[col], homeY[row], homeName(homeParameters[row-4][col]));
   gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 8, "VOICE"); gfxPrint(0, 13, "UNISON");
 }
+// Every control but the vowel, which shows its letters instead, has a bar.
+bool homeBar(int, int row) { return row > 4; }
 void homeCursor(int col, int row) {
   if (row == 0) instrumentCommonDrawCursor(col, 0);
-  else gfxCursor(homeX(col, row), homeY[row], homeWidth(col, row));
+  else gfxCursor(homeX(col, row), homeY[row], homeWidth(col, row) + (homeBar(col, row) ? kFieldBarWidth : 0));
 }
 void homeField(int col, int row, CellState state) {
   if (row == 0) { instrumentCommonDrawField(col, 0, state); return; }
   int x = homeX(col, row), y = homeY[row];
   gfxClearRect(x, y, homeWidth(col, row), 1);
-  gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
   const auto& m = current().chip.monk;
+  // The selected field's label lights up with its value.
+  static const int headerX[] = {0, 8, 18, 27};
+  static const char* const header[] = {"TR", "TIC", "VOL", "PAN"};
+  if (row == 1 && col < 4) fieldDrawLabel(headerX[col], 3, header[col], state);
+  else if (row == 2) fieldDrawLabel(0, y, "Bank", state);
+  else if (row == 3 && !col) fieldDrawLabel(0, y, "Preset", state);
+  else if (row >= 4) fieldDrawLabel(kColumnNameX[col], y, homeName(homeParameters[row-4][col]), state);
+  gfxSetFgColor(row == 2 || (row == 1 && !col) ? fieldNameColor(state) : fieldValueColor(state));
   if (row == 1) {
     if (!col) gfxPrint(x, y, current().transposeEnabled ? "On " : "Off");
     else gfxPrint(x, y, byteToHex(col == 1 ? current().tableSpeed : col == 2 ? current().volume : current().pan));
@@ -62,13 +77,20 @@ void homeField(int col, int row, CellState state) {
     gfxPrintf(x, y, col ? "EDIT" : "%.19s", current().name);
   }
   else {
-    gfxPrint(x, y, byteToHex(monkValue(m, homeParameters[row-4][col])));
+    const int parameter = homeParameters[row-4][col];
+    if (homeBar(col, row)) {
+      const auto& control = monkControls[parameter];
+      fieldDrawNumber(x, y, monkValue(m, parameter), state,
+        float(monkValue(m, parameter) - control.minimum) / float(control.maximum - control.minimum));
+    } else {
+      gfxPrint(x, y, byteToHex(monkValue(m, parameter)));
+    }
     if (row == 4) {
       const char* vowels[] = {"A", "E", "I", "O", "U"};
       int nearest = (m.vowel * 4 + 127) / 255;
       for (int i = 0; i < 5; ++i) {
         gfxSetFgColor(i == nearest ? appSettings.colorScheme.textValue : appSettings.colorScheme.textInfo);
-        gfxPrint(16 + i * 4, y, vowels[i]);
+        gfxPrint(x + 3 + i * 4, y, vowels[i]);
       }
     }
   }
@@ -211,8 +233,8 @@ bool instrumentMonkTouchCell(int col, int row, int* targetCol, int* targetRow) {
     } else if (field == 4) {
       if (col < 0 || col > 32) return false;
     } else {
-      if (col < 0 || col > 32 || (col > 12 && col < 20)) return false;
-      column = col >= 20;
+      if (col < 0 || col > 32 || col == 16) return false;
+      column = col >= kColumnNameX[1];
       if (column >= homeColumns(field)) return false;
     }
     *targetCol = column; *targetRow = field; return true;

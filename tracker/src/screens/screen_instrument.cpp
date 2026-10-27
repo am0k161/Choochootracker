@@ -6,6 +6,8 @@
 #include "chipnomad_lib.h"
 #include "project_utils.h"
 #include "screen_instrument.h"
+#include "field_style.h"
+#include "synth/multimode_filter.h"
 #include "user_presets.h"
 #include "user_preset_browser.h"
 #include "waveform_display.h"
@@ -351,7 +353,7 @@ static void audioInStatic() {
   gfxSetFgColor(appSettings.colorScheme.textTitles);
   gfxPrint(0, 6, "Input");
   gfxPrint(0, 7, "SOURCE");
-  gfxSetFgColor(appSettings.colorScheme.textDefault);
+  gfxSetFgColor(appSettings.colorScheme.textLabel);
   gfxPrint(0, 8, "Device");
   gfxPrint(0, 10, "Input level");
   instrumentCommonDrawVoicePostStatic(1);
@@ -359,23 +361,26 @@ static void audioInStatic() {
 }
 static void audioInCursor(int col, int row) {
   if (row < 3) return instrumentCommonDrawCursor(col, row);
-  if (row == 3 && !col) return gfxCursor(10, 7, 8);
+  if (row == 3 && !col) return gfxCursor(kColumnValueX[0], 7, 8);
   if (instrumentCommonDrawVoicePostCursor(col, row)) return;
-  if (row == 4 && !col) gfxCursor(11, 8, 6);
+  if (row == 4 && !col) gfxCursor(kColumnValueX[0], 8, 6);
 }
 static void audioInField(int col, int row, CellState state) {
   if (row < 3) return instrumentCommonDrawField(col, row, state);
   if (row == 3 && !col) {
     const Instrument* instrument = &chipnomadState->project.instruments[cInstrument];
-    gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
-    if (instrument->audioInputSource == InstrumentAudioInputSource::external) gfxPrint(10, 7, "External");
-    else gfxPrintf(10, 7, "Track %u", (unsigned)instrument->audioInputSource);
+    gfxSetFgColor(fieldNameColor(state));
+    gfxClearRect(kColumnValueX[0], 7, 8, 1);
+    if (instrument->audioInputSource == InstrumentAudioInputSource::external) gfxPrint(kColumnValueX[0], 7, "External");
+    else gfxPrintf(kColumnValueX[0], 7, "Track %u", (unsigned)instrument->audioInputSource);
     return;
   }
   if (instrumentCommonDrawVoicePostField(col, row, state,
       &chipnomadState->project.instruments[cInstrument].chip.audioIn)) return;
-  gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
-  if (row == 4 && !col) gfxPrint(11, 8, "[Open]");
+  if (row != 4 || col) return;
+  fieldDrawLabel(0, 8, "Device", state);
+  gfxSetFgColor(fieldValueColor(state));
+  gfxPrint(kColumnValueX[0], 8, "[Open]");
 }
 static int audioInEdit(int col, int row, CellEditAction action) {
   if (row < 3) return instrumentCommonOnEdit(col, row, action);
@@ -499,7 +504,7 @@ void instrumentCommonDrawStatic(void) {
   gfxSetFgColor(cs.textTitles);
   gfxPrintf(0, 0, "INSTRUMENT %02X", cInstrument);
 
-  gfxSetFgColor(cs.textDefault);
+  gfxSetFgColor(cs.textLabel);
   gfxPrint(0, 2, "Type");
 
   if (chipnomadState->project.instruments[cInstrument].type == InstrumentType::none) return;
@@ -538,9 +543,15 @@ void instrumentCommonDrawCursor(int col, int row) {
 }
 
 void instrumentCommonDrawField(int col, int row, CellState state) {
-  gfxSetFgColor(appSettings.colorScheme.textDefault);
+  const Instrument& instrument = chipnomadState->project.instruments[cInstrument];
+  // The selected field's label lights up with its value.
+  static const struct { int row, col, x, y; const char* text; } labels[] = {
+    {0, 0, 0, 2, "Type"}, {2, 0, 0, 4, "Transp."}, {2, 1, 14, 4, "TIC"}, {2, 2, 28, 4, "VOL"}, {2, 3, 28, 3, "PAN"}};
+  for (const auto& label : labels)
+    if (label.row == row && label.col == col) fieldDrawLabel(label.x, label.y, label.text, state);
+  if (row == 1) fieldDrawLabel(0, 3, "Name", state);
 
-  gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
+  gfxSetFgColor(fieldValueColor(state));
 
   if (row == 0 && col == 0) {
     // Instrument type
@@ -557,11 +568,11 @@ void instrumentCommonDrawField(int col, int row, CellState state) {
     gfxPrint(29, 2, "Save");
   } else if (row == 1) {
     // Instrument name
-    gfxClearRect(8, 3, PROJECT_INSTRUMENT_NAME_LENGTH, 1);
-    gfxPrintf(8, 3, "%s", chipnomadState->project.instruments[cInstrument].name);
+    fieldDrawText(8, 3, instrument.name, PROJECT_INSTRUMENT_NAME_LENGTH, state);
   } else if (row == 2 && col == 0) {
     // Transpose
-    gfxPrintf(8, 4, chipnomadState->project.instruments[cInstrument].transposeEnabled ? "On " : "Off");
+    gfxSetFgColor(fieldNameColor(state));
+    gfxPrintf(8, 4, instrument.transposeEnabled ? "On " : "Off");
   } else if (row == 2 && col == 1) {
     // Table tic speed
     gfxPrint(18, 4, byteToHex(chipnomadState->project.instruments[cInstrument].tableSpeed));
@@ -577,22 +588,27 @@ static const char* filterCharacterName(uint8_t character) {
   return types[character == 7 ? 6 : character <= 6 ? character : 1];
 }
 
+// Roar and Snarl have a Color setting where the other characters have Slope.
+static bool filterHasColor(const InstrumentVoicePostSettings* post) {
+  return post && post->filterCharacter >= 5 && post->filterCharacter <= 7;
+}
+
+static const char* filterName(const InstrumentVoicePostSettings* post, int index) {
+  static const char* const names[] = {"Type", "Mode", "Slope", "Cutoff", "Reso"};
+  return index == 2 && filterHasColor(post) ? "Color" : names[index];
+}
+
 void instrumentCommonDrawVoicePostStatic(int drawEnvelope) {
   const InstrumentVoicePostSettings* post =
     instrumentVoicePostSettings(&chipnomadState->project.instruments[cInstrument]);
   gfxSetFgColor(appSettings.colorScheme.textTitles);
-  gfxPrint(18, 7, "FILTER");
-  gfxSetFgColor(appSettings.colorScheme.textDefault);
-  gfxPrint(18, 8, "Type");
-  gfxPrint(18, 9, "Mode");
-  gfxPrint(18, 10, post && post->filterCharacter >= 5 && post->filterCharacter <= 7
-    ? "Color" : "Slope");
-  gfxPrint(18, 11, "Cutoff");
-  gfxPrint(18, 12, "Reso");
+  gfxPrint(kColumnNameX[1], 7, "FILTER");
+  gfxSetFgColor(appSettings.colorScheme.textLabel);
+  for (int i = 0; i < 5; ++i) gfxPrint(kColumnNameX[1], 8 + i, filterName(post, i));
   if (drawEnvelope) {
     gfxSetFgColor(appSettings.colorScheme.textTitles);
     gfxPrint(0, 14, "ADSR");
-    gfxSetFgColor(appSettings.colorScheme.textDefault);
+    gfxSetFgColor(appSettings.colorScheme.textLabel);
     gfxPrint(6, 14, "A");
     gfxPrint(11, 14, "D");
     gfxPrint(16, 14, "S");
@@ -608,17 +624,18 @@ int instrumentCommonDrawVoicePostCursor(int col, int row) {
   }
   if (col && row >= 4 && row <= 8) {
     InstrumentVoicePostSettings* post = instrumentVoicePostSettings(&chipnomadState->project.instruments[cInstrument]);
-    int width = 2;
+    int width = kFieldNumberWidth;  // Cutoff and Reso, with their bars
     if (row == 4) {
       width = (int)strlen(filterCharacterName(post ? post->filterCharacter : 1));
+    } else if (row == 5) {
+      width = 2;
     } else if (row == 6) {
-      width = post && post->filterCharacter >= 5 && post->filterCharacter <= 7 ? 2 : 5;
-    } else if (row == 7) {
-      char value[12];
-      snprintf(value, sizeof(value), "%u Hz", post ? post->filterCutoffHz : 0);
-      width = (int)strlen(value);
+      width = filterHasColor(post) ? kFieldNumberWidth : 5;
+    } else if (row == 7 && post) {
+      // The bar shows the cutoff; the line below gives it in Hz.
+      screenMessage(0, "Cutoff %u Hz", post->filterCutoffHz);
     }
-    gfxCursor(26, row + 4, width);
+    gfxCursor(kColumnValueX[1], row + 4, width);
     return 1;
   }
   return 0;
@@ -628,24 +645,27 @@ int instrumentCommonDrawVoicePostField(int col, int row, CellState state,
                                         const InstrumentVoicePostSettings* post) {
   if (row == 9) {
     const uint8_t values[] = {post->attack, post->decay, post->sustain, post->release, post->envelopeShape};
-    gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
+    static const char* const labels[] = {"A", "D", "S", "R", "SHP"};
+    fieldDrawLabel(col == 4 ? 27 : 6 + col * 5, 14, labels[col], state);
+    gfxSetFgColor(fieldValueColor(state));
     gfxPrint(col == 4 ? 31 : 7 + col * 5, 14, byteToHex(values[col]));
     instrumentCommonDrawEnvelopePreview(post->attack, post->decay, post->sustain, post->release, post->envelopeShape);
     return 1;
   }
   if (!col || row < 4 || row > 8) return 0;
-  gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
-  gfxClearRect(26, row + 4, 8, 1);
+  const int x = kColumnValueX[1], y = row + 4;
+  fieldDrawLabel(kColumnNameX[1], y, filterName(post, row - 4), state);
+  gfxSetFgColor(fieldNameColor(state));
+  gfxClearRect(x, y, kFieldNumberWidth, 1);
   switch (row) {
-    case 4: gfxPrint(26, 8, filterCharacterName(post->filterCharacter)); break;
-    case 5: { static const char* modes[] = {"LP", "BP", "HP"}; gfxPrint(26, 9, modes[post->filterMode <= 2 ? post->filterMode : 0]); break; }
+    case 4: gfxPrint(x, y, filterCharacterName(post->filterCharacter)); break;
+    case 5: { static const char* modes[] = {"LP", "BP", "HP"}; gfxPrint(x, y, modes[post->filterMode <= 2 ? post->filterMode : 0]); break; }
     case 6:
-      if (post->filterCharacter >= 5 && post->filterCharacter <= 7)
-        gfxPrint(26, 10, byteToHex(post->filterColor));
-      else gfxPrint(26, 10, post->filterSlope24dB ? "24 dB" : "12 dB");
+      if (filterHasColor(post)) fieldDrawNumber(x, y, post->filterColor, state);
+      else gfxPrint(x, y, post->filterSlope24dB ? "24 dB" : "12 dB");
       break;
-    case 7: gfxPrintf(26, 11, "%u Hz", post->filterCutoffHz); break;
-    case 8: gfxPrint(26, 12, byteToHex(post->filterResonance)); break;
+    case 7: fieldDrawNumber(x, y, filterControlFromCutoff(post->filterCutoffHz), state); break;
+    case 8: fieldDrawNumber(x, y, post->filterResonance, state); break;
   }
   return 1;
 }

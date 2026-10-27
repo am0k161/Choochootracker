@@ -28,6 +28,9 @@ struct ColorScheme {
   int textEmpty;
   int textInfo;
   int textDefault;
+  int textLabel;    // names of settings, a little dimmer than their values
+  int textNames;    // values that are words (Off, Classic, LFO) rather than numbers
+  int valueBar;     // bars showing where a value sits in its range
   int textValue;
   int textTitles;
   int playMarkers;
@@ -204,6 +207,8 @@ int settingsLoad(void);
 int saveTheme(const char* path);
 int loadTheme(const char* path);
 void resetToDefaultColors(void);
+// Fills in colours a theme or settings file didn't have (left at -1).
+void colorSchemeFillMissing(ColorScheme* scheme);
 void initDefaultKeyMapping(void);
 void resetKeyMappingToDefaults(void);
 

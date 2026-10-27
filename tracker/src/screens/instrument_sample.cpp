@@ -1,4 +1,5 @@
 #include "screen_instrument.h"
+#include "field_style.h"
 #include "corelib_gfx.h"
 #include "corelib/corelib_file.h"
 #include "file_browser.h"
@@ -10,9 +11,9 @@
 #include <string.h>
 
 static int sampleButtonDown;
-static constexpr int sourceValueX = 9;
-static constexpr int sourceValueWidth = 7;
-static constexpr int editLabelX = 17;
+static constexpr int sourceValueX = kColumnValueX[0];
+static constexpr int sourceValueWidth = kFieldNumberWidth;
+static constexpr int editLabelX = kColumnNameX[1];
 static constexpr int editLabelWidth = 8;
 static Bitmap* samplePreviewBitmap;
 static int samplePreviewWidth, samplePreviewHeight;
@@ -133,7 +134,7 @@ static void drawStatic(void) {
   gfxSetFgColor(appSettings.colorScheme.textTitles);
   gfxPrint(0,6,"Sample");
   gfxPrint(0,7,"SOURCE");
-  gfxSetFgColor(appSettings.colorScheme.textDefault);
+  gfxSetFgColor(appSettings.colorScheme.textLabel);
   gfxPrint(0,8,"Pitch"); gfxPrint(0,9,"Stretch");
   gfxPrint(0,10,"Loop"); gfxPrint(0,11,"Speed");
   instrumentCommonDrawVoicePostStatic(1);
@@ -150,7 +151,7 @@ static void drawCursor(int col, int row) {
     const int w = col == 0 ? sourceValueWidth : editLabelWidth;
     gfxCursor(x, 6, w);
   }
-  else gfxCursor(col ? 26 : sourceValueX,row+4,col?8:sourceValueWidth);
+  else gfxCursor(sourceValueX, row + 4, sourceValueWidth);
 }
 
 static const char* sampleFilename(const char* path) {
@@ -169,12 +170,20 @@ static void drawField(int col, int row, CellState state) {
   InstrumentSample* sample = &chipnomadState->project.instruments[cInstrument].chip.sample;
   if (instrumentCommonDrawVoicePostField(col, row, state, sample)) return;
   int stretchOn = sample->stretchMode != 0;
-  gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
+  // The selected field's label lights up with its value; Sample is a title.
+  static const char* const labels[] = {"Pitch", "Stretch", "Loop", "Speed"};
+  if (row == 3 && col == 0) {
+    gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textTitles);
+    gfxPrint(0, 6, "Sample");
+  } else if (!col && row >= 4 && row <= 7) {
+    fieldDrawLabel(0, row + 4, labels[row - 4], state);
+  }
+  gfxSetFgColor(row == 5 || row == 6 ? fieldNameColor(state) : fieldValueColor(state));
   if (row == 3) {
     if (col == 0) gfxClearRect(sourceValueX, 6, sourceValueWidth, 1);
     else gfxClearRect(editLabelX, 6, editLabelWidth, 1);
   } else {
-    gfxClearRect(col?26:sourceValueX,row+4,col?8:sourceValueWidth,1);
+    gfxClearRect(sourceValueX, row + 4, sourceValueWidth, 1);
   }
   switch (row) {
     case 3: {
@@ -197,7 +206,9 @@ static void drawField(int col, int row, CellState state) {
       if (!col) {
         // Speed is inert while Stretch drives the duration: dim it.
         if (stretchOn) gfxSetFgColor(appSettings.colorScheme.textEmpty);
-        gfxPrint(sourceValueX, 11, byteToHex(controlFromRange(sample->speedPercent, 500)));
+        const uint8_t speed = controlFromRange(sample->speedPercent, 500);
+        if (stretchOn) gfxPrint(sourceValueX, 11, byteToHex(speed));
+        else fieldDrawNumber(sourceValueX, 11, speed, state);
       }
       break;
   }
