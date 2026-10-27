@@ -27,6 +27,9 @@ void need(bool ok, const std::string& why) {
 // what the engine cannot play is dropped, and listed in droppedNotes, instead
 // of rejecting the whole instrument.
 bool tolerantFurnace = false;
+// Set with tolerantFurnace when a NES instrument is read as a Game Boy one:
+// 1 pulse or noise, 2 triangle.
+int furnaceNes = 0;
 std::string droppedNotes;
 void noteDropped(const std::string& what) {
   if (droppedNotes.find(what) != std::string::npos) return;
@@ -827,6 +830,11 @@ void encodeMacros(Furnace& f, ExternalPreset& p) {
   for (auto& entry : f.macros) {
     Macro m = entry.second;
     if (m.data.empty()) continue;
+    if (furnaceNes == 2) {
+      // The NES triangle has no duty and a fixed level: the volume macro only gates it.
+      if (m.id == 2) continue;
+      if (m.id == 0) for (auto& v : m.data) v = v > 0 ? 15 : 0;
+    }
     try {
     need(!(m.open & 6), "Furnace ADSR/LFO macro mode is not supported");
     bool allZero = std::all_of(m.data.begin(), m.data.end(), [](int v) { return v == 0; });
@@ -1027,6 +1035,12 @@ ExternalPreset furnace(const Bytes& b, InstrumentType target, const std::string&
                   : target == InstrumentType::SID      ? 3
                   : target == InstrumentType::SegaPSG  ? 0
                                                        : 2;
+  if (furnaceNes && (f.type == 34 || f.type == 0)) {
+    // NES: the volume macro is the envelope, which the Game Boy engine plays as a
+    // software envelope (flag bit 0).
+    f.type = want;
+    f.gb = {15, 64, 3, 0};
+  }
   need(f.type == want, "Furnace instrument belongs to another chip");
   need(tolerantFurnace || !f.extra, "Furnace instrument uses unsupported features");
   auto p = init(target, f.title.empty() ? fallback : f.title);
@@ -1084,7 +1098,7 @@ ExternalPreset furnace(const Bytes& b, InstrumentType target, const std::string&
       d.envelopeIncrease = (f.gb[0] >> 4) & 1;
       d.envelopePeriod = f.gb[0] >> 5;
       // Furnace starts a pulse at 50% duty unless a duty macro says otherwise.
-      if (tolerantFurnace && target == InstrumentType::GBPulse && !f.macros.count(2)) d.mode = 2;
+      if (tolerantFurnace && target == InstrumentType::GBPulse && (furnaceNes == 2 || !f.macros.count(2))) d.mode = 2;
     }
   }
   encodeMacros(f, p);
@@ -1237,10 +1251,11 @@ ExternalPreset sbi(const Bytes& b, InstrumentType target, const std::string& tit
 }  // namespace
 
 bool importFurnaceInstrument(InstrumentType target, const std::vector<uint8_t>& data,
-                             ExternalPreset& output, std::string& dropped) {
+                             ExternalPreset& output, std::string& dropped, int nes) {
   dropped.clear();
   droppedNotes.clear();
   tolerantFurnace = true;
+  furnaceNes = nes;
   bool ok = false;
   try {
     need(target == InstrumentType::SID || isSimpleChip(target),
@@ -1253,6 +1268,7 @@ bool importFurnaceInstrument(InstrumentType target, const std::vector<uint8_t>& 
     dropped = e.what();
   }
   tolerantFurnace = false;
+  furnaceNes = 0;
   return ok;
 }
 

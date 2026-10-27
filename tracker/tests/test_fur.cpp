@@ -318,4 +318,76 @@ TEST_CASE("Game Boy instruments become Game Boy pulse and noise instruments that
   projectFree(p.get());
 }
 
+namespace {
+double renderEnergy(const Instrument& in) {
+  SimpleChipVoice v;
+  v.init(48000);
+  v.configure(in.type, &in.chip.simpleChip, 6000.f, 1.f);
+  v.noteOn();
+  std::vector<float> buf(2048);
+  double energy = 0;
+  for (int k = 0; k < 8; k++) {
+    v.render(buf.data(), buf.size());
+    for (float x : buf) energy += (double)x * x;
+  }
+  return energy;
+}
+}
+
+TEST_CASE("NES instruments become Game Boy pulse and noise instruments with their macros") {
+  const char* demo = "/opt/furnace-0.6pre5/demos/nes/turtle_byte.fur";
+  if (readFile(demo).empty()) return;
+  auto p = newProject();
+  REQUIRE(projectLoadFur(p.get(), demo, NULL) == 0);
+  int pulses = 0, withMacros = 0, noises = 0;
+  for (int i = 0; i < PROJECT_MAX_INSTRUMENTS; i++) {
+    const Instrument& in = p->instruments[i];
+    if (in.type != InstrumentType::GBPulse && in.type != InstrumentType::GBNoise) continue;
+    if (in.type == InstrumentType::GBPulse) pulses++; else noises++;
+    if (in.chip.simpleChip.program.size) withMacros++;
+    CHECK_MESSAGE(renderEnergy(in) > 1e-6, in.name);
+  }
+  CHECK(pulses > 0);
+  CHECK(noises > 0);
+  CHECK(withMacros > 0);
+  std::string warnings = projectLoadFurWarnings();
+  CHECK(warnings.find("default patch used") == std::string::npos);
+  MESSAGE(warnings);
+  projectFree(p.get());
+}
+
+TEST_CASE("SNES samples, BRR samples and waveforms become sample instruments") {
+  const char* dir = "fur_test_samples_snes";
+  struct Demo { const char* path; int minimum; } demos[] = {
+    {"/opt/furnace-0.6pre5/demos/snes/tetristheme.fur", 3},     // waveform and sample instruments
+    {"/opt/furnace-0.6pre5/demos/snes/ManbowSMW.fur", 3},       // BRR samples
+  };
+  for (const Demo& d : demos) {
+    if (readFile(d.path).empty()) continue;
+    auto p = newProject();
+    REQUIRE(projectLoadFur(p.get(), d.path, dir) == 0);
+    int samples = 0;
+    for (int i = 0; i < PROJECT_MAX_INSTRUMENTS; i++) {
+      const Instrument& in = p->instruments[i];
+      if (in.type != InstrumentType::Sample) continue;
+      samples++;
+      std::vector<uint8_t> wav = readFile(in.chip.sample.path);
+      REQUIRE(wav.size() > 64);
+      long peak = 0, big = 0;
+      size_t n = (wav.size() - 44) / 2;
+      for (size_t k = 0; k < n; k++) {
+        long v = labs((int16_t)(wav[44 + 2 * k] | (wav[45 + 2 * k] << 8)));
+        if (v > peak) peak = v;
+        if (v > 32000) big++;
+      }
+      CHECK_MESSAGE(peak > 200, in.name);
+      CHECK_MESSAGE(big < (long)(n / 4), in.name);      // a wrong BRR decode saturates
+    }
+    CHECK_MESSAGE(samples >= d.minimum, d.path);
+    MESSAGE(d.path, ": ", samples, " sample instruments, ", projectLoadFurWarnings());
+    projectFree(p.get());
+  }
+  std::filesystem::remove_all(dir);
+}
+
 }

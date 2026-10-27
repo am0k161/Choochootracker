@@ -116,6 +116,9 @@ struct FurIns {
   FurC64 c64;
   int sample = -1;
   bool sampleMap = false;
+  // SNES: the instrument plays a waveform instead of a sample.
+  bool useWave = false, waveSynth = false;
+  int wave = -1, waveMacro = -1;
   std::string blockId;          // INS2 or INST
   std::vector<uint8_t> raw;     // block body
 };
@@ -126,6 +129,11 @@ struct FurSample {
   int depth = 0;
   int64_t loopStart = -1;
   std::vector<uint8_t> data;
+};
+
+struct FurWave {
+  std::vector<int> data;
+  int height = 0;
 };
 
 struct FurSong {
@@ -156,6 +164,7 @@ struct FurModule {
   std::map<std::string, FurRows> patterns;   // "sub,chan,idx"
   std::vector<std::pair<std::string, std::vector<uint8_t>>> insBlocks;
   std::vector<FurSample> samples;
+  std::vector<FurWave> waves;
 };
 
 std::string patternKey(int sub, int chan, int idx) {
@@ -331,6 +340,22 @@ void readSample(Reader& r, FurModule& mod, size_t ptr) {
   mod.samples.push_back(smp);
 }
 
+void readWave(Reader& r, FurModule& mod, size_t ptr) {
+  r.p = ptr;
+  r.bad = false;
+  r.tag();
+  r.u32();
+  r.str();
+  uint32_t width = r.u32();
+  r.u32();
+  uint32_t height = r.u32();
+  FurWave w;
+  w.height = (int)height;
+  if (width > 0 && width <= 4096 && !r.bad)
+    for (uint32_t i = 0; i < width && !r.bad; i++) w.data.push_back((int)r.u32());
+  mod.waves.push_back(w);
+}
+
 // One subsong's channel tables.
 void readSongBody(Reader& r, int nchan, FurSong& song, bool sng2) {
   std::vector<uint8_t> raw = r.bytes((size_t)nchan * song.ordLen);
@@ -369,9 +394,9 @@ bool loadInfo(Reader& r, FurModule& mod) {
   mod.author = r.str();
   r.f32();
   r.skip(20);
-  std::vector<uint32_t> insPtrs, smpPtrs, patPtrs;
+  std::vector<uint32_t> insPtrs, smpPtrs, patPtrs, wavePtrs;
   for (int i = 0; i < insN; i++) insPtrs.push_back(r.u32());
-  r.skip((size_t)waveN * 4);
+  for (int i = 0; i < waveN; i++) wavePtrs.push_back(r.u32());
   for (int i = 0; i < smpN; i++) smpPtrs.push_back(r.u32());
   if (patN > 100000) return false;
   for (uint32_t i = 0; i < patN; i++) patPtrs.push_back(r.u32());
@@ -461,6 +486,7 @@ bool loadInfo(Reader& r, FurModule& mod) {
   }
   for (uint32_t ptr : patPtrs) readPatn(r, mod, ptr);
   for (uint32_t ptr : smpPtrs) readSample(r, mod, ptr);
+  for (uint32_t ptr : wavePtrs) readWave(r, mod, ptr);
   return true;
 }
 
@@ -484,7 +510,7 @@ bool loadInf2(Reader& r, FurModule& mod) {
   uint32_t nconn = r.u32();
   r.skip((size_t)nconn * 4);
   r.skip(1);
-  std::vector<uint32_t> songPtrs, insPtrs, patPtrs, smpPtrs;
+  std::vector<uint32_t> songPtrs, insPtrs, patPtrs, smpPtrs, wavePtrs;
   while (!r.bad) {
     int t = r.u8();
     if (t == 0) break;
@@ -494,6 +520,7 @@ bool loadInf2(Reader& r, FurModule& mod) {
     for (uint32_t i = 0; i < n; i++) ptrs.push_back(r.u32());
     if (t == 1) songPtrs = ptrs;
     else if (t == 4) insPtrs = ptrs;
+    else if (t == 5) wavePtrs = ptrs;
     else if (t == 6) smpPtrs = ptrs;
     else if (t == 7) patPtrs = ptrs;
   }
@@ -530,6 +557,7 @@ bool loadInf2(Reader& r, FurModule& mod) {
   }
   for (uint32_t ptr : patPtrs) readPatn(r, mod, ptr);
   for (uint32_t ptr : smpPtrs) readSample(r, mod, ptr);
+  for (uint32_t ptr : wavePtrs) readWave(r, mod, ptr);
   return true;
 }
 
@@ -686,7 +714,7 @@ FurIns parseInstrument(const std::pair<std::string, std::vector<uint8_t>>& entry
   int iver = block[0] | (block[1] << 8);
   res.type = block[2] | (block[3] << 8);
   // The SM feature is only written when the sample is not the default one (0).
-  if (res.type == 4) res.sample = 0;
+  if (res.type == 4 || res.type == 29) res.sample = 0;
   size_t pos = 4;
   while (pos + 4 <= block.size()) {
     std::string code((const char*)block.data() + pos, 2);
@@ -707,7 +735,28 @@ FurIns parseInstrument(const std::pair<std::string, std::vector<uint8_t>>& entry
       res.c64 = parseC64(body);
     } else if (code == "SM" && body.size() >= 4) {
       res.sample = body[0] | (body[1] << 8);
-      res.sampleMap = (body[2] | (body[3] << 8)) & 1;
+      res.sampleMap = body[2] & 1;
+      res.useWave = res.type == 29 && (body[2] & 4);
+    } else if (code == "WS" && body.size() >= 11) {
+      // wavetable synthesizer: the first wave replaces the instrument's own when enabled
+      if (body[10]) {
+        res.waveSynth = true;
+        res.wave = body[0] | (body[1] << 8) | (body[2] << 16) | (body[3] << 24);
+      }
+    } else if (code == "MA" && body.size() >= 2) {
+      // wave macro (code 3): its first value picks the waveform
+      size_t q = 2;
+      while (q + 8 <= body.size() && body[q] != 255) {
+        int mcode = body[q], len = body[q + 1], wsz = (body[q + 5] >> 6) == 2 ? 2 : (body[q + 5] >> 6) == 3 ? 4 : 1;
+        q += 8;
+        if (mcode == 3 && len > 0 && q + wsz <= body.size()) {
+          int v = body[q];
+          if (wsz >= 2) v |= body[q + 1] << 8;
+          if (wsz == 4) v |= (body[q + 2] << 16) | (body[q + 3] << 24);
+          res.waveMacro = v;
+        }
+        q += (size_t)len * wsz;
+      }
     }
   }
   return res;
@@ -892,7 +941,7 @@ void sidFromC64(Instrument* inst, const FurC64* c, const std::string& name) {
 // the Sega PSG. False (with the reason in `why`) when it cannot take the
 // instrument; otherwise `why` lists what was dropped, empty when nothing was.
 bool instrumentFromFurnace(Instrument* inst, InstrumentType target, const std::string& blockId,
-                           const std::vector<uint8_t>& body, std::string* why) {
+                           const std::vector<uint8_t>& body, std::string* why, int nes = 0) {
   if (body.size() < 4) { *why = "no instrument data"; return false; }
   std::vector<uint8_t> data;
   if (blockId == "INST") {
@@ -911,7 +960,7 @@ bool instrumentFromFurnace(Instrument* inst, InstrumentType target, const std::s
   }
   ExternalPreset preset;
   std::string dropped;
-  if (!importFurnaceInstrument(target, data, preset, dropped)) {
+  if (!importFurnaceInstrument(target, data, preset, dropped, nes)) {
     *why = dropped.empty() ? "not supported" : dropped;
     return false;
   }
@@ -961,6 +1010,8 @@ std::vector<ChannelKind> channelKinds(const FurModule& mod) {
         case 7: case 71: k = "sid"; break;
         case 3: k = i == 3 ? "noise" : "psg"; break;
         case 4: k = i < 2 ? "gbpulse" : i == 2 ? "gbwave" : "gbnoise"; break;
+        case 6: k = i < 2 ? "nespulse" : i == 2 ? "nestri" : i == 3 ? "nesnoise" : "nesdpcm"; break;
+        case 135: k = "snes"; break;
         default: k = "generic";
       }
       out.push_back({k, chip.id, i});
@@ -983,6 +1034,45 @@ std::string chipName(int id) {
   return buf;
 }
 
+// Mono 16-bit WAV file bytes from PCM frames.
+void pcmToWav(const std::vector<int16_t>& v, int rate, std::vector<uint8_t>& wav) {
+  uint32_t n = (uint32_t)v.size() * 2;
+  wav.clear();
+  auto put32 = [&](uint32_t x) { for (int i = 0; i < 4; i++) wav.push_back((x >> (8 * i)) & 255); };
+  auto put16 = [&](uint32_t x) { for (int i = 0; i < 2; i++) wav.push_back((x >> (8 * i)) & 255); };
+  wav.insert(wav.end(), {'R', 'I', 'F', 'F'});
+  put32(36 + n);
+  wav.insert(wav.end(), {'W', 'A', 'V', 'E', 'f', 'm', 't', ' '});
+  put32(16); put16(1); put16(1); put32(rate); put32(rate * 2); put16(2); put16(16);
+  wav.insert(wav.end(), {'d', 'a', 't', 'a'});
+  put32(n);
+  for (int16_t s : v) put16((uint16_t)s);
+}
+
+// SNES BRR: blocks of 9 bytes (header, 16 four-bit samples) with four predictor filters.
+void decodeBrr(const std::vector<uint8_t>& data, std::vector<int16_t>& out) {
+  int p1 = 0, p2 = 0;     // previous samples, 15-bit
+  for (size_t b = 0; b + 9 <= data.size(); b += 9) {
+    int hdr = data[b], range = hdr >> 4, filter = (hdr >> 2) & 3;
+    for (int i = 0; i < 16; i++) {
+      int nib = (data[b + 1 + i / 2] >> ((i & 1) ? 0 : 4)) & 15;
+      if (nib >= 8) nib -= 16;
+      int s = range <= 12 ? (nib << range) >> 1 : (nib < 0 ? -2048 : 0);
+      switch (filter) {
+        case 1: s += p1 - (p1 >> 4); break;
+        case 2: s += (p1 << 1) - ((p1 * 3) >> 5) - p2 + (p2 >> 4); break;
+        case 3: s += (p1 << 1) - ((p1 * 13) >> 6) - p2 + ((p2 * 3) >> 4); break;
+      }
+      s = std::max(-32768, std::min(32767, s));
+      int16_t w = (int16_t)(s * 2);
+      p2 = p1;
+      p1 = w >> 1;
+      out.push_back(w);
+    }
+    if (hdr & 1) break;       // end block
+  }
+}
+
 // Mono 16-bit WAV of a Furnace sample. False when the depth is unsupported.
 bool sampleToWav(const FurSample& smp, std::vector<uint8_t>& wav, int* rate) {
   std::vector<int16_t> v;
@@ -998,6 +1088,9 @@ bool sampleToWav(const FurSample& smp, std::vector<uint8_t>& wav, int* rate) {
     case 16:
       for (size_t i = 0; i + 1 < data.size(); i += 2) v.push_back((int16_t)(data[i] | (data[i + 1] << 8)));
       break;
+    case 9:
+      decodeBrr(data, v);
+      break;
     case 11:
       for (uint8_t b : data) {
         int x = (~b) & 255;
@@ -1011,17 +1104,7 @@ bool sampleToWav(const FurSample& smp, std::vector<uint8_t>& wav, int* rate) {
   }
   if (v.empty()) return false;
   *rate = (int)smp.c4;
-  uint32_t n = (uint32_t)v.size() * 2;
-  wav.clear();
-  auto put32 = [&](uint32_t x) { for (int i = 0; i < 4; i++) wav.push_back((x >> (8 * i)) & 255); };
-  auto put16 = [&](uint32_t x) { for (int i = 0; i < 2; i++) wav.push_back((x >> (8 * i)) & 255); };
-  wav.insert(wav.end(), {'R', 'I', 'F', 'F'});
-  put32(36 + n);
-  wav.insert(wav.end(), {'W', 'A', 'V', 'E', 'f', 'm', 't', ' '});
-  put32(16); put16(1); put16(1); put32(*rate); put32(*rate * 2); put16(2); put16(16);
-  wav.insert(wav.end(), {'d', 'a', 't', 'a'});
-  put32(n);
-  for (int16_t s : v) put16((uint16_t)s);
+  pcmToWav(v, *rate, wav);
   return true;
 }
 
@@ -1101,24 +1184,35 @@ struct Converter {
         warn(b);
         psgInstrument(inst, kind == "noise");
       }
-    } else if (kind.compare(0, 2, "gb") == 0) {
-      // Game Boy: pulse channels, the wave channel (no wavetable engine, so a pulse) and noise.
-      InstrumentType target = kind == "gbnoise" ? InstrumentType::GBNoise : InstrumentType::GBPulse;
+    } else if (kind.compare(0, 2, "gb") == 0 || kind.compare(0, 3, "nes") == 0) {
+      // Game Boy and NES channels play Game Boy pulse and noise instruments: the Game
+      // Boy wave channel and the NES triangle have no engine of their own and play a
+      // pulse, the NES DPCM channel gets a default noise instrument.
+      bool nes = kind[0] == 'n';
+      InstrumentType target = (kind == "gbnoise" || kind == "nesnoise" || kind == "nesdpcm")
+                                  ? InstrumentType::GBNoise : InstrumentType::GBPulse;
+      int variant = !nes ? 0 : kind == "nestri" ? 2 : 1;
+      bool ours = nes ? (t == 34 || t == 0) : t == 2;
+      const char* chip = nes ? "NES" : "Game Boy";
       std::string why;
-      if (t == 2 && !ins->raw.empty() && instrumentFromFurnace(inst, target, ins->blockId, ins->raw, &why)) {
+      if (kind == "nesdpcm") {
+        getInstrumentFunctions(target).init(inst);
+      } else if (ours && !ins->raw.empty() && instrumentFromFurnace(inst, target, ins->blockId, ins->raw, &why, variant)) {
         if (!why.empty()) {
           char b[200];
-          snprintf(b, sizeof(b), "Game Boy instrument %d: not converted: %.120s", fi, why.c_str());
+          snprintf(b, sizeof(b), "%s instrument %d: not converted: %.120s", chip, fi, why.c_str());
           warn(b);
         }
       } else {
-        if (t == 2 && !ins->raw.empty()) {
+        if (ours && !ins->raw.empty()) {
           char b[200];
-          snprintf(b, sizeof(b), "Game Boy instrument %d: default patch used (%.120s)", fi, why.c_str());
+          snprintf(b, sizeof(b), "%s instrument %d: default patch used (%.120s)", chip, fi, why.c_str());
           warn(b);
         }
         getInstrumentFunctions(target).init(inst);
       }
+    } else if (kind == "snes") {
+      psgInstrument(inst, false);      // sample and waveform instruments are converted in slotFor
     } else if (kind == "noise") {
       psgInstrument(inst, true);
     } else {
@@ -1148,7 +1242,27 @@ struct Converter {
     s.name = nm;
     s.furIns = fi;
     if (sidOv) memcpy(s.sidOv, sidOv, sizeof(s.sidOv));
-    if (ins && ins->type == 4 && ins->sample >= 0) {
+    if (ins && ins->type == 29 && ins->useWave) {
+      // SNES waveform: one looped cycle, tuned so that C-4 plays at the module's C-4 pitch
+      int wi = ins->waveSynth ? ins->wave : ins->waveMacro >= 0 ? ins->waveMacro : ins->sample;
+      const FurWave* w = (wi >= 0 && wi < (int)mod.waves.size() && !mod.waves[wi].data.empty()) ? &mod.waves[wi] : NULL;
+      if (w && canSample) {
+        std::vector<int16_t> pcm;
+        double top = w->height > 0 ? w->height : 255;
+        for (int x : w->data) pcm.push_back((int16_t)std::max(-32767.0, std::min(32767.0, (x / top * 2 - 1) * 32767)));
+        s.sample = true;
+        s.loop = true;
+        s.rate = (int)(pcm.size() * 261.6256 + 0.5);
+        pcmToWav(pcm, s.rate, s.wav);
+        if (ins->waveSynth) { char b[100]; snprintf(b, sizeof(b), "instrument %d: the wave synthesizer is not converted, its first wave is used", fi); warn(b); }
+      } else if (!w) {
+        char b[100];
+        snprintf(b, sizeof(b), "instrument %d: waveform not found, default patch used", fi);
+        warn(b);
+      } else {
+        warn("Furnace samples need the sample folder: sample instruments use a default patch");
+      }
+    } else if (ins && (ins->type == 4 || ins->type == 29) && ins->sample >= 0) {
       const FurSample* smp = ins->sample < (int)mod.samples.size() ? &mod.samples[ins->sample] : NULL;
       std::vector<uint8_t> wav;
       int rate = 0;
@@ -1217,7 +1331,7 @@ std::vector<int> autoChannels(const FurModule& mod, int songIdx, const std::vect
     for (const auto& rc : kv.second) {
       if (rc.second.note >= 0) notes[ch] = true;
       int i = rc.second.ins;
-      if (i >= 0 && i < (int)ins.size() && ins[i].type == 4) sampled[ch] = true;
+      if (i >= 0 && i < (int)ins.size() && (ins[i].type == 4 || ins[i].type == 29)) sampled[ch] = true;
     }
   }
   std::vector<int> used;
@@ -1344,6 +1458,15 @@ int projectLoadFurChannels(Project* project, const char* path, const char* sampl
          " are kept with a default square instrument, instruments and effects are not converted");
   }
 
+  auto hasKind = [&](const char* k) {
+    for (int c : chans) if (kinds[c].kind == k) return true;
+    return false;
+  };
+  if (hasKind("gbwave")) warn("Game Boy wave channel: its notes play as a pulse, wavetables are not converted");
+  if (hasKind("nestri")) warn("NES triangle channel: its notes play as a 50% pulse");
+  if (hasKind("nesnoise")) warn("NES noise channel: the noise pitch is approximate");
+  if (hasKind("nesdpcm")) warn("NES DPCM channel: samples are not converted, a default noise instrument is used");
+
   Converter conv(mod, p);
   conv.furIns = furIns;
   bool canSample = sampleDir && sampleDir[0];
@@ -1355,7 +1478,7 @@ int projectLoadFurChannels(Project* project, const char* path, const char* sampl
     const std::string& k = kinds[chans[i]].kind;
     if (k == "fm" || k == "opm") volMax[i] = 127;
     else if (k == "opl2" || k == "opl3") volMax[i] = 63;
-    else if (k == "ay" || k == "sid" || k == "psg" || k == "noise" || k.compare(0, 2, "gb") == 0) volMax[i] = 15;
+    else if (k == "ay" || k == "sid" || k == "psg" || k == "noise" || k.compare(0, 2, "gb") == 0 || k.compare(0, 3, "nes") == 0) volMax[i] = 15;
     else {
       int top = 0;
       for (const auto& kv : mod.patterns) {
