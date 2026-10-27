@@ -26,7 +26,7 @@ void SinteredVoice::noteOn() {
   age_ = amplitude_ = feedback_ = dc_ = noiseLow_ = 0.0f; combIndex_ = 0; active_ = true;
   randomState_ = 0x53494e54u; memset(phase_, 0, sizeof(phase_)); memset(comb_, 0, sizeof(comb_)); post_.noteOn(true);
   float d = parameters_.decay / 255.0f;
-  static const float tails[] = {.85f, .70f, .48f, 1.10f, .42f, .80f};
+  static const float tails[] = {.85f, .70f, .48f, 1.10f, .42f, .80f, .85f};
   duration_ = .018f + d * d * tails[(int)parameters_.model];
 }
 void SinteredVoice::kill() { active_ = false; post_.kill(); }
@@ -129,7 +129,7 @@ void SinteredVoice::render(float* output, size_t frames) {
     // A brief noisy impact gives the resonators a drum-like excitation; the
     // smoothed feedback that follows keeps the tail fluid rather than buzzy.
     float impact = bright * expf(-age_ / (.0015f + .006f * (1.0f - b)));
-    static const float impactMix[] = {.22f, .18f, .72f, .38f, .24f, .16f};
+    static const float impactMix[] = {.22f, .18f, .72f, .38f, .24f, .16f, .16f};
     sample += impact * impactMix[(int)parameters_.model] * (.25f + .75f * mod);
     float raw = tanhf(sample + feedback_ * (.2f + mod * 1.4f)); dc_ += .02f * (raw - dc_);
     float target = (raw - dc_) * (.12f + baseMod * .82f);
