@@ -82,6 +82,8 @@ int gfxGetContentRowOffset(void);
 
 void gfxClearRect(int x, int y, int w, int h);
 void gfxCursor(int x, int y, int w);
+// Position and width of the most recent gfxCursor() call, in characters.
+void gfxGetCursor(int* x, int* y, int* w);
 void gfxRect(int x, int y, int w, int h);
 void gfxPrint(int x, int y, const char* text);
 void gfxPrintf(int x, int y, const char* format, ...);

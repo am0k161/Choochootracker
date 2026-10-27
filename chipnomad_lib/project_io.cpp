@@ -14,6 +14,7 @@
 #include <unistd.h>
 #endif
 #include "project.h"
+#include "synth/instrument_eq.h"
 #include "opll_presets.h"
 #include "opl_patch.h"
 #include "four_op_patch.h"
@@ -713,6 +714,66 @@ static bool readInsertFields(const char* line, const char* prefix, unsigned* val
   return *cursor == 0;
 }
 
+// EQ settings as "shape,Hz,gain,Q" for each band.
+static void saveEQSettings(FILE* file, const InstrumentEQ& eq) {
+  for (int i = 0; i < INSTRUMENT_EQ_BANDS; ++i) {
+    const InstrumentEQBand& b = eq.bands[i];
+    fprintf(file, "%s%d,%u,%d,%u", i ? "," : "", (int)b.shape, b.frequency, b.gain, b.q);
+  }
+  fprintf(file, "\n");
+}
+
+static bool loadEQSettings(const char* text, InstrumentEQ* eq) {
+  int v[4 * INSTRUMENT_EQ_BANDS];
+  char tail;
+  if (sscanf(text, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d %c", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5],
+             &v[6], &v[7], &v[8], &v[9], &v[10], &v[11], &tail) != 12) return false;
+  InstrumentEQ loaded;
+  for (int i = 0; i < INSTRUMENT_EQ_BANDS; ++i) {
+    const int* b = v + i * 4;
+    if (b[0] < 0 || b[0] >= (int)EQShape::totalCount || b[1] < kEQFrequencyMin || b[1] > kEQFrequencyMax ||
+        b[2] < kEQGainMin || b[2] > kEQGainMax || b[3] < 0 || b[3] > 255) return false;
+    // Q is kept within range rather than refused, so a narrower Q saved by
+    // an earlier build still loads.
+    const int q = b[3] < kEQQMin ? kEQQMin : b[3] > kEQQMax ? kEQQMax : b[3];
+    loaded.bands[i] = {(EQShape)b[0], (uint16_t)b[1], (int8_t)b[2], (uint8_t)q};
+  }
+  *eq = loaded;
+  return true;
+}
+
+// EQ banks come after the AY wavetables, where older versions stop reading.
+// Only banks that differ from a new one are written.
+static void projectSaveEQBanks(FILE* file, Project* project) {
+  bool any = false;
+  for (const auto& eq : project->eqBanks) any |= !instrumentEQIsDefault(eq);
+  if (!any) return;
+  fprintf(file, "\n## EQ banks\n\n");
+  for (int bank = 0; bank < PROJECT_EQ_BANKS; ++bank) {
+    if (instrumentEQIsDefault(project->eqBanks[bank])) continue;
+    fprintf(file, "%02X ", bank);
+    saveEQSettings(file, project->eqBanks[bank]);
+  }
+}
+
+static int projectLoadEQBanks(FILE* file, Project* p) {
+  char* line = peekLine(file);
+  if (line == NULL || strcmp(line, "## EQ banks")) return 0;  // optional
+  consumeLine(file);
+  while ((line = peekLine(file)) != NULL) {
+    if (!strcmp(line, "EOF") || !strncmp(line, "##", 2)) return 0;
+    unsigned bank;
+    int offset = 0;
+    if (sscanf(line, "%2X %n", &bank, &offset) != 1 || !offset || bank >= PROJECT_EQ_BANKS ||
+        !loadEQSettings(line + offset, &p->eqBanks[bank])) {
+      snprintf(projectFileError, 40, "Invalid EQ bank");
+      return 1;
+    }
+    consumeLine(file);
+  }
+  return 1;
+}
+
 static int projectLoadInternal(FILE* file, Project* project) {
   char buf[128];
   int tempLinearPitch;
@@ -1104,6 +1165,7 @@ static int projectLoadInternal(FILE* file, Project* project) {
   if (projectLoadTables(file, &p)) { projectFree(&p); return 1; }
   snprintf(projectFileError, 40, "Invalid wavetable data");
   if (projectLoadAYWavetables(file, &p)) { projectFree(&p); return 1; }
+  if (projectLoadEQBanks(file, &p)) { projectFree(&p); return 1; }
 
   if (projectFileVersion < 5) {
     auto oldCents = [](uint8_t value) {
@@ -1704,6 +1766,7 @@ static int projectSaveInternal(FILE* file, Project* project) {
   projectSaveInstruments(file, project);
   projectSaveTables(file, project);
   projectSaveAYWavetables(file, project);
+  projectSaveEQBanks(file, project);
   fprintf(file, "EOF\n");
   return 0;
 }
@@ -1864,6 +1927,13 @@ int instrumentSave(Project* project, const char* path, int instrumentIdx) {
   fprintf(file, "# ChipNomad Instrument 10.0\n\n");
   instrumentSaveData(file, 0, &project->instruments[instrumentIdx]);
   saveTable(file, 0, &project->tables[instrumentIdx]);
+  // The EQ travels with the instrument, after the table where older
+  // versions stop reading. Loading puts it in a bank of the project.
+  const uint8_t bank = project->instruments[instrumentIdx].eq;
+  if (bank < PROJECT_EQ_BANKS) {
+    fprintf(file, "\n### EQ\n\n- Settings: ");
+    saveEQSettings(file, project->eqBanks[bank]);
+  }
 
   fclose(file);
   return 0;
@@ -1931,6 +2001,18 @@ static int instrumentLoadInternal(FILE* file, Project* project, int instrumentId
   consumeLine(file);
   if (loadTable(file, &project->tables[instrumentIdx], project)) return 1;
 
+  // The instrument's EQ, held in its own bank number until it is adopted.
+  Instrument& instrument = project->instruments[instrumentIdx];
+  line = peekLine(file);
+  if (line && !strcmp(line, "### EQ")) {
+    consumeLine(file);
+    line = peekLine(file);
+    snprintf(projectFileError, 40, "Invalid EQ data");
+    if (!line || strncmp(line, "- Settings: ", 12) || instrument.eq >= PROJECT_EQ_BANKS ||
+        !loadEQSettings(line + 12, &project->eqBanks[instrument.eq])) return 1;
+    consumeLine(file);
+  }
+
   return 0;
 }
 
@@ -1950,6 +2032,8 @@ static int instrumentLoadStream(Project* project, FILE* file, int instrumentIdx)
       instrumentClear(&project->instruments[instrumentIdx]);
       project->instruments[instrumentIdx] = temporary->instruments[instrumentIdx];
       project->tables[instrumentIdx] = temporary->tables[instrumentIdx];
+      uint8_t& bank = project->instruments[instrumentIdx].eq;
+      if (bank < PROJECT_EQ_BANKS) bank = instrumentEQAdopt(project, temporary->eqBanks[bank], instrumentIdx);
       temporary->instruments[instrumentIdx] = {}; // Ownership moved, including sample buffers.
     }
     projectFree(temporary.get());

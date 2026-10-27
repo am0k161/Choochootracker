@@ -416,6 +416,7 @@ All instruments have a few common parameters:
 - Name, up to 15 characters
 - Default table speed, in ticks per table row
 - Transpose on or off
+- EQ bank (see [EQ](#eq) below)
 
 Each instrument has a default table with the same number in the `00-7F` range. You can use these as auxiliary tables, but keeping auxiliary tables in the `80-FE` range avoids conflicts and confusion. Tables are among the main sound design tools in ChooChooTracker.
 
@@ -425,6 +426,28 @@ Each instrument has a default table with the same number in the `00-7F` range. Y
 - **EDIT + PLAY**: preview the instrument
 - **SHIFT + OPT**: copy the instrument
 - **SHIFT + EDIT**: paste the instrument
+
+### EQ
+
+A project has 128 three-band EQs, numbered `00-7F`, and every instrument except MIDI Out can use one of them. The **EQ** value under **PAN** and **VOL** at the top of the Instrument screen is the instrument's EQ number, or `--` for none:
+
+- **EDIT** or **EDIT + d-pad** on `--` picks the first EQ that no instrument uses yet. The instrument uses it straight away; every EQ starts flat.
+- **EDIT + [LEFT/RIGHT]** changes the number by 1, **EDIT + [UP/DOWN]** by 16, and **EDIT + OPT** sets it back to `--`, so the instrument has no EQ.
+- A short press of **EDIT** on a number opens that EQ. **OPT** or **SHIFT + LEFT** returns to the instrument.
+
+Several instruments can share an EQ: changing it changes all of them. The top of the EQ screen shows which instruments use it.
+
+The EQ screen draws the combined frequency response from 20 Hz to 20 kHz, with grid lines every 6 dB. Each band has a coloured dot, and the selected band's own shape is shaded. Below the graph are the settings of the three bands:
+
+- **Band**: hold **EDIT** and use the d-pad to move the band's dot. **LEFT/RIGHT** changes the frequency; **UP/DOWN** changes the gain, or the resonance of a cut.
+- **Shape**: Off, Lo cut, Lo shelf, Bell, Hi shelf or Hi cut. Cuts fall at 12 dB per octave. Off skips the band.
+- **Freq**: 20 Hz to 20 kHz in quarter-tone steps; **EDIT + UP/DOWN** moves half an octave.
+- **Gain**: -15 to +15 dB in 0.5 dB steps; **EDIT + UP/DOWN** moves 3 dB. Cuts have no gain.
+- **Q**: the width of a bell or shelf (higher is narrower), or the resonance of a cut. `0.71` is a gentle shape with no peak.
+
+**EDIT + OPT** returns a setting to its default; on **Band** it resets the whole band. **EDIT + PLAY** previews the instrument and **PLAY** plays the phrase, so you can adjust the EQ while listening.
+
+The EQ works on the track the instrument plays on, before the track's insert effects and sends. If a track changes to another instrument, that instrument's EQ takes over. An instrument keeps its EQ number when you change its type. Saving an instrument as a `.cni` file includes its EQ settings; loading it puts them in an unused EQ of the project, or in an EQ that already has the same settings.
 
 ### AY Classic, AY Plus and AY Sample
 

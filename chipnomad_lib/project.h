@@ -479,6 +479,8 @@ struct Project {
 
   // Additional data for different chips
   uint8_t ayWavetables[256][32]; // 256 wavetables with 32 4-bit values each (AY chip)
+
+  InstrumentEQ eqBanks[PROJECT_EQ_BANKS];
 };
 
 extern char projectFileError[41];

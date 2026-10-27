@@ -980,7 +980,18 @@ void gfxSetCursorBrackets(int brackets) {
   cursorState.pageCleared = true;
 }
 
+static int lastCursorX, lastCursorY, lastCursorW;
+
+void gfxGetCursor(int* x, int* y, int* w) {
+  *x = lastCursorX;
+  *y = lastCursorY;
+  *w = lastCursorW;
+}
+
 void gfxCursor(int x, int y, int w) {
+  lastCursorX = x;
+  lastCursorY = y;
+  lastCursorW = w;
   if (w <= 0) return;
   if (!cursorBrackets) {
     SDL_Rect line = { CHAR_X(x), CHAR_Y(y) + charH - 1, w * charW, 1 };

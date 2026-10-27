@@ -16,7 +16,8 @@ int held = 0;
 const int homeY[] = {2, 3, 6, 7, 9, 10, 11, 12, 14, 15};
 const int homeParameters[][2] = {{monkVowel, -1}, {monkVoice, monkBreath},
   {monkGlide, monkVibrato}, {monkVibRate, -1}, {monkUnison, monkDetune}, {monkSpread, -1}};
-const int commonX[] = {3, 12, 22, 31};
+// TR, TIC, VOL and PAN on y3, then the EQ bank below PAN.
+const int commonX[] = {3, 12, 22, 31, 31};
 void returnHome() { screenSetup(&screenInstrument, cInstrument); }
 void chooseBank(int value) {
   if (value >= monkBankUser && value <= monkBankAll) { current().chip.monk.factory = value; projectModified = 1; }
@@ -29,7 +30,7 @@ void banks() {
   screenSetup(&screenSelectionPopup, 0);
 }
 int homeColumns(int row) {
-  return row == 0 ? 3 : row == 1 ? 4 : row == 3 ? 2 :
+  return row == 0 ? 3 : row == 1 ? instrumentCommonColumnCount(2) : row == 3 ? 2 :
     row >= 4 && homeParameters[row - 4][1] >= 0 ? 2 : 1;
 }
 int homeX(int col, int row) { return row == 1 ? commonX[col] : row == 3 && col ? 29 : row < 4 ? 8 : kColumnValueX[col]; }
@@ -39,11 +40,13 @@ const char* homeName(int parameter) {
   return parameter == monkVibrato ? "Vibrato" : parameter == monkVibRate ? "VibRate" : monkControls[parameter].name;
 }
 int homeWidth(int col, int row) { return row == 1 ? (col ? 2 : 3) : row == 2 ? 7 : row == 3 ? (col ? 4 : 19) : 2; }
+int homeFieldY(int col, int row) { return row == 1 && col >= 4 ? 4 : homeY[row]; }
 void homeStatic() {
   gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrintf(0, 0, "INSTRUMENT %02X", cInstrument);
   gfxSetFgColor(appSettings.colorScheme.textLabel);
   gfxPrint(0, 2, "Type"); gfxPrint(0, 3, "TR"); gfxPrint(8, 3, "TIC");
   gfxPrint(18, 3, "VOL"); gfxPrint(27, 3, "PAN");
+  if (homeColumns(1) > 4) gfxPrint(27, 4, "EQ");
   gfxPrint(0, homeY[2], "Bank"); gfxPrint(0, homeY[3], "Preset");
   for (int row = 4; row < 10; ++row) for (int col = 0; col < homeColumns(row); ++col)
     gfxPrint(kColumnNameX[col], homeY[row], homeName(homeParameters[row-4][col]));
@@ -61,23 +64,25 @@ int homeLiveControl(int col, int row) {
 }
 void homeCursor(int col, int row) {
   if (row == 0) instrumentCommonDrawCursor(col, 0);
-  else gfxCursor(homeX(col, row), homeY[row], homeWidth(col, row) + (homeBar(col, row) ? kFieldBarWidth : 0));
+  else gfxCursor(homeX(col, row), homeFieldY(col, row), homeWidth(col, row) + (homeBar(col, row) ? kFieldBarWidth : 0));
 }
 void homeField(int col, int row, CellState state) {
   if (row == 0) { instrumentCommonDrawField(col, 0, state); return; }
-  int x = homeX(col, row), y = homeY[row];
+  int x = homeX(col, row), y = homeFieldY(col, row);
   gfxClearRect(x, y, homeWidth(col, row), 1);
   const auto& m = current().chip.monk;
   // The selected field's label lights up with its value.
   static const int headerX[] = {0, 8, 18, 27};
   static const char* const header[] = {"TR", "TIC", "VOL", "PAN"};
   if (row == 1 && col < 4) fieldDrawLabel(headerX[col], 3, header[col], state);
+  else if (row == 1) fieldDrawLabel(27, 4, "EQ", state);
   else if (row == 2) fieldDrawLabel(0, y, "Bank", state);
   else if (row == 3 && !col) fieldDrawLabel(0, y, "Preset", state);
   else if (row >= 4) fieldDrawLabel(kColumnNameX[col], y, homeName(homeParameters[row-4][col]), state);
   gfxSetFgColor(row == 2 || (row == 1 && !col) ? fieldNameColor(state) : fieldValueColor(state));
   if (row == 1) {
     if (!col) gfxPrint(x, y, current().transposeEnabled ? "On " : "Off");
+    else if (col == 4) gfxPrint(x, y, byteToHexOrEmpty(current().eq));
     else gfxPrint(x, y, byteToHex(col == 1 ? current().tableSpeed : col == 2 ? current().volume : current().pan));
   } else if (row == 2) gfxPrint(x, y, m.factory == monkBankAll ? "ALL" : m.factory == monkBankFactory ? "FACTORY" : "USER");
   else if (row == 3) {
