@@ -625,6 +625,15 @@ static void saveSimpleChip(FILE* file,const Instrument* instrument) {
   if(instrument->type==InstrumentType::SegaPSG)fprintf(file,"- Sega bass: %u\n",p.segaBassExtension);
 }
 
+// The EQ bank is written before "- Transpose:", which older versions skip
+// over, and only when the instrument has one.
+static void loadInstrumentEQLine(const char* line, Instrument* instrument) {
+  int bank;
+  char tail;
+  if (sscanf(line, "- EQ: %d %c", &bank, &tail) == 1 && bank >= 0 && bank < PROJECT_EQ_BANKS)
+    instrument->eq = (uint8_t)bank;
+}
+
 // Main load function
 int instrumentLoadData(FILE* file, Instrument* instrument, Project* p) {
   instrumentClear(instrument);
@@ -649,6 +658,8 @@ int instrumentLoadData(FILE* file, Instrument* instrument, Project* p) {
       sscanf(line, "- Volume: %hhu", &instrument->volume);
     } else if (strncmp(line, "- Pan: ", 7) == 0) {
       sscanf(line, "- Pan: %hhu", &instrument->pan);
+    } else if (strncmp(line, "- EQ: ", 6) == 0) {
+      loadInstrumentEQLine(line, instrument);
     } else if (strncmp(line, "- Transpose: ", 13) == 0) {
       sscanf(line, "- Transpose: %hhu", &instrument->transposeEnabled);
       consumeLine(file);
@@ -1066,6 +1077,7 @@ int instrumentSaveData(FILE* file, int idx, Instrument* instrument) {
   fprintf(file, "- Table speed: %hhu\n", instrument->tableSpeed);
   fprintf(file, "- Volume: %hhu\n", instrument->volume);
   fprintf(file, "- Pan: %hhu\n", instrument->pan);
+  if (instrument->eq < PROJECT_EQ_BANKS) fprintf(file, "- EQ: %u\n", instrument->eq);
   fprintf(file, "- Transpose: %hhu\n", instrument->transposeEnabled);
 
   // Save modulation data

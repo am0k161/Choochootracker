@@ -2,6 +2,7 @@
 #include <initializer_list>
 #include <string.h>
 #include "project.h"
+#include "synth/instrument_eq.h"
 #include "project_instruments.h"
 #include "utils.h"
 
@@ -212,6 +213,7 @@ void projectInit(Project* p) {
     p->trackTilt[i] = 0x80;
   }
   p->tiltPivotHz = 1000;
+  for (auto& eq : p->eqBanks) instrumentEQDefaults(&eq);
   p->reverbReturn = 100;
   p->reverbTime = 180;
   p->reverbDamping = 160;

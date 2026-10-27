@@ -18,6 +18,7 @@ static void initCommon(Instrument* instrument) {
   instrument->transposeEnabled = 1;
   instrument->volume = 255;
   instrument->pan = 128;
+  instrument->eq = EMPTY_VALUE_8;
   instrument->modulation[0].type = ModulationType::ADSR;
   instrument->modulation[1].type = ModulationType::AHD;
   instrument->modulation[2].type = ModulationType::LFO;

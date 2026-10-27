@@ -109,6 +109,7 @@ void sampleEditorDiscardRecording(int instrumentIndex);
 extern const AppScreen screenFMEdit;
 extern const AppScreen screenMonkEdit;
 extern const AppScreen screenSIDEdit;
+extern const AppScreen screenInstrumentEQ;
 extern const AppScreen screenSoundFontEdit;
 extern const AppScreen screenInstrumentPool;
 extern const AppScreen screenModulation;

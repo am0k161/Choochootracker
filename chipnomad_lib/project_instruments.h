@@ -562,6 +562,24 @@ union InstrumentChipData {
   InstrumentVoicePostSettings audioIn;
 };
 
+// A project has a pool of three-band EQs, and an instrument can use one of
+// them. It runs on the track the instrument plays on, before the track's
+// insert effects. Several instruments can share an EQ.
+#define INSTRUMENT_EQ_BANDS 3
+#define PROJECT_EQ_BANKS 128
+enum class EQShape : uint8_t { off, lowCut, lowShelf, bell, highShelf, highCut, totalCount };
+
+struct InstrumentEQBand {
+  EQShape shape;
+  uint16_t frequency;  // Hz
+  int8_t gain;         // half decibels
+  uint8_t q;           // Q = 2^((q - 48) / 12): 42 is 0.71, 48 is 1.0
+};
+
+struct InstrumentEQ {
+  InstrumentEQBand bands[INSTRUMENT_EQ_BANDS];
+};
+
 struct Instrument {
   InstrumentType type;
   char name[PROJECT_INSTRUMENT_NAME_LENGTH + 1];
@@ -569,6 +587,7 @@ struct Instrument {
   uint8_t transposeEnabled;
   uint8_t volume;
   uint8_t pan;
+  uint8_t eq;  // index into Project::eqBanks, or EMPTY_VALUE_8 for none
   Modulation modulation[4];
   // Audio Input only: 0 = external live input, 1..8 = internal track 1..8.
   InstrumentAudioInputSource audioInputSource;

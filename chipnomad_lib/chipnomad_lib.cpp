@@ -1252,6 +1252,8 @@ void chipnomadInitChips(ChipNomadState* state, int sampleRate, ChipFactory facto
   }
   for (int i = 0; i < PROJECT_MAX_TRACKS; i++) {
     state->trackTilt[i].init((float)sampleRate);
+    state->trackEQ[i].init((float)sampleRate);
+    state->trackEQActive[i] = 0;
     state->insertChains[i] = new(std::nothrow) InsertChain((float)sampleRate);
     if (state->insertChains[i]) state->insertChains[i]->sync(state->audioProject.trackInserts[i], &state->playbackState.tracks[i].inserts);
     state->insertResetSeen[i] = state->playbackState.tracks[i].insertReset;
@@ -1550,8 +1552,17 @@ static int prepareRenderChunk(ChipNomadState* state, float* output, int frames) 
       state->masterSidechainExcludeMask &= ~(1u << t);
     }
   for (int t = 0; t < PROJECT_MAX_TRACKS; ++t) {
+    const uint8_t instrument = state->playbackState.tracks[t].note.instrument;
+    const uint8_t bank = instrument < PROJECT_MAX_INSTRUMENTS ? state->audioProject.instruments[instrument].eq : EMPTY_VALUE_8;
+    const bool eq = t < state->audioProject.tracksCount && bank < PROJECT_EQ_BANKS &&
+      instrumentEQAudible(state->audioProject.eqBanks[bank]);
+    if (eq) {
+      if (!state->trackEQActive[t]) state->trackEQ[t].reset();
+      state->trackEQ[t].configure(state->audioProject.eqBanks[bank]);
+    }
+    state->trackEQActive[t] = eq;
     state->insertActive[t] = state->insertChains[t] &&
-      (state->insertChains[t]->active() || (state->sidechainSourceMask & (1u << t)));
+      (state->insertChains[t]->active() || (state->sidechainSourceMask & (1u << t)) || eq);
     if (state->insertActive[t]) memset(state->insertBuffer + (size_t)t * state->mixBufferSize, 0, requiredSize * sizeof(float));
   }
   state->audioMonitor->beginChunk(frames);
@@ -1566,6 +1577,13 @@ static const float* sidechainFor(ChipNomadState* state, int detect) {
   return source >= 0 && source < state->audioProject.tracksCount &&
          (state->sidechainSourceMask & (1u << source))
     ? state->sidechainBuffer + (size_t)source * (state->mixBufferSize / 2) : nullptr;
+}
+
+// Instrument EQ comes first on the track, so sidechains and inserts hear it.
+static void processTrackEQ(ChipNomadState* state, int frames) {
+  for (int t = 0; t < state->audioProject.tracksCount; ++t)
+    if (state->trackEQActive[t] && state->insertActive[t])
+      state->trackEQ[t].process(state->insertBuffer + (size_t)t * state->mixBufferSize, frames);
 }
 
 static void captureSidechains(ChipNomadState* state, int frames) {
@@ -1865,6 +1883,7 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples, const flo
                       reverbSend, delaySend, pan);
       }
     }
+    processTrackEQ(state, frames);
     captureSidechains(state, frames);
     processTrackInserts(state, output, frames);
     processMasterMix(state, output, frames);
