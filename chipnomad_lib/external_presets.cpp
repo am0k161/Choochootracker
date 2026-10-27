@@ -626,7 +626,9 @@ Furnace oldFurnace(const Bytes& b) {
   need(h.fixed(16) == "-Furnace instr.-", "Invalid Furnace header");
   Furnace f;
   f.version = h.le16();
-  need(f.version >= 29 && f.version <= 112, "Unsupported legacy Furnace version");
+  // Versions 113-126 only add the per-operator enable/KVS bytes, which matter for
+  // FM patches: they are accepted for the chips of a song import (tolerant mode).
+  need(f.version >= 29 && f.version <= (tolerantFurnace ? 126 : 112), "Unsupported legacy Furnace version");
   h.skip(2);
   unsigned offset = h.le32();
   need(h.le16() == 0 && h.le16() == 0, "Furnace embedded waves/samples unsupported");
@@ -1071,11 +1073,18 @@ ExternalPreset furnace(const Bytes& b, InstrumentType target, const std::string&
     d.sweepPeriod = d.sweepShift = d.sweepNegate = 0;
     if (target != InstrumentType::SegaPSG) {
       need(f.gb.size() >= 2, "Missing Furnace Game Boy envelope");
-      need(f.gb[1] == 64, "Game Boy sound-length counter unsupported");
-      need(f.gb.size() < 4 || f.gb[3] == 0, "Game Boy hardware envelope sequence unsupported");
+      if (tolerantFurnace) {
+        if (f.gb[1] != 64) noteDropped("sound length counter");
+        if (f.gb.size() >= 4 && f.gb[3] != 0) noteDropped("hardware envelope sequence");
+      } else {
+        need(f.gb[1] == 64, "Game Boy sound-length counter unsupported");
+        need(f.gb.size() < 4 || f.gb[3] == 0, "Game Boy hardware envelope sequence unsupported");
+      }
       d.envelopeInitial = f.gb[0] & 15;
       d.envelopeIncrease = (f.gb[0] >> 4) & 1;
       d.envelopePeriod = f.gb[0] >> 5;
+      // Furnace starts a pulse at 50% duty unless a duty macro says otherwise.
+      if (tolerantFurnace && target == InstrumentType::GBPulse && !f.macros.count(2)) d.mode = 2;
     }
   }
   encodeMacros(f, p);
@@ -1234,8 +1243,8 @@ bool importFurnaceInstrument(InstrumentType target, const std::vector<uint8_t>& 
   tolerantFurnace = true;
   bool ok = false;
   try {
-    need(target == InstrumentType::SID || target == InstrumentType::SegaPSG,
-         "Only SID and Sega PSG instruments keep their macros");
+    need(target == InstrumentType::SID || isSimpleChip(target),
+         "Only SID, Sega PSG and Game Boy instruments keep their macros");
     need(!data.empty() && data.size() <= 1024 * 1024, "Instrument exceeds 1 MiB limit");
     output = furnace(data, target, "");
     ok = true;

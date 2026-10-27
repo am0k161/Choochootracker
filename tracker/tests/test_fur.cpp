@@ -7,8 +7,10 @@
 #include <four_op_patch.h>
 #include <opl_patch.h>
 #include <sid_patch.h>
+#include <synth/simple_chip_voice.h>
 
 #include <algorithm>
+#include <filesystem>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -255,6 +257,64 @@ TEST_CASE("SID 1Exy effects become instrument variants and the macro rate follow
   }
   CHECK(variants > 1);
   CHECK(decays + sustains > 0);
+  projectFree(p.get());
+}
+
+TEST_CASE("a sample instrument without a sample feature uses sample 0") {
+  const char* demo = "/opt/furnace-0.6pre5/demos/amiga/m7 vibe.fur";
+  if (readFile(demo).empty()) return;
+  auto p = newProject();
+  REQUIRE(projectLoadFur(p.get(), demo, "fur_test_samples") == 0);
+  CHECK(p->instruments[0].type == InstrumentType::Sample);
+  projectFree(p.get());
+  std::filesystem::remove_all("fur_test_samples");
+}
+
+TEST_CASE("Game Boy instruments become Game Boy pulse and noise instruments that sound") {
+  const char* demo = "/opt/furnace-0.6pre5/demos/gameboy/snowdin.fur";
+  if (readFile(demo).empty()) return;
+  auto p = newProject();
+  REQUIRE(projectLoadFur(p.get(), demo, NULL) == 0);
+  std::string warnings = projectLoadFurWarnings();
+  CHECK_MESSAGE(warnings.find("default patch used") == std::string::npos, warnings);
+  MESSAGE(warnings);
+  int pulses = 0, noises = 0;
+  bool bell = false, fade = false;
+  for (int i = 0; i < PROJECT_MAX_INSTRUMENTS; i++) {
+    const Instrument& in = p->instruments[i];
+    if (in.type == InstrumentType::GBPulse) pulses++;
+    else if (in.type == InstrumentType::GBNoise) noises++;
+    else continue;
+    const InstrumentSimpleChip& d = in.chip.simpleChip;
+    std::string name = in.name;
+    if (name == "Bell") {
+      bell = true;
+      CHECK(d.envelopeInitial == 10);
+      CHECK(d.envelopePeriod == 3);
+      CHECK(d.envelopeIncrease == 0);
+    }
+    if (name.compare(0, 7, "Fade-In") == 0) {
+      fade = true;
+      CHECK(d.envelopeInitial == 3);
+      CHECK(d.envelopeIncrease == 1);
+    }
+    // every instrument must produce sound
+    SimpleChipVoice v;
+    v.init(48000);
+    v.configure(in.type, &d, 6000.f, 1.f);
+    v.noteOn();
+    std::vector<float> buf(2048);
+    double energy = 0;
+    for (int k = 0; k < 8; k++) {
+      v.render(buf.data(), buf.size());
+      for (float x : buf) energy += (double)x * x;
+    }
+    CHECK_MESSAGE(energy > 1e-6, name);
+  }
+  CHECK(pulses > 0);
+  CHECK(noises > 0);
+  CHECK(bell);
+  CHECK(fade);
   projectFree(p.get());
 }
 

@@ -6,6 +6,7 @@
 #include <four_op_patch.h>
 #include <opl_patch.h>
 #include <sid_patch.h>
+#include <simple_chip_presets.h>
 #include <external_presets.h>
 #include <synth/sample_voice.h>
 #include <external/miniz/miniz_tinfl.h>
@@ -684,6 +685,8 @@ FurIns parseInstrument(const std::pair<std::string, std::vector<uint8_t>>& entry
   if (block.size() < 4) return res;
   int iver = block[0] | (block[1] << 8);
   res.type = block[2] | (block[3] << 8);
+  // The SM feature is only written when the sample is not the default one (0).
+  if (res.type == 4) res.sample = 0;
   size_t pos = 4;
   while (pos + 4 <= block.size()) {
     std::string code((const char*)block.data() + pos, 2);
@@ -918,13 +921,15 @@ bool instrumentFromFurnace(Instrument* inst, InstrumentType target, const std::s
 }
 
 void psgInstrument(Instrument* inst, bool noise) {
-  InstrumentSimpleChip p{};
+  // Start from the engine defaults: a zeroed patch has no sustain and stays silent.
+  getInstrumentFunctions(InstrumentType::SegaPSG).init(inst);
+  InstrumentSimpleChip& p = inst->chip.simpleChip;
   p.schema = 1;
   p.mode = noise ? 1 : 0;
   p.envelopeInitial = 15;
   p.segaBassExtension = 1;
-  getInstrumentFunctions(InstrumentType::SegaPSG).init(inst);
-  inst->chip.simpleChip = p;
+  p.attack = p.decay = p.release = 0;
+  p.sustain = 255;
 }
 
 void ayInstrument(Instrument* inst) {
@@ -955,6 +960,7 @@ std::vector<ChannelKind> channelKinds(const FurModule& mod) {
         case 145: k = "opl3"; break;
         case 7: case 71: k = "sid"; break;
         case 3: k = i == 3 ? "noise" : "psg"; break;
+        case 4: k = i < 2 ? "gbpulse" : i == 2 ? "gbwave" : "gbnoise"; break;
         default: k = "generic";
       }
       out.push_back({k, chip.id, i});
@@ -1094,6 +1100,24 @@ struct Converter {
         snprintf(b, sizeof(b), "PSG instrument %d: macros not converted (%.120s)", fi, why.c_str());
         warn(b);
         psgInstrument(inst, kind == "noise");
+      }
+    } else if (kind.compare(0, 2, "gb") == 0) {
+      // Game Boy: pulse channels, the wave channel (no wavetable engine, so a pulse) and noise.
+      InstrumentType target = kind == "gbnoise" ? InstrumentType::GBNoise : InstrumentType::GBPulse;
+      std::string why;
+      if (t == 2 && !ins->raw.empty() && instrumentFromFurnace(inst, target, ins->blockId, ins->raw, &why)) {
+        if (!why.empty()) {
+          char b[200];
+          snprintf(b, sizeof(b), "Game Boy instrument %d: not converted: %.120s", fi, why.c_str());
+          warn(b);
+        }
+      } else {
+        if (t == 2 && !ins->raw.empty()) {
+          char b[200];
+          snprintf(b, sizeof(b), "Game Boy instrument %d: default patch used (%.120s)", fi, why.c_str());
+          warn(b);
+        }
+        getInstrumentFunctions(target).init(inst);
       }
     } else if (kind == "noise") {
       psgInstrument(inst, true);
@@ -1331,7 +1355,7 @@ int projectLoadFurChannels(Project* project, const char* path, const char* sampl
     const std::string& k = kinds[chans[i]].kind;
     if (k == "fm" || k == "opm") volMax[i] = 127;
     else if (k == "opl2" || k == "opl3") volMax[i] = 63;
-    else if (k == "ay" || k == "sid" || k == "psg" || k == "noise") volMax[i] = 15;
+    else if (k == "ay" || k == "sid" || k == "psg" || k == "noise" || k.compare(0, 2, "gb") == 0) volMax[i] = 15;
     else {
       int top = 0;
       for (const auto& kv : mod.patterns) {
@@ -1561,7 +1585,7 @@ int projectLoadFurChannels(Project* project, const char* path, const char* sampl
     if (!done) {
       // Furnace macros advance once per song tick, the converter assumed 60 Hz.
       ChipProgram* prog = inst->type == InstrumentType::SID ? &inst->chip.sid.program
-                          : inst->type == InstrumentType::SegaPSG ? &inst->chip.simpleChip.program : NULL;
+                          : isSimpleChip(inst->type) ? &inst->chip.simpleChip.program : NULL;
       float hz = (song.tickRate > 0 && song.tickRate < 1000) ? song.tickRate : 50.0f;
       if (prog && prog->format == 1 && prog->size) prog->rate = (uint8_t)std::min(255, std::max(1, (int)(hz + 0.5f)));
     }
