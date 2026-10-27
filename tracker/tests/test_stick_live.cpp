@@ -411,6 +411,11 @@ TEST_CASE_FIXTURE(StickLiveFixture, "Settings menus and audio controls align") {
   CHECK(std::string(mockGfxCells[2], 11) == "Sample rate");
   CHECK(std::string(mockGfxCells[2] + 23, 6) == "48 kHz");
   REQUIRE(screen->onEdit(0, 0, CellEditAction::decrease) == 1);
+  CHECK(mockAudioReconfigureRate == 44100);
+  CHECK(appSettings.audioSampleRate == 44100);
+  screen->drawField(0, 0, CellState::focus);
+  CHECK(std::string(mockGfxCells[2] + 23, 8) == "44.1 kHz");
+  REQUIRE(screen->onEdit(0, 0, CellEditAction::decrease) == 1);
   CHECK(mockAudioReconfigureRate == 32000);
   CHECK(appSettings.audioSampleRate == 32000);
   REQUIRE(screen->onEdit(0, 0, CellEditAction::clear) == 1);
@@ -457,7 +462,10 @@ TEST_CASE_FIXTURE(StickLiveFixture, "audio buffer settings use supported sizes")
   CHECK(appSettings.audioBufferSize == 512);
   struct StoredSetting { const char* text; int expected; };
   for (const auto& setting : {StoredSetting{"audioBufferSize: 4906\n", 512},
-                              StoredSetting{"audioBufferSize: 1600\n", 1024},
+                              StoredSetting{"audioBufferSize: 1500\n", 1024},
+                              StoredSetting{"audioBufferSize: 1600\n", 2048},
+                              StoredSetting{"audioBufferSize: 2048\n", 2048},
+                              StoredSetting{"audioBufferSize: 9000\n", 2048},
                               StoredSetting{"audioBufferSize: 1\n", 32},
                               StoredSetting{"audioBufferSize: 700\n", 512}}) {
     std::ofstream(realSettingsPath) << setting.text;
