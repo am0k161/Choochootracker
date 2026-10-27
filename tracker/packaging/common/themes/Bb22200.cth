@@ -2,6 +2,9 @@ colorBackground: 0x2e3032
 colorTextEmpty: 0xbfc0c0
 colorTextInfo: 0xd15000
 colorTextDefault: 0xc8cae2
+colorTextLabels: 0xa2a4b6
+colorTextNames: 0xdd7e42
+colorValueBars: 0xff7000
 colorTextValue: 0xff7000
 colorTextTitles: 0xff6e00
 colorPlayMarkers: 0xffff4f
