@@ -20,11 +20,12 @@ class SinteredVoice {
 
  private:
   float osc(float frequency, int slot);
+  float saw(float frequency, int slot);
   float random();
   InstrumentSintered parameters_{};
   VoicePostProcessor<> post_;
   float sampleRate_ = 48000.0f, frequency_ = 440.0f, age_ = 0.0f, duration_ = 0.1f, amplitude_ = 0.0f;
-  float phase_[3]{}, feedback_ = 0.0f, dc_ = 0.0f, noiseLow_ = 0.0f, comb_[64]{};
+  float phase_[5]{}, feedback_ = 0.0f, dc_ = 0.0f, noiseLow_ = 0.0f, comb_[64]{};
   uint32_t randomState_ = 0x53494e54u;
   int combIndex_ = 0;
   bool active_ = false;

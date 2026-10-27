@@ -34,13 +34,26 @@ float SinteredVoice::random() { randomState_ = randomState_ * 1664525u + 1013904
 float SinteredVoice::osc(float frequency, int slot) {
   phase_[slot] += frequency / sampleRate_; phase_[slot] -= floorf(phase_[slot]); return sinf(2.0f * kPi * phase_[slot]);
 }
+float SinteredVoice::saw(float frequency, int slot) {
+  float increment = fminf(.45f, fmaxf(1.0f / sampleRate_, frequency / sampleRate_));
+  phase_[slot] += increment; phase_[slot] -= floorf(phase_[slot]);
+  float value = 2.0f * phase_[slot] - 1.0f;
+  if (phase_[slot] < increment) {
+    float t = phase_[slot] / increment;
+    value -= t + t - t * t - 1.0f;
+  } else if (phase_[slot] > 1.0f - increment) {
+    float t = (phase_[slot] - 1.0f) / increment;
+    value -= t * t + t + t + 1.0f;
+  }
+  return value;
+}
 
 void SinteredVoice::render(float* output, size_t frames) {
   if (!output) return;
   if (!active_) { memset(output, 0, frames * sizeof(float)); return; }
   const float baseMod = parameters_.mod / 255.0f, baseA = parameters_.a / 255.0f;
   const float baseB = parameters_.b / 255.0f, baseC = parameters_.c / 255.0f;
-  static constexpr float modelGain[] = {1.822647f, 1.995262f, 1.995262f, 1.995262f, 1.995262f, 1.995262f};
+  static constexpr float modelGain[] = {1.822647f, 1.995262f, 1.995262f, 1.995262f, 1.995262f, 1.995262f, .75f};
   const float calibration = modelGain[(int)parameters_.model];
   const float motion = (parameters_.motion - 128) / 127.0f;
   const float motionTime = .008f + (1.0f - fabsf(motion)) * .35f;
@@ -59,6 +72,7 @@ void SinteredVoice::render(float* output, size_t frames) {
       case SinteredModel::comb: b = clampS(b + movement * .45f); c = clampS(c + movement * .55f); break;
       case SinteredModel::logic: a = clampS(a + movement * .6f); c = clampS(c + movement * .7f); break;
       case SinteredModel::melt: b = clampS(b + movement * .7f); c = clampS(c + movement * .6f); break;
+      case SinteredModel::squall: mod = clampS(mod + movement * .65f); break;
       default: break;
     }
     float n = random(); noiseLow_ += (n - noiseLow_) * (.01f + b * .25f);
@@ -96,6 +110,20 @@ void SinteredVoice::render(float* output, size_t frames) {
         float warped = osc(frequency_ * (1.0f + y * mod * (3.0f + b * 24.0f) + feedback_ * b * 6.0f), 2);
         sample = tanhf(warped * (1.0f + c * 13.0f) + bright * mod * b); break;
       }
+      case SinteredModel::squall: {
+        int voices = 3 + (int)(b * 2.99f);
+        float spread = .02f + a * 2.5f;
+        float fm = n * mod * 2.5f;
+        float swarm = 0.0f;
+        for (int voice = 0; voice < voices; ++voice) {
+          float position = 2.0f * voice / (voices - 1) - 1.0f;
+          float detuned = frequency_ * powf(2.0f, position * spread / 12.0f);
+          float modulated = fmaxf(1.0f, detuned * (1.0f + fm));
+          swarm += saw(modulated, voice);
+        }
+        sample = swarm * (1.0f / sqrtf((float)voices));
+        break;
+      }
       default: break;
     }
     // A brief noisy impact gives the resonators a drum-like excitation; the
@@ -107,7 +135,9 @@ void SinteredVoice::render(float* output, size_t frames) {
     float target = (raw - dc_) * (.12f + baseMod * .82f);
     feedback_ += (target - feedback_) * (.025f + .10f * (1.0f - c));
     amplitude_ = expf(-5.5f * age_ / duration_);
-    output[i] = tanhf(post_.process(tanhf(sample) * amplitude_ * calibration));
+    float processed = post_.process(tanhf(sample) * amplitude_ * calibration);
+    if (parameters_.model == SinteredModel::squall) processed = tanhf(processed * (1.0f + c * 15.0f));
+    output[i] = tanhf(processed);
     age_ += 1.0f / sampleRate_;
   }
 }

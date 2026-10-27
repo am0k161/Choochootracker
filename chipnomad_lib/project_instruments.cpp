@@ -865,7 +865,8 @@ const char* instrumentModDestinationNameForInstrument(const Instrument* instrume
         {"Decay", "Mod", "Noise", "Color", "Motion", "Feedback"},
         {"Decay", "Mod", "Time", "Damping", "Motion", "Regen"},
         {"Decay", "Mod", "Rate", "Pattern", "Motion", "Crush"},
-        {"Decay", "Mod", "Ratio", "Chaos", "Motion", "Drive"}
+        {"Decay", "Mod", "Ratio", "Chaos", "Motion", "Drive"},
+        {"Decay", "FM", "Detune", "Voices", "Motion", "Clip"}
       };
       int model = (int)instrument->chip.sintered.model;
       return names[model >= 0 && model < (int)SinteredModel::totalCount ? model : 0][destination - 3];

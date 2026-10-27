@@ -34,8 +34,8 @@ TEST_CASE("Sintered motion center is static and both envelope sides alter sound"
 TEST_CASE("Sintered CNI round trip preserves its controls") {
   Project saved, loaded; fillFXNames(); projectInit(&saved); projectInit(&loaded);
   Instrument* instrument = &saved.instruments[0]; getInstrumentFunctions(InstrumentType::Sintered).init(instrument); std::strcpy(instrument->name, "Sintered Melt");
-  InstrumentSintered* s = &instrument->chip.sintered; s->model = SinteredModel::melt; s->decay = 91; s->mod = 144; s->a = 31; s->b = 202; s->motion = 20; s->c = 78;
+  InstrumentSintered* s = &instrument->chip.sintered; s->model = SinteredModel::squall; s->decay = 91; s->mod = 144; s->a = 31; s->b = 202; s->motion = 20; s->c = 78;
   const char* path = "test_sintered.cni"; REQUIRE(instrumentSave(&saved, path, 0) == 0); REQUIRE(instrumentLoad(&loaded, path, 0) == 0); std::remove(path);
-  const InstrumentSintered& restored = loaded.instruments[0].chip.sintered; CHECK(loaded.instruments[0].type == InstrumentType::Sintered); CHECK(restored.model == SinteredModel::melt);
+  const InstrumentSintered& restored = loaded.instruments[0].chip.sintered; CHECK(loaded.instruments[0].type == InstrumentType::Sintered); CHECK(restored.model == SinteredModel::squall);
   CHECK(restored.decay == 91); CHECK(restored.mod == 144); CHECK(restored.a == 31); CHECK(restored.b == 202); CHECK(restored.motion == 20); CHECK(restored.c == 78);
 }

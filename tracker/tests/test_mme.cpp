@@ -24,6 +24,15 @@ TEST_CASE("MME renders every model safely") {
   }
 }
 
+TEST_CASE("MME retrigger keeps oscillator phase continuous") {
+  InstrumentMME m = mmeInstrument(MMEModel::cross);
+  MMEVoice voice; voice.init(48000.0f); voice.configure(&m, 6900.0f, 1.0f, 20000, 0); voice.noteOn();
+  std::vector<float> first(127), next(1);
+  voice.render(first.data(), first.size());
+  voice.noteOn(); voice.render(next.data(), next.size());
+  CHECK(std::fabs(next[0] - first.back()) < .2f);
+}
+
 TEST_CASE("MME macros and feedback alter the voice without instability") {
   for (int macro = 0; macro < 6; ++macro) {
     InstrumentMME low = mmeInstrument(MMEModel::cross), high = low;

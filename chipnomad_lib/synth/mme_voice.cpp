@@ -28,7 +28,14 @@ void MMEVoice::configure(const InstrumentMME* instrument, float pitchCents, floa
     parameters_.release * parameters_.release / 13005.0f, parameters_.envelopeShape);
 }
 
-void MMEVoice::noteOn() { phaseA_ = phaseB_ = feedback_ = feedbackDC_ = 0.0f; active_ = true; post_.noteOn(true); }
+void MMEVoice::noteOn() {
+  const bool retriggering = active_;
+  if (!retriggering) {
+    phaseA_ = phaseB_ = feedback_ = feedbackDC_ = 0.0f;
+  }
+  active_ = true;
+  post_.noteOn(!retriggering);
+}
 void MMEVoice::noteOff() { post_.noteOff(); }
 void MMEVoice::kill() { active_ = false; post_.kill(); }
 

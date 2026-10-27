@@ -27,6 +27,7 @@ TEST_CASE("model names come from the catalog") {
   CHECK(strcmp(modelCatalogName(InstrumentType::Plaits, 5), "WAVE TERRAIN") == 0);
   CHECK(strcmp(modelCatalogName(InstrumentType::PlaitsAlt, 23), "PHASE FLOCK") == 0);
   CHECK(strcmp(modelCatalogName(InstrumentType::Sintered, 5), "MELT") == 0);
+  CHECK(strcmp(modelCatalogName(InstrumentType::Sintered, 6), "SQUALL") == 0);
   CHECK(strcmp(modelCatalogName(InstrumentType::Plaits, 24), "UNKNOWN") == 0);
 }
 
@@ -37,6 +38,10 @@ TEST_CASE("model-specific modulation labels and classic modulation defaults") {
   CHECK(strcmp(instrumentModDestinationNameForInstrument(&instrument, 5), "Ratio") == 0);
   CHECK(strcmp(instrumentModDestinationNameForInstrument(&instrument, 6), "Chaos") == 0);
   CHECK(strcmp(instrumentModDestinationNameForInstrument(&instrument, 8), "Drive") == 0);
+  instrument.chip.sintered.model = SinteredModel::squall;
+  CHECK(strcmp(instrumentModDestinationNameForInstrument(&instrument, 4), "FM") == 0);
+  CHECK(strcmp(instrumentModDestinationNameForInstrument(&instrument, 6), "Voices") == 0);
+  CHECK(strcmp(instrumentModDestinationNameForInstrument(&instrument, 8), "Clip") == 0);
   const ModulationType defaultTypes[] = {
     ModulationType::ADSR, ModulationType::AHD,
     ModulationType::LFO, ModulationType::LFO

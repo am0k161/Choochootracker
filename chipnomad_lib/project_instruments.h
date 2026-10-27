@@ -326,7 +326,7 @@ struct InstrumentMME : InstrumentVoicePostSettings {
   uint8_t shaper;
 };
 
-enum class SinteredModel : uint8_t { knot, shard, burst, comb, logic, melt, totalCount };
+enum class SinteredModel : uint8_t { knot, shard, burst, comb, logic, melt, squall, totalCount };
 struct InstrumentSintered : InstrumentVoicePostSettings {
   SinteredModel model;
   uint8_t decay;
