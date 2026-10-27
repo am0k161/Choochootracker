@@ -600,13 +600,13 @@ MME uses the shared LP/BP/HP multimode filter and ADSR. All six macros, Cutoff a
 
 ### Audio in
 
-Choose **External > Audio in** to process a live stereo input on a track. Select **SOURCE > Device > [Open]** on the instrument page to open the audio input settings and arm the source; **Back** returns to the instrument. You can also reach these settings through **Settings > Audio > Audio Input**. Then enter notes in a phrase using this instrument. Any note opens the ADSR; note-off starts its release. The note pitch does not transpose the incoming audio. Without a note, the input stays silent on this track.
+Choose **External > Audio in** to process a live stereo input on a track. On **SOURCE**, choose **External** or one of the eight internal tracks. An internal source taps that track after its inserts and reroutes it to Audio in, so the source is no longer sent directly to the mixer. The resulting sound follows Audio in's notes, filter and envelope, then the destination track's inserts and mixer settings. Select **Device > [Open]** to open the audio input settings and arm an external source; **Back** returns to the instrument. You can also reach these settings through **Settings > Audio > Audio Input**. Then enter notes in a phrase using this instrument. Any note opens the ADSR; note-off starts its release. The note pitch does not transpose the incoming audio. Without a note, the input stays silent on this track.
 
-The **Input level** meter shows the incoming signal before the envelope and effects, including while no note is playing.
+The **Input level** meter shows the selected source before Audio in's envelope and filter, including while no note is playing. For an internal source, this includes the source track's inserts. The track waveform shows Audio in's signal during playback.
 
 The stereo input passes through the instrument's **FILTER** and **ADSR**, then the track's inserts, volume, pan and effect sends. The filter and envelope controls work like those on the Sampler. Leave the Sampler's dry input **MON** off if you only want to hear the processed signal.
 
-The Sampler can record the same input while Audio in processes it. An input recording captures the original input; use a track bounce to capture the processed track. Offline song export has no live input: record or bounce the performance into a sample first. Audio in uses the active capture device, shared by the armed inputs.
+The Sampler can record an input while Audio in processes it. Select the Audio in track as the Sampler's track source to record its processed output, including its track inserts. Offline song export has no live input: record or bounce the performance into a sample first. Audio in uses the active capture device, shared by the armed inputs.
 
 ### MIDI Out
 

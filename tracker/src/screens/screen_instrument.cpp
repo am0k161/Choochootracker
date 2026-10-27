@@ -96,18 +96,6 @@ static const SelectionItem instrumentTypeCategories[] = {
   {"FM", -1, instrumentTypeFM, sizeof(instrumentTypeFM) / sizeof(instrumentTypeFM[0])},
 };
 
-static const InstrumentType instrumentTypesQuickCycle[] = {
-  InstrumentType::none, InstrumentType::DrumSynth, InstrumentType::Sintered,
-  InstrumentType::AY1, InstrumentType::AY2, InstrumentType::AYSample,
-  InstrumentType::SCWF, InstrumentType::BYOWTBL, InstrumentType::Sample, InstrumentType::SoundFont,
-  InstrumentType::AChChid, InstrumentType::Braids,
-  InstrumentType::Plaits, InstrumentType::PlaitsAlt,
-  InstrumentType::MME, InstrumentType::Monk,
-  InstrumentType::SegaPSG, InstrumentType::GBPulse, InstrumentType::GBNoise,
-  InstrumentType::GenesisFM, InstrumentType::ArcadeFM, InstrumentType::DX7, InstrumentType::Midi, InstrumentType::OPLL, InstrumentType::VRC7, InstrumentType::OPL2, InstrumentType::OPL3,
-  InstrumentType::SID, InstrumentType::AudioIn,
-};
-
 static int editInstrumentType(CellEditAction action, InstrumentType* type) {
   action = convertMultiAction(action);
   if (action == CellEditAction::clear) { *type = InstrumentType::none; return 1; }
@@ -115,10 +103,24 @@ static int editInstrumentType(CellEditAction action, InstrumentType* type) {
   int direction = (action == CellEditAction::increase || action == CellEditAction::increaseBig) ? 1 :
                   (action == CellEditAction::decrease || action == CellEditAction::decreaseBig) ? -1 : 0;
   if (!direction) return 0;
-  int count = sizeof(instrumentTypesQuickCycle) / sizeof(instrumentTypesQuickCycle[0]);
-  for (int i = 0; i < count; ++i) if (instrumentTypesQuickCycle[i] == *type) {
-    *type = instrumentTypesQuickCycle[(i + direction + count) % count];
-    return 1;
+  int count = 0;
+  int current = -1;
+  for (const SelectionItem& category : instrumentTypeCategories) {
+    for (int i = 0; i < category.childCount; ++i) {
+      if (category.children[i].value == (int)*type) current = count;
+      ++count;
+    }
+  }
+  if (count == 0) return 0;
+
+  int target = current < 0 ? (direction > 0 ? 0 : count - 1) : (current + direction + count) % count;
+  for (const SelectionItem& category : instrumentTypeCategories) {
+    for (int i = 0; i < category.childCount; ++i) {
+      if (target-- == 0) {
+        *type = (InstrumentType)category.children[i].value;
+        return 1;
+      }
+    }
   }
   return 0;
 }
@@ -329,10 +331,15 @@ static int audioInColumns(int row) {
   return row < 3 ? instrumentCommonColumnCount(row) : row == 3 ? 1 : row == 9 ? 5 : 2;
 }
 static int audioInCellValid(int col, int row) {
-  return row < 3 || row == 4 || row == 9 || (row >= 5 && row <= 8 && col == 1);
+  return row < 3 || row == 3 || row == 4 || row == 9 || (row >= 5 && row <= 8 && col == 1);
 }
 static void audioInDrawInputMeter() {
   gfxClearRect(0, 11, 16, 1);
+  int source = (int)chipnomadState->project.instruments[cInstrument].audioInputSource;
+  if (source > 0 && source <= PROJECT_MAX_TRACKS) {
+    monitorDisplayDrawTrackHorizontalMeter(source - 1, 0, 11, 16);
+    return;
+  }
   for (int slot = 0; slot < AUDIO_INPUT_MAX_ARMED; ++slot) {
     if (audioInputManager.armedDeviceIndex(slot) < 0) continue;
     monitorDisplayDrawHorizontalMeter(slot, 0, 11, 16);
@@ -345,7 +352,6 @@ static void audioInStatic() {
   gfxPrint(0, 6, "Input");
   gfxPrint(0, 7, "SOURCE");
   gfxSetFgColor(appSettings.colorScheme.textDefault);
-  gfxPrint(12, 6, "Stereo");
   gfxPrint(0, 8, "Device");
   gfxPrint(0, 10, "Input level");
   instrumentCommonDrawVoicePostStatic(1);
@@ -353,11 +359,19 @@ static void audioInStatic() {
 }
 static void audioInCursor(int col, int row) {
   if (row < 3) return instrumentCommonDrawCursor(col, row);
+  if (row == 3 && !col) return gfxCursor(10, 7, 8);
   if (instrumentCommonDrawVoicePostCursor(col, row)) return;
   if (row == 4 && !col) gfxCursor(11, 8, 6);
 }
 static void audioInField(int col, int row, CellState state) {
   if (row < 3) return instrumentCommonDrawField(col, row, state);
+  if (row == 3 && !col) {
+    const Instrument* instrument = &chipnomadState->project.instruments[cInstrument];
+    gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
+    if (instrument->audioInputSource == InstrumentAudioInputSource::external) gfxPrint(10, 7, "External");
+    else gfxPrintf(10, 7, "Track %u", (unsigned)instrument->audioInputSource);
+    return;
+  }
   if (instrumentCommonDrawVoicePostField(col, row, state,
       &chipnomadState->project.instruments[cInstrument].chip.audioIn)) return;
   gfxSetFgColor(state == CellState::focus ? appSettings.colorScheme.textValue : appSettings.colorScheme.textDefault);
@@ -365,6 +379,17 @@ static void audioInField(int col, int row, CellState state) {
 }
 static int audioInEdit(int col, int row, CellEditAction action) {
   if (row < 3) return instrumentCommonOnEdit(col, row, action);
+  if (row == 3 && !col) {
+    Instrument* instrument = &chipnomadState->project.instruments[cInstrument];
+    uint8_t source = (uint8_t)instrument->audioInputSource;
+    int handled = edit8noLast(action, &source, 1, 0, PROJECT_MAX_TRACKS);
+    if (handled) {
+      instrument->audioInputSource = (InstrumentAudioInputSource)source;
+      projectModified = 1;
+      currentScreen->fullRedraw();
+    }
+    return handled;
+  }
   if (row == 4 && !col) {
     if (convertMultiAction(action) != CellEditAction::tap) return 0;
     screenSetup(&screenAudioInput, AUDIO_INPUT_FROM_INSTRUMENT);

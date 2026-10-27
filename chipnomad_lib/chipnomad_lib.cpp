@@ -678,9 +678,13 @@ static int resizeMixBuffers(ChipNomadState* state, int requiredSize) {
   float* reverbBuffer = (float*)malloc(requiredSize * sizeof(float));
   float* delayBuffer = (float*)malloc(requiredSize * sizeof(float));
   float* insertBuffer = (float*)malloc((size_t)requiredSize * PROJECT_MAX_TRACKS * sizeof(float));
+  float* audioInputTrackCurrent = (float*)calloc((size_t)requiredSize * PROJECT_MAX_TRACKS, sizeof(float));
+  float* audioInputTrackPrevious = (float*)calloc((size_t)requiredSize * PROJECT_MAX_TRACKS, sizeof(float));
   float* sidechainBuffer = (float*)malloc((size_t)(requiredSize / 2) * PROJECT_MAX_TRACKS * sizeof(float));
-  if (!mixBuffer || !reverbBuffer || !delayBuffer || !insertBuffer || !sidechainBuffer) {
+  if (!mixBuffer || !reverbBuffer || !delayBuffer || !insertBuffer || !audioInputTrackCurrent || !audioInputTrackPrevious || !sidechainBuffer) {
     free(sidechainBuffer);
+    free(audioInputTrackPrevious);
+    free(audioInputTrackCurrent);
     free(insertBuffer);
     free(mixBuffer);
     free(reverbBuffer);
@@ -692,8 +696,12 @@ static int resizeMixBuffers(ChipNomadState* state, int requiredSize) {
   free(state->reverbBuffer);
   free(state->delayBuffer);
   free(state->insertBuffer);
+  free(state->audioInputTrackCurrent);
+  free(state->audioInputTrackPrevious);
   free(state->sidechainBuffer);
   state->insertBuffer = insertBuffer;
+  state->audioInputTrackCurrent = audioInputTrackCurrent;
+  state->audioInputTrackPrevious = audioInputTrackPrevious;
   state->sidechainBuffer = sidechainBuffer;
   state->mixBuffer = mixBuffer;
   state->reverbBuffer = reverbBuffer;
@@ -789,6 +797,18 @@ struct TrackPanMix {
   bool active = false;
 };
 
+static void updateAudioInputRoutedTracks(ChipNomadState* state) {
+  state->audioInputRoutedTrackMask = 0;
+  for (int track = 0; track < state->audioProject.tracksCount; ++track) {
+    int instrumentIdx = state->playbackState.tracks[track].note.instrument;
+    if (instrumentIdx >= PROJECT_MAX_INSTRUMENTS) continue;
+    const Instrument& instrument = state->audioProject.instruments[instrumentIdx];
+    if (instrument.type == InstrumentType::AudioIn && instrument.audioInputSource > InstrumentAudioInputSource::external &&
+        (int)instrument.audioInputSource <= PROJECT_MAX_TRACKS)
+      state->audioInputRoutedTrackMask |= (uint8_t)(1u << ((int)instrument.audioInputSource - 1));
+  }
+}
+
 static TrackPanMix makeTrackPanMix(ChipNomadState* state, int instrumentPan, int trackPan) {
   TrackPanMix pan;
   if (state->benchmarkBypassPan || (instrumentPan == 128 && trackPan == 128)) return pan;
@@ -820,9 +840,11 @@ static inline void mixTrackChannel(ChipNomadState* state, int trackIdx,
     state->insertBuffer[(size_t)trackIdx * state->mixBufferSize + sampleIndex] += sample;
     return;
   }
+  state->audioInputTrackCurrent[(size_t)trackIdx * state->mixBufferSize + sampleIndex] += sample;
   state->audioMonitor->add(trackIdx, sampleIndex, sample);
   if (audioRecorderWantsTrackSample(trackIdx))
     audioRecorderCaptureTrackSample(trackIdx, sampleIndex, sample);
+  if (state->audioInputRoutedTrackMask & (1u << trackIdx)) return;
   float previous = *mix;
   *mix += sample;
   if (reverbSend != 0.0f) *reverb += sample * reverbSend;
@@ -884,9 +906,13 @@ ChipNomadState* chipnomadCreate(void) {
   state->reverbBuffer = (float*)malloc(state->mixBufferSize * sizeof(float));
   state->delayBuffer = (float*)malloc(state->mixBufferSize * sizeof(float));
   state->insertBuffer = (float*)malloc((size_t)state->mixBufferSize * PROJECT_MAX_TRACKS * sizeof(float));
+  state->audioInputTrackCurrent = (float*)calloc((size_t)state->mixBufferSize * PROJECT_MAX_TRACKS, sizeof(float));
+  state->audioInputTrackPrevious = (float*)calloc((size_t)state->mixBufferSize * PROJECT_MAX_TRACKS, sizeof(float));
   state->sidechainBuffer = (float*)malloc((size_t)(state->mixBufferSize / 2) * PROJECT_MAX_TRACKS * sizeof(float));
-  if (!state->mixBuffer || !state->reverbBuffer || !state->delayBuffer || !state->insertBuffer || !state->sidechainBuffer) {
+  if (!state->mixBuffer || !state->reverbBuffer || !state->delayBuffer || !state->insertBuffer || !state->audioInputTrackCurrent || !state->audioInputTrackPrevious || !state->sidechainBuffer) {
     free(state->sidechainBuffer);
+    free(state->audioInputTrackPrevious);
+    free(state->audioInputTrackCurrent);
     free(state->insertBuffer);
     free(state->mixBuffer);
     free(state->reverbBuffer);
@@ -956,6 +982,8 @@ void chipnomadDestroy(ChipNomadState* state) {
   for (auto* chain : state->insertChains) delete chain;
   delete state->masterInsertChain;
   free(state->insertBuffer);
+  free(state->audioInputTrackCurrent);
+  free(state->audioInputTrackPrevious);
   free(state->sidechainBuffer);
   // Cleanup mix buffer
   free(state->mixBuffer);
@@ -1491,6 +1519,9 @@ static int prepareRenderChunk(ChipNomadState* state, float* output, int frames) 
     state->audioCommands->setRenderBufferOverflow();
     return 0;
   }
+  for (int t = 0; t < PROJECT_MAX_TRACKS; ++t)
+    memset(state->audioInputTrackCurrent + (size_t)t * state->mixBufferSize, 0,
+      (size_t)requiredSize * sizeof(float));
   state->sidechainSourceMask = 0;
   state->masterSidechainExcludeMask = 0;
   for (int t = 0; t < state->audioProject.tracksCount; ++t)
@@ -1652,16 +1683,19 @@ static void processTrackInserts(ChipNomadState* state, float* output, int frames
       sidechainFor(state, state->insertValues[t][1][5])
     };
     state->insertChains[t]->process(samples, frames, state->insertValues[t], sidechain);
+    memcpy(state->audioInputTrackCurrent + (size_t)t * state->mixBufferSize,
+           samples, (size_t)frames * 2 * sizeof(float));
     float reverb = effectiveTrackSend(state, t, true), delay = effectiveTrackSend(state, t, false);
     bool excludeFromMaster = state->masterSidechainExcludeMask & (1u << t);
+    bool routed = state->audioInputRoutedTrackMask & (1u << t);
     for (int i = 0; i < frames * 2; ++i) {
       float sample = samples[i], previous = output[i];
       state->audioMonitor->add(t, i, sample);
       if (audioRecorderWantsTrackSample(t))
         audioRecorderCaptureTrackSample(t, i, sample);
-      if (!excludeFromMaster) output[i] += sample;
-      if (reverb != 0.0f) state->reverbBuffer[i] += sample * reverb;
-      if (delay != 0.0f) state->delayBuffer[i] += sample * delay;
+      if (!excludeFromMaster && !routed) output[i] += sample;
+      if (!routed && reverb != 0.0f) state->reverbBuffer[i] += sample * reverb;
+      if (!routed && delay != 0.0f) state->delayBuffer[i] += sample * delay;
       if ((excludeFromMaster ? fabsf(sample) > 1.0f :
            fabsf(output[i]) > 1.0f && fabsf(output[i]) > fabsf(previous)))
         state->trackClipping[t] = AUDIO_OVERLOAD_COOLDOWN_FRAMES;
@@ -1690,7 +1724,8 @@ static void processMasterMix(ChipNomadState* state, float* output, int frames) {
     state->masterInsertChain->process(output, frames, values, sidechain);
   }
   for (int t = 0; t < state->audioProject.tracksCount; ++t)
-    if (state->masterSidechainExcludeMask & (1u << t)) {
+    if ((state->masterSidechainExcludeMask & (1u << t)) &&
+        !(state->audioInputRoutedTrackMask & (1u << t))) {
       const float* source = state->insertBuffer + (size_t)t * state->mixBufferSize;
       for (int i = 0; i < frames * 2; ++i) output[i] += source[i];
     }
@@ -1746,6 +1781,7 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples, const flo
     if (hasAudioRateModulation(state)) { updateAudioRateModulations(state); frames = 1; }
     float* output = buffer + (samples - samplesLeft) * 2;
     if (!prepareRenderChunk(state, output, frames)) return 0;
+    updateAudioInputRoutedTracks(state);
     // Track-bounce capture bracket: the capture sites only run for tracks
     // with an active voice, so the chunk end fills the remainder with
     // silence - without this, rests between notes would be missing from a
@@ -1757,9 +1793,18 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples, const flo
     renderStereoVoiceTracks(state, state->soundbankVoices, output, frames, true);
     // Sample voices keep the same short de-click tail after KILL/retrigger.
     renderStereoVoiceTracks(state, state->sampleVoices, output, frames, true);
-    for (int t = 0; t < state->audioProject.tracksCount; ++t)
+    for (int t = 0; t < state->audioProject.tracksCount; ++t) {
+      int instrumentIdx = state->playbackState.tracks[t].note.instrument;
+      const Instrument* instrument = instrumentIdx < PROJECT_MAX_INSTRUMENTS
+        ? &state->audioProject.instruments[instrumentIdx] : nullptr;
+      int source = instrument && instrument->type == InstrumentType::AudioIn
+        ? (int)instrument->audioInputSource : 0;
+      const float* input = source > 0 && source <= PROJECT_MAX_TRACKS
+        ? state->audioInputTrackPrevious + (size_t)(source - 1) * state->mixBufferSize
+        : (liveInput ? liveInput + (samples - samplesLeft) * 2 : nullptr);
       for (auto* voice : state->audioInputVoices[t])
-        if (voice) voice->setInput(liveInput ? liveInput + (samples - samplesLeft) * 2 : nullptr);
+        if (voice) voice->setInput(input, source > 0 ? (size_t)state->audioInputTrackPreviousFrames : (size_t)frames);
+    }
     renderStereoVoiceTracks(state, state->audioInputVoices, output, frames, true);
     renderStereoVoiceTracks(state, state->scwfVoices, output, frames);
     renderMonoVoiceTracks(state, state->plaitsVoices, output, frames);
@@ -1821,6 +1866,10 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples, const flo
     state->stopTransition.process(output, frames);
     state->audioMonitor->finishChunk(output, frames, state->sampleRate);
     audioRecorderEndTrackChunk(frames);
+    float* previous = state->audioInputTrackPrevious;
+    state->audioInputTrackPrevious = state->audioInputTrackCurrent;
+    state->audioInputTrackCurrent = previous;
+    state->audioInputTrackPreviousFrames = frames;
     samplesLeft -= frames;
     state->frameSampleCounter -= (float)frames;
   }

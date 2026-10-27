@@ -28,7 +28,7 @@ struct ScreenInstrumentFixture {
   }
 };
 
-TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument type change none to ay1") {
+TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument type change none to first popup item") {
   Instrument* inst = &state->project.instruments[cInstrument];
 
   // Start with InstrumentType::none
@@ -40,15 +40,7 @@ TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument type change none to ay1")
   // Should have handled the edit
   CHECK(handled == 1);
 
-  // Type should now be InstrumentType::AY1
-  CHECK(inst->type == InstrumentType::AY1);
-
-  // Verify AY1 defaults are set
-  CHECK(inst->tableSpeed == 1);
-  CHECK(inst->transposeEnabled == 1);
-  CHECK(inst->chip.ay.defaultMixer == 0x01);
-  CHECK(inst->chip.ay.volumeEnvelope.type == ModulationType::ADSR);
-  CHECK(inst->chip.ay.volumeEnvelope.p3 == 15);  // Sustain
+  CHECK(inst->type == InstrumentType::SID);
 }
 
 TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument type change ay1 to ay2") {
@@ -74,7 +66,7 @@ TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument type change ay1 to ay2") 
   CHECK(std::strcmp(inst->name, "") == 0);
 }
 
-TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument type change ay2 to sample") {
+TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument type change ay2 to ay sample") {
   Instrument* inst = &state->project.instruments[cInstrument];
 
   // Initialize as AY2
@@ -99,11 +91,11 @@ TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument type change sample with d
   CHECK(inst->chip.aySample.sampleData != nullptr);
   std::memset(inst->chip.aySample.sampleData, 0xAA, 1024);
 
-  // Simulate user pressing left arrow to decrease type (should free the sample data)
-  int handled = instrumentCommonOnEdit(0, 0, editDecrease);
+  // Simulate user pressing right arrow to leave the AY sample engine.
+  int handled = instrumentCommonOnEdit(0, 0, editIncrease);
 
   CHECK(handled == 1);
-  CHECK(inst->type == InstrumentType::AY2);
+  CHECK(inst->type == InstrumentType::SegaPSG);
   CHECK(inst->tableSpeed == 1);
 
   // The old sampleData should have been freed
@@ -135,37 +127,31 @@ TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument type change big step") {
   int handled = instrumentCommonOnEdit(0, 0, editIncreaseBig);
 
   CHECK(handled == 1);
-  // Should increase by bigStep (which is 1 for type field)
-  CHECK(inst->type == InstrumentType::AY1);
+  CHECK(inst->type == InstrumentType::SID);
 }
 
-TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument type change at max") {
+TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument type cycling follows popup order and wraps") {
   Instrument* inst = &state->project.instruments[cInstrument];
 
-  // Start with AYSample (max type)
-  getInstrumentFunctions(InstrumentType::AYSample).init(inst);
-  CHECK(inst->type == InstrumentType::AYSample);
+  getInstrumentFunctions(InstrumentType::GBNoise).init(inst);
+  CHECK(instrumentCommonOnEdit(0, 0, editIncrease) == 1);
+  CHECK(inst->type == InstrumentType::DrumSynth);
 
-  // Try to increase beyond max
-  int handled = instrumentCommonOnEdit(0, 0, editIncrease);
+  getInstrumentFunctions(InstrumentType::MME).init(inst);
+  CHECK(instrumentCommonOnEdit(0, 0, editIncrease) == 1);
+  CHECK(inst->type == InstrumentType::Midi);
 
-  CHECK(handled == 1);
-  // Should stay at max
-  CHECK(inst->type == InstrumentType::AYSample);
-}
+  getInstrumentFunctions(InstrumentType::DX7).init(inst);
+  CHECK(instrumentCommonOnEdit(0, 0, editIncrease) == 1);
+  CHECK(inst->type == InstrumentType::SID);
 
-TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument type change at min") {
-  Instrument* inst = &state->project.instruments[cInstrument];
+  getInstrumentFunctions(InstrumentType::SID).init(inst);
+  CHECK(instrumentCommonOnEdit(0, 0, editDecrease) == 1);
+  CHECK(inst->type == InstrumentType::DX7);
 
-  // Start with InstrumentType::none (min type)
-  CHECK(inst->type == InstrumentType::none);
-
-  // Try to decrease below min
-  int handled = instrumentCommonOnEdit(0, 0, editDecrease);
-
-  CHECK(handled == 1);
-  // Should stay at min
-  CHECK(inst->type == InstrumentType::none);
+  inst->type = InstrumentType::none;
+  CHECK(instrumentCommonOnEdit(0, 0, editDecrease) == 1);
+  CHECK(inst->type == InstrumentType::DX7);
 }
 
 TEST_CASE_FIXTURE(ScreenInstrumentFixture, "instrument other fields dont affect type") {

@@ -107,8 +107,13 @@ static void drawPlaybackCounter(const PlaybackStatus* status) {
 }
 
 static bool monitorNeeded(void) {
-  return (currentScreen == &screenMixer && screenMixerGetPage() == 0) ||
-    screenScopeRows(currentScreen) != 0;
+  if ((currentScreen == &screenMixer && screenMixerGetPage() == 0) ||
+      (currentScreen == &screenInstrument && cInstrument >= 0 && cInstrument < PROJECT_MAX_INSTRUMENTS &&
+       chipnomadState->project.instruments[cInstrument].type == InstrumentType::AudioIn) ||
+      screenScopeRows(currentScreen) != 0) return true;
+  for (int track = 0; track < chipnomadState->project.tracksCount; ++track)
+    if (appSettings.trackVisuals[track].mode == TrackVisualMode::audio) return true;
+  return false;
 }
 static uint32_t midiCCAppliedSerial[PROJECT_MAX_MIDI_CC_MAPPINGS];
 // MIDI clock slave mode (Project screen "Clock source"): last-applied

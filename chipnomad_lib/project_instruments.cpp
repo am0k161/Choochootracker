@@ -180,6 +180,7 @@ static int initAudioInInstrument(Instrument* instrument) {
   initCommon(instrument);
   instrument->type = InstrumentType::AudioIn;
   instrument->transposeEnabled = 0;
+  instrument->audioInputSource = InstrumentAudioInputSource::external;
   initVoicePostSettings(&instrument->chip.audioIn);
   return 0;
 }

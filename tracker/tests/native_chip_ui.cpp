@@ -68,7 +68,10 @@ int main(int argc,char** argv){
     require(currentScreen==&screenAudioInput,"Device opens Audio Input settings");
     key(1,keyOpt);
     require(currentScreen==&screenInstrument,"Audio Input returns to instrument");
-    require(!screenTouchTap(12,7),"SOURCE heading is not an editable field");
+    require(screenTouchTap(12,7),"Audio Input source selector is editable");
+    auto source = instrument.audioInputSource;
+    key(1,keyEdit|keyRight);key(0,0);
+    require(instrument.audioInputSource != source,"Audio Input source changes");
     require(!screenTouchTap(12,11),"input meter is not an editable field");
     require(screenTouchTap(26,11),"filter cutoff selectable at Plaits coordinates");
     auto cutoff=instrument.chip.audioIn.filterCutoffHz;

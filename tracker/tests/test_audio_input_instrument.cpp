@@ -3,6 +3,7 @@
 #include "pitch_table_utils.h"
 #include "synth/audio_input_voice.h"
 #include "audio_input_manager.h"
+#include "track_bounce.h"
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -69,8 +70,10 @@ TEST_CASE("Audio in preset preserves post settings and external category") {
   fillFXNames(); projectInit(saved.get()); projectInit(loaded.get());
   auto& instrument = saved->instruments[0];
   getInstrumentFunctions(InstrumentType::AudioIn).init(&instrument);
+  CHECK(instrument.audioInputSource == InstrumentAudioInputSource::external);
   instrument.chip.audioIn.attack = 47; instrument.chip.audioIn.release = 82;
   instrument.chip.audioIn.filterCutoffHz = 1234;
+  instrument.audioInputSource = InstrumentAudioInputSource::track8;
   const char* path = "build/tests/audio_in.cni";
   REQUIRE(instrumentSave(saved.get(), path, 0) == 0);
   REQUIRE(instrumentLoad(loaded.get(), path, 0) == 0);
@@ -79,6 +82,7 @@ TEST_CASE("Audio in preset preserves post settings and external category") {
   CHECK(loaded->instruments[0].chip.audioIn.attack == 47);
   CHECK(loaded->instruments[0].chip.audioIn.release == 82);
   CHECK(loaded->instruments[0].chip.audioIn.filterCutoffHz == 1234);
+  CHECK(loaded->instruments[0].audioInputSource == InstrumentAudioInputSource::track8);
   CHECK(getInstrumentDefinition(InstrumentType::AudioIn)->category == getInstrumentDefinition(InstrumentType::Midi)->category);
   projectFree(saved.get()); projectFree(loaded.get());
 }
@@ -117,4 +121,113 @@ TEST_CASE("Audio in engine follows notes, chunk offsets, inserts and offline sil
   chipnomadQueuePlaybackStopPreview(dry.get(), 0);
   for (int i = 0; i < 3; ++i) { std::fill(a, a + 4096, 0); chipnomadRender(dry.get(), a, 2048, input); }
   for (float sample : a) CHECK(sample == 0);
+}
+
+TEST_CASE("Audio in can listen to a delayed internal track and sampler bounce includes its inserts") {
+  auto state = std::unique_ptr<ChipNomadState, decltype(&chipnomadDestroy)>(chipnomadCreate(), chipnomadDestroy);
+  auto& p = state->project;
+  p.chipsCount = 0; p.tracksCount = 2; p.tickRate = 50; p.linearPitch = 1;
+  calculateLinearPitchTable12TET(&p);
+  for (int i = 0; i < 2; ++i) {
+    getInstrumentFunctions(InstrumentType::AudioIn).init(&p.instruments[i]);
+    p.instruments[i].chip.audioIn.filterEnabled = 0;
+    p.instruments[i].volume = 255;
+    p.trackVolume[i] = 100;
+    p.trackReverbSend[i] = p.trackDelaySend[i] = 0;
+  }
+  p.instruments[1].audioInputSource = InstrumentAudioInputSource::track1;
+  p.reverbReturn = p.delayReturn = 0;
+  insertSelect(&p.trackInserts[0][0], insertDistortion);
+  insertEdit(&p.trackInserts[0][0], 0, 255);
+  chipnomadInitChips(state.get(), 48000, nullptr);
+  REQUIRE(chipnomadReserveRenderBuffers(state.get(), 2048) == 0);
+  REQUIRE(chipnomadQueuePlaybackPreviewNote(state.get(), 0, 45, 0));
+  REQUIRE(chipnomadQueuePlaybackPreviewNote(state.get(), 1, 45, 1));
+  float input[4096], first[4096]{}, second[4096]{};
+  for (int i = 0; i < 2048; ++i) { input[2 * i] = .25f; input[2 * i + 1] = -.125f; }
+  REQUIRE(chipnomadRender(state.get(), first, 256, input) == 256);
+  CHECK(state->playbackState.tracks[1].note.instrument == 1);
+  CHECK(state->audioProject.instruments[1].audioInputSource == InstrumentAudioInputSource::track1);
+  CHECK(state->audioInputRoutedTrackMask == 1);
+  CHECK(state->insertActive[0] == 1);
+  for (float sample : first) CHECK(std::isfinite(sample));
+  double firstEnergy = 0, routedSourceEnergy = 0;
+  for (float sample : first) firstEnergy += std::fabs(sample);
+  const float* processedSource = state->audioInputTrackPrevious;
+  for (int i = 0; i < 256 * 2; ++i) routedSourceEnergy += std::fabs(processedSource[i]);
+  CHECK(firstEnergy < 1e-6);
+  CHECK(routedSourceEnergy > 0);
+  int16_t bounced[4096 * 2]{};
+  trackBounceStart(1);
+  REQUIRE(chipnomadRender(state.get(), second, 2048, input) == 2048);
+  double secondEnergy = 0;
+  for (int i = 0; i < 4096; ++i) {
+    secondEnergy += std::fabs(second[i]);
+  }
+  REQUIRE(trackBouncePop(bounced, 2048) == 2048);
+  double bouncedEnergy = 0;
+  for (int i = 0; i < 2048 * 2; ++i) bouncedEnergy += std::abs((int)bounced[i]);
+  CHECK(secondEnergy > 0);
+  CHECK(bouncedEnergy > 0);
+  CHECK(trackBounceDropped() == 0);
+  trackBounceStop();
+  state->audioProject.instruments[1].audioInputSource = InstrumentAudioInputSource::track2;
+  float cycle[256]{};
+  REQUIRE(chipnomadRender(state.get(), cycle, 128, input) == 128);
+  for (float sample : cycle) CHECK(std::isfinite(sample));
+}
+
+TEST_CASE("Audio Input reroutes internal tracks without inserts away from the mixer") {
+  auto state = std::unique_ptr<ChipNomadState, decltype(&chipnomadDestroy)>(chipnomadCreate(), chipnomadDestroy);
+  auto& p = state->project;
+  p.chipsCount = 0; p.tracksCount = 2; p.tickRate = 50; p.linearPitch = 1;
+  calculateLinearPitchTable12TET(&p);
+  for (int i = 0; i < 2; ++i) {
+    getInstrumentFunctions(InstrumentType::AudioIn).init(&p.instruments[i]);
+    p.instruments[i].chip.audioIn.filterEnabled = 0;
+    p.instruments[i].volume = 255;
+    p.trackVolume[i] = 100;
+    p.trackReverbSend[i] = p.trackDelaySend[i] = 0;
+  }
+  p.instruments[1].audioInputSource = InstrumentAudioInputSource::track1;
+  p.reverbReturn = p.delayReturn = 0;
+  chipnomadInitChips(state.get(), 48000, nullptr);
+  REQUIRE(chipnomadReserveRenderBuffers(state.get(), 256) == 0);
+  REQUIRE(chipnomadQueuePlaybackPreviewNote(state.get(), 0, 45, 0));
+  REQUIRE(chipnomadQueuePlaybackPreviewNote(state.get(), 1, 45, 1));
+  float input[512], first[512]{}, second[512]{};
+  for (int i = 0; i < 256; ++i) { input[2 * i] = .25f; input[2 * i + 1] = -.125f; }
+  REQUIRE(chipnomadRender(state.get(), first, 128, input) == 128);
+  CHECK(state->audioInputRoutedTrackMask == 1);
+  double firstEnergy = 0;
+  for (float sample : first) firstEnergy += std::fabs(sample);
+  CHECK(firstEnergy == doctest::Approx(0.0));
+  REQUIRE(chipnomadRender(state.get(), second, 128, input) == 128);
+  double secondEnergy = 0;
+  for (float sample : second) secondEnergy += std::fabs(sample);
+  CHECK(secondEnergy > 0);
+}
+
+TEST_CASE("sampler track input captures Audio Input after its inserts") {
+  auto state = std::unique_ptr<ChipNomadState, decltype(&chipnomadDestroy)>(chipnomadCreate(), chipnomadDestroy);
+  auto& p = state->project;
+  p.chipsCount = 0; p.tracksCount = 1; p.tickRate = 50; p.linearPitch = 1;
+  calculateLinearPitchTable12TET(&p);
+  getInstrumentFunctions(InstrumentType::AudioIn).init(&p.instruments[0]);
+  p.instruments[0].chip.audioIn.filterEnabled = 0;
+  p.trackReverbSend[0] = p.trackDelaySend[0] = 0;
+  p.reverbReturn = p.delayReturn = 0;
+  insertSelect(&p.trackInserts[0][0], insertDistortion);
+  chipnomadInitChips(state.get(), 48000, nullptr);
+  REQUIRE(chipnomadReserveRenderBuffers(state.get(), 2048) == 0);
+  REQUIRE(chipnomadQueuePlaybackPreviewNote(state.get(), 0, 45, 0));
+  float input[4096], output[4096]{};
+  for (int i = 0; i < 2048; ++i) { input[2 * i] = .2f + .1f * std::sin(i * .03f); input[2 * i + 1] = -input[2 * i] * .5f; }
+  trackBounceStart(0);
+  REQUIRE(chipnomadRender(state.get(), output, 2048, input) == 2048);
+  int16_t bounced[4096 * 2]{};
+  REQUIRE(trackBouncePop(bounced, 2048) == 2048);
+  for (int i = 0; i < 2048 * 2; ++i)
+    CHECK(std::fabs((float)bounced[i] - output[i] * 32767.0f) < 2.0f);
+  trackBounceStop();
 }

@@ -13,6 +13,7 @@ float monitorDisplayTrackPeak(int track, int channel);
 // Horizontal 1-row meter for the audio input settings screen (Phase 4).
 // Reads from the AudioInputManager levels snapshot for the given armed slot.
 void monitorDisplayDrawHorizontalMeter(int armedSlot, int col, int row, int width);
+void monitorDisplayDrawTrackHorizontalMeter(int track, int col, int row, int width);
 
 // Fetches the latest audio-input levels snapshot. The first call each frame
 // consumes the published snapshot; later calls return the cached copy.

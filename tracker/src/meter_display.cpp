@@ -70,17 +70,11 @@ bool monitorDisplayInputLevels(AudioInputLevels* out, int* fresh) {
   return true;
 }
 
-void monitorDisplayDrawHorizontalMeter(int armedSlot, int col, int row, int width) {
-  if (armedSlot < 0 || armedSlot >= AUDIO_INPUT_MAX_ARMED || width <= 0) return;
+static void drawHorizontalMeterPeak(float peak, int col, int row, int width) {
+  if (width <= 0) return;
   const auto cs = appSettings.colorScheme;
   gfxSetBgColor(cs.background);
   gfxClearRect(col, row, width, 1);
-  AudioInputLevels levels;
-  if (!monitorDisplayInputLevels(&levels, nullptr)) return;
-  // Peak across both channels, mapped through the same 48 dB window.
-  float peak = levels.peaks[armedSlot][0];
-  float right = levels.peaks[armedSlot][1];
-  if (right > peak) peak = right;
   if (!std::isfinite(peak) || peak <= 0) return;
   float db = 20.0f * log10f(peak);
   int fill = std::max(0, std::min(width, (int)ceilf((db + 48.0f) * width / 48.0f)));
@@ -102,4 +96,21 @@ void monitorDisplayDrawHorizontalMeter(int armedSlot, int col, int row, int widt
     for (int cx = x; cx < runEnd; ++cx) gfxDrawBitmap(cell, col + cx, row);
     x = runEnd;
   }
+}
+
+void monitorDisplayDrawHorizontalMeter(int armedSlot, int col, int row, int width) {
+  if (armedSlot < 0 || armedSlot >= AUDIO_INPUT_MAX_ARMED || width <= 0) return;
+  AudioInputLevels levels;
+  if (!monitorDisplayInputLevels(&levels, nullptr)) {
+    gfxSetBgColor(appSettings.colorScheme.background);
+    gfxClearRect(col, row, width, 1);
+    return;
+  }
+  drawHorizontalMeterPeak(std::max(levels.peaks[armedSlot][0], levels.peaks[armedSlot][1]), col, row, width);
+}
+
+void monitorDisplayDrawTrackHorizontalMeter(int track, int col, int row, int width) {
+  if (track < 0 || track >= PROJECT_MAX_TRACKS || width <= 0) return;
+  drawHorizontalMeterPeak(std::max(monitorDisplayTrackPeak(track, 0), monitorDisplayTrackPeak(track, 1)),
+                          col, row, width);
 }

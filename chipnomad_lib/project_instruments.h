@@ -44,6 +44,10 @@ enum class InstrumentType : uint8_t {
   totalCount,
 };
 
+enum class InstrumentAudioInputSource : uint8_t {
+  external = 0, track1, track2, track3, track4, track5, track6, track7, track8
+};
+
 enum class ModulationType : uint8_t {
   ADSR = 0,
   AHD = 1,
@@ -566,6 +570,8 @@ struct Instrument {
   uint8_t volume;
   uint8_t pan;
   Modulation modulation[4];
+  // Audio Input only: 0 = external live input, 1..8 = internal track 1..8.
+  InstrumentAudioInputSource audioInputSource;
   InstrumentChipData chip;
 };
 

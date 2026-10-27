@@ -425,7 +425,11 @@ static int loadInstrumentBYOWTBL(FILE* file, Instrument* instrument) {
 static int loadInstrumentAudioIn(FILE* file, Instrument* instrument) {
   while (const char* line = peekLine(file)) {
     if (line[0] == '#') break;
-    loadVoicePostSetting(line, &instrument->chip.audioIn);
+    if (strncmp(line, "- Input source: ", 15) == 0) {
+      unsigned int source = 0;
+      if (sscanf(line + 15, "%u", &source) == 1 && source <= PROJECT_MAX_TRACKS)
+        instrument->audioInputSource = (InstrumentAudioInputSource)source;
+    } else loadVoicePostSetting(line, &instrument->chip.audioIn);
     consumeLine(file);
   }
   return 0;
@@ -1115,6 +1119,7 @@ int instrumentSaveData(FILE* file, int idx, Instrument* instrument) {
       saveInstrumentMonk(file, instrument);
       break;
     case InstrumentType::AudioIn:
+      fprintf(file, "- Input source: %u\n", (unsigned)instrument->audioInputSource);
       saveVoicePostSettings(file, &instrument->chip.audioIn);
       break;
     case InstrumentType::MME:
