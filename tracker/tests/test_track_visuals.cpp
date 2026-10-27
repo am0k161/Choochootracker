@@ -135,6 +135,29 @@ TEST_CASE_FIXTURE(VisualFixture, "Boot screen Graphics row toggles and saves wit
   CHECK(appSettings.bootScreenNight == 0);
 }
 
+TEST_CASE_FIXTURE(VisualFixture, "Cursor Graphics row switches between line and brackets and saves") {
+  CHECK(appSettings.cursorBrackets == 0);
+  currentScreen = &screenGraphicsSettings;
+  screenGraphicsSettings.setup(0);
+  screenGraphicsSettings.fullRedraw();
+  ScreenData* table = mockScreenData;
+  REQUIRE(table != nullptr);
+  table->drawField(0, 7, CellState::normal);
+  CHECK(std::string(mockGfxCells[11], 6) == "Cursor");
+  CHECK(std::string(mockGfxCells[11] + 23, 8) == "Line    ");
+  REQUIRE(table->onEdit(0, 7, CellEditAction::tap) == 1);
+  table->drawField(0, 7, CellState::focus);
+  CHECK(std::string(mockGfxCells[11] + 23, 8) == "Brackets");
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.cursorBrackets == 1);
+  REQUIRE(table->onEdit(0, 7, CellEditAction::tap) == 1);
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.cursorBrackets == 0);
+  { std::ofstream f(settingsPath); f << "cursorBrackets: 2\n"; }
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.cursorBrackets == 0);
+}
+
 TEST_CASE_FIXTURE(VisualFixture, "Playback counter Graphics controls persist and reject invalid values") {
   CHECK(appSettings.playbackCounterMode == 0);
   CHECK(appSettings.playbackBarRows == 16);
@@ -144,22 +167,22 @@ TEST_CASE_FIXTURE(VisualFixture, "Playback counter Graphics controls persist and
   screenGraphicsSettings.fullRedraw();
   ScreenData* table = mockScreenData;
   REQUIRE(table != nullptr);
-  CHECK(table->rows == 10);
+  CHECK(table->rows == 11);
   gfxClear();
   for (int row = 0; row < table->rows; ++row) table->drawField(0, row, CellState::normal);
-  for (int y : {4, 9, 11}) CHECK(std::string(mockGfxCells[y], 31) == std::string(31, ' '));
-  CHECK(std::string(mockGfxCells[13], 15) == " - Rows per bar");
-  CHECK(std::string(mockGfxCells[14], 16) == " - Ticks per row");
-  table->drawCursor(0, 8);
-  CHECK(mockCursorY == 13);
-  REQUIRE(table->onEdit(0, 7, CellEditAction::tap) == 1);
-  REQUIRE(table->onEdit(0, 8, CellEditAction::decrease) == 1);
-  REQUIRE(table->onEdit(0, 9, CellEditAction::increase) == 1);
+  for (int y : {4, 9, 12}) CHECK(std::string(mockGfxCells[y], 31) == std::string(31, ' '));
+  CHECK(std::string(mockGfxCells[14], 15) == " - Rows per bar");
+  CHECK(std::string(mockGfxCells[15], 16) == " - Ticks per row");
+  table->drawCursor(0, 9);
+  CHECK(mockCursorY == 14);
+  REQUIRE(table->onEdit(0, 8, CellEditAction::tap) == 1);
+  REQUIRE(table->onEdit(0, 9, CellEditAction::decrease) == 1);
+  REQUIRE(table->onEdit(0, 10, CellEditAction::increase) == 1);
   CHECK(appSettings.playbackCounterMode == 1);
   CHECK(appSettings.playbackBarRows == 15);
   CHECK(appSettings.playbackBarTicks == 7);
-  table->drawField(0, 7, CellState::focus);
-  CHECK(std::string(mockGfxCells[12] + 23, 4) == "Time");
+  table->drawField(0, 8, CellState::focus);
+  CHECK(std::string(mockGfxCells[13] + 23, 4) == "Time");
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.playbackCounterMode == 1);
   CHECK(appSettings.playbackBarRows == 15);

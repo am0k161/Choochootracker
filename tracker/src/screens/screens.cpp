@@ -120,6 +120,7 @@ void screenDraw() {
     currentScreen->setup(pendingScreenInput);
     gfxSetBgColor(appSettings.colorScheme.background);
     gfxSetCursorColor(appSettings.colorScheme.cursor);
+    gfxSetCursorBrackets(appSettings.cursorBrackets);
     gfxClearRect(0, 0, 40, 20);
     currentScreen->fullRedraw();
     if (currentScreen != &screenTitle)

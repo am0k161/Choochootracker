@@ -153,6 +153,11 @@ void gfxSetCursorColor(int rgb) {
   cursorColor = SDL_MapRGB(sdlScreen->format, cursorR, cursorG, cursorB);
 }
 
+// This renderer always draws the cursor as a line under the field.
+void gfxSetCursorBrackets(int brackets) {
+  (void)brackets;
+}
+
 void gfxClear(void) {
 #ifdef MIYOOPORTS_BUILD
   SDL_FillRect(offscreenSurface, NULL, bgColor);

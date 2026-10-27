@@ -150,6 +150,7 @@ struct AppSettings {
   uint8_t hideTouchPadWithGamepad; // touch builds: hide the virtual pad while a gamepad is connected
   uint8_t touchHaptics; // Android touch controls: request the system haptic feedback
   uint8_t bootScreenNight; // 0 = original art; 1 = mellow night title
+  uint8_t cursorBrackets; // 0 = line under the field; 1 = corner brackets
   KeyMapping keyMapping;
   ColorScheme colorScheme;
   char themeName[THEME_NAME_LENGTH + 1];
