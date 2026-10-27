@@ -464,7 +464,91 @@ static void fullRedraw(void) {
   screenFullRedraw(screen);
 }
 
+///////////////////////////////////////////////////////////////////////////////
+//
+// Live values: while a track plays this instrument, the bars follow what it
+// plays, as reported by its engine.
+//
+
+static int shownLive[liveControlCount];
+static int shownLiveFor = -1;
+
+// The selected track if it plays this instrument, otherwise the first one
+// that does; NULL when none does or its engine reports nothing.
+static const uint8_t* instrumentLiveControls(void) {
+  const PlaybackStatus* status = chipnomadGetPlaybackStatus(chipnomadState);
+  if (!status) return NULL;
+  auto plays = [&](int t) {
+    const PlaybackTrackState& track = status->tracks[t];
+    return status->trackEnabled[t] && track.mode != PlaybackMode::stopped && track.mode != PlaybackMode::none &&
+           track.note.instrument == cInstrument && track.liveInstrument == cInstrument;
+  };
+  if (*pSongTrack >= 0 && *pSongTrack < chipnomadState->project.tracksCount && plays(*pSongTrack))
+    return status->tracks[*pSongTrack].liveControls;
+  for (int t = 0; t < chipnomadState->project.tracksCount; ++t)
+    if (plays(t)) return status->tracks[t].liveControls;
+  return NULL;
+}
+
+int instrumentLiveValue(int control) {
+  return shownLiveFor == cInstrument && control >= 0 && control < liveControlCount ? shownLive[control] : -1;
+}
+
+float instrumentLivePosition(int control) {
+  const int value = instrumentLiveValue(control);
+  return value < 0 ? -1.0f : value / 255.0f;
+}
+
+// The cell that shows a live control on the current page: the page's own
+// controls first, then the shared filter's cutoff and resonance.
+static bool liveCell(int control, int* col, int* row) {
+  bool (*pageCell)(int, int*, int*) = NULL;
+  switch (chipnomadState->project.instruments[cInstrument].type) {
+    case InstrumentType::Sample: pageCell = instrumentSampleLiveCell; break;
+    case InstrumentType::SCWF: pageCell = instrumentSCWFLiveCell; break;
+    case InstrumentType::BYOWTBL: pageCell = instrumentBYOWTBLLiveCell; break;
+    case InstrumentType::Braids: pageCell = instrumentBraidsLiveCell; break;
+    case InstrumentType::Plaits:
+    case InstrumentType::PlaitsAlt: pageCell = instrumentPlaitsLiveCell; break;
+    case InstrumentType::MME: pageCell = instrumentMMELiveCell; break;
+    case InstrumentType::DrumSynth: pageCell = instrumentDrumSynthLiveCell; break;
+    case InstrumentType::Sintered: pageCell = instrumentSinteredLiveCell; break;
+    case InstrumentType::AChChid: pageCell = instrumentAChChidLiveCell; break;
+    case InstrumentType::Monk: pageCell = instrumentMonkLiveCell; break;
+    default: break;
+  }
+  if (pageCell && pageCell(control, col, row)) return true;
+  if ((control == liveCutoff || control == liveResonance) &&
+      instrumentVoicePostSettings(&chipnomadState->project.instruments[cInstrument])) {
+    *col = 1;
+    *row = control == liveCutoff ? 7 : 8;
+    return true;
+  }
+  return false;
+}
+
+static void drawLiveValues(void) {
+  if (isCharEdit || charEditIsOpen()) return;
+  if (shownLiveFor != cInstrument) {
+    for (int& value : shownLive) value = -1;
+    shownLiveFor = cInstrument;
+  }
+  const uint8_t* live = instrumentLiveControls();
+  ScreenData* screen = instrumentScreen();
+  for (int control = 0; control < liveControlCount; ++control) {
+    const int value = live ? live[control] : -1;
+    if (value == shownLive[control]) continue;
+    shownLive[control] = value;
+    int col, row;
+    if (!liveCell(control, &col, &row) || screen->topRow) continue;
+    const bool focused = screen->cursorCol == col && screen->cursorRow == row;
+    screen->drawField(col, row, focused ? CellState::focus : CellState::normal);
+    if (focused) screen->drawCursor(col, row);
+  }
+}
+
 static void draw(void) {
+  drawLiveValues();
   if (chipnomadState->project.instruments[cInstrument].type==InstrumentType::SoundFont) {
     auto& d=screenInstrumentSoundFont;
     for (int row : {3,4}) for (int col=0; col<d.getColumnCount(row); ++col)
@@ -664,8 +748,12 @@ int instrumentCommonDrawVoicePostField(int col, int row, CellState state,
       if (filterHasColor(post)) fieldDrawNumber(x, y, post->filterColor, state);
       else gfxPrint(x, y, post->filterSlope24dB ? "24 dB" : "12 dB");
       break;
-    case 7: fieldDrawNumber(x, y, filterControlFromCutoff(post->filterCutoffHz), state); break;
-    case 8: fieldDrawNumber(x, y, post->filterResonance, state); break;
+    case 7: case 8: {
+      // While a track plays the instrument, the bar shows what it plays.
+      fieldDrawNumber(x, y, row == 7 ? filterControlFromCutoff(post->filterCutoffHz) : post->filterResonance, state,
+                      -1.0f, false, instrumentLivePosition(row == 7 ? liveCutoff : liveResonance));
+      break;
+    }
   }
   return 1;
 }
