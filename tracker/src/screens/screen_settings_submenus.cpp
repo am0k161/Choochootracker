@@ -18,8 +18,13 @@ static void noHeader(int, CellState) {}
 static void setup(int) {}
 static void draw(void) {}
 
-static const int audioBufferSizes[] = {32, 64, 128, 256, 512, 1024};
-static const int audioSampleRates[] = {32000, 48000};
+static const int audioBufferSizes[] = {32, 64, 128, 256, 512, 1024, 2048};
+static const int audioSampleRates[] = {32000, 44100, 48000};
+static const int audioSampleRateCount = (int)(sizeof(audioSampleRates) / sizeof(audioSampleRates[0]));
+static int audioSampleRateIndex(int rate) {
+  for (int i = 0; i < audioSampleRateCount; ++i) if (audioSampleRates[i] == rate) return i;
+  return audioSampleRateCount - 1;
+}
 static int displayedCpuLoad = -1;
 
 static void drawAudioCpuLoad(void) {
@@ -42,8 +47,8 @@ static int audioInputArmedCount(void) {
 }
 
 static void audioCursor(int, int row) {
-  if (row == 0) gfxCursor(23, 2, 6);
-  else if (row == 1) gfxCursor(23, 3, appSettings.audioBufferSize == 1024 ? 4 : 3);
+  if (row == 0) gfxCursor(23, 2, appSettings.audioSampleRate == 44100 ? 8 : 6);
+  else if (row == 1) gfxCursor(23, 3, appSettings.audioBufferSize >= 1024 ? 4 : 3);
   else if (row == 2) gfxCursor(14, 4, 16);
   else if (row == 4) gfxCursor(23, 6, 3); // "OFF"/"ON" value width
 }
@@ -52,7 +57,9 @@ static void audioField(int, int row, CellState state) {
   if (row == 0) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, 2, "Sample rate");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
-    gfxPrintf(23, 2, "%d kHz", appSettings.audioSampleRate / 1000);
+    gfxClearRect(23, 2, 8, 1);
+    if (appSettings.audioSampleRate % 1000) gfxPrintf(23, 2, "%d.%d kHz", appSettings.audioSampleRate / 1000, appSettings.audioSampleRate % 1000 / 100);
+    else gfxPrintf(23, 2, "%d kHz", appSettings.audioSampleRate / 1000);
   } else if (row == 1) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, 3, "Buffer size");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
@@ -135,10 +142,10 @@ static int audioEdit(int, int row, CellEditAction action) {
            action == CellEditAction::multiDecrease || action == CellEditAction::multiDecreaseBig) direction = -1;
   else return action == CellEditAction::tap;
 
-  int index = row == 0 ? (appSettings.audioSampleRate == 32000 ? 0 : 1)
+  int index = row == 0 ? audioSampleRateIndex(appSettings.audioSampleRate)
                        : audioBufferIndex(appSettings.audioBufferSize);
-  int count = row == 0 ? 2 : (int)(sizeof(audioBufferSizes) / sizeof(audioBufferSizes[0]));
-  if (direction < -1) index = row == 0 ? 1 : 0;
+  int count = row == 0 ? audioSampleRateCount : (int)(sizeof(audioBufferSizes) / sizeof(audioBufferSizes[0]));
+  if (direction < -1) index = row == 0 ? audioSampleRateCount - 1 : 0;
   else if (direction > 0 && index + 1 < count) ++index;
   else if (direction < 0 && index > 0) --index;
   const int rate = row == 0 ? audioSampleRates[index] : appSettings.audioSampleRate;
