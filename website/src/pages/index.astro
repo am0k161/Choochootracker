@@ -11,7 +11,13 @@ import { frontmatter as effects } from '../content/04-effects.md';
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const homeShots = `${base}/homepage-screenshots`;
 ---
-<Page title={hero.title} description={hero.description}>
+<Page
+  title={hero.title}
+  description={hero.description}
+  documentTitle="ChooChooTracker — Free, open-source tracker with 120+ sound engines"
+  ogTitle="ChooChooTracker — 120+ sound engines for handhelds and PC"
+  ogDescription="Compose, sample and perform anywhere with 120+ sound engines, Braids and Plaits macro-oscillators, soundfonts and advanced sampling in a classic tracker workflow."
+>
   <div class="showcase">
     <section class="opening wrap">
       <p class="eyebrow">{hero.eyebrow}</p><img class="hero-logo" src={siteLogo.src} width="112" height="112" alt="" /><h1>{hero.title}</h1><p class="tagline">{hero.tagline}</p>

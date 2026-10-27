@@ -6,10 +6,31 @@ import '@fontsource/fira-sans/700.css';
 import '../styles/site.css';
 import appIcon from '../../../tracker/packaging/linux-appimage/choochootracker.png';
 import siteLogo from '../assets/choochootracker-site.png';
-const { title = 'Mobile groovebox. Multi-engine tracker.', description = 'ChooChooTracker is a portable multi-engine music tracker for handheld consoles, computers and the web.' } = Astro.props;
+const {
+  title = 'Mobile groovebox. Multi-engine tracker.',
+  description = 'ChooChooTracker is a portable multi-engine music tracker for handheld consoles, computers and the web.',
+  documentTitle = `${title} — ChooChooTracker`,
+  ogTitle = documentTitle,
+  ogDescription = description,
+} = Astro.props;
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 const home = `${base}/`;
 const path = Astro.url.pathname;
+const isHome = path === home;
+const applicationSchema = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  '@id': `${new URL(home, Astro.site).href}#application`,
+  name: 'ChooChooTracker',
+  url: new URL(home, Astro.site).href,
+  description,
+  applicationCategory: 'MultimediaApplication',
+  operatingSystem: ['Linux', 'Windows', 'Android'],
+  runtimePlatform: 'WebAssembly',
+  license: 'https://opensource.org/license/mit/',
+  offers: { '@type': 'Offer', price: 0 },
+  screenshot: new URL(`${base}/homepage-screenshots/song.png`, Astro.site).href,
+};
 ---
 <!doctype html>
 <html lang="en">
@@ -18,13 +39,16 @@ const path = Astro.url.pathname;
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#1e2022" />
     <meta name="description" content={description} />
-    <meta property="og:title" content={`${title} — ChooChooTracker`} />
-    <meta property="og:description" content={description} />
+    <meta property="og:title" content={ogTitle} />
+    <meta property="og:description" content={ogDescription} />
     <meta property="og:type" content="website" />
     <meta property="og:image" content={new URL(`${base}/screenshots/song.png`, Astro.site).href} />
+    <meta property="og:url" content={new URL(path, Astro.site)} />
+    <meta property="og:site_name" content="ChooChooTracker" />
     <link rel="canonical" href={new URL(path, Astro.site)} />
     <link rel="icon" type="image/png" href={appIcon.src} />
-    <title>{title} — ChooChooTracker</title>
+    {isHome && <script type="application/ld+json" set:html={JSON.stringify(applicationSchema).replace(/</g, '\\u003c')} />}
+    <title>{documentTitle}</title>
   </head>
   <body>
     <a class="skip" href="#main">Skip to content</a>

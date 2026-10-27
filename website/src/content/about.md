@@ -10,4 +10,4 @@ The first prototype was coded on a train between Cahors and Montauban. I wanted 
 
 I quickly realized this would have the potential to provoke happy accidents and be a very playful music app, something I would want to have in my backpack all the time.
 
-A few weeks after my first proof of concept, I received a PR on Github, then another, then another one. Other people found the project interesting, and things got to where we are now. Join us on Discord for a chat!
+A few weeks after my first proof of concept, I received a PR on Github, then another, then another one. Other people found the project interesting, and things got to where we are now (50 stars on Github!!!). Join us on Discord for a chat!
