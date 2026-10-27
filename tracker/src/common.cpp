@@ -28,7 +28,7 @@ static int defaultAudioBufferSize(void) {
 }
 
 static int normalizeAudioBufferSize(int size) {
-  static const int sizes[] = {32, 64, 128, 256, 512, 1024};
+  static const int sizes[] = {32, 64, 128, 256, 512, 1024, 2048};
   int closest = sizes[0];
   long long closestDistance = llabs((long long)closest - size);
   for (int candidate : sizes) {
@@ -658,7 +658,7 @@ int settingsLoad(void) {
 
   fclose(file);
   colorSchemeFillMissing(&appSettings.colorScheme);
-  if (appSettings.audioSampleRate != 32000 && appSettings.audioSampleRate != 48000)
+  if (appSettings.audioSampleRate != 32000 && appSettings.audioSampleRate != 44100 && appSettings.audioSampleRate != 48000)
     appSettings.audioSampleRate = kAudioSampleRate;
   // 4,906 was the legacy platform default; other values are rounded to the
   // nearest choice exposed by the audio settings screen.
