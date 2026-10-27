@@ -4,7 +4,7 @@
   background:#1e2022;
   font-synthesis:none;
   color-scheme:dark;
-  --panel:#2b2e33;
+  --panel:#1e2022;
   --paper:#e1e4e8;
   --orange:#ff6600;
   --muted:#adb3bc;
@@ -248,7 +248,7 @@ figcaption {
   margin-top:15px
 }
 .feature-strip {
-  background:#2b2e33;
+  background:var(--panel);
   border-block:1px solid var(--line)
 }
 .feature-strip .wrap {
@@ -333,7 +333,7 @@ figcaption {
   order:2
 }
 .learn-band {
-  background:#2b2e33;
+  background:var(--panel);
   color:var(--paper);
   padding:70px 0
 }
