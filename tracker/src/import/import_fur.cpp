@@ -1670,10 +1670,16 @@ int projectLoadFurChannels(Project* project, const char* path, const char* sampl
     bool done = false;
     if (slot.sample) {
       if (!dirReady) {
-        wavDir = std::string(sampleDir);
-        if (!wavDir.empty() && wavDir.back() != '/' && wavDir.back() != '\\') wavDir += PATH_SEPARATOR;
-        wavDir += fileBase(path);
-        dirReady = fileCreateDirectoryRecursive(wavDir.c_str()) == 0;
+        std::string root(sampleDir);
+        if (root.back() != '/' && root.back() != '\\') root += PATH_SEPARATOR;
+        const std::string base = root + fileBase(path);
+        if (fileCreateDirectoryRecursive(root.c_str()) == 0) {
+          for (int i = 0; i < 1000; i++) {
+            wavDir = base + (i ? "_" + std::to_string(i) : "");
+            if (fileCreateDirectory(wavDir.c_str()) == 0) { dirReady = true; break; }
+            if (!fileDirectoryExists(wavDir.c_str())) break;
+          }
+        }
         if (!dirReady) warn("cannot create the sample folder, sample instruments use a default patch");
       }
       if (dirReady) {
