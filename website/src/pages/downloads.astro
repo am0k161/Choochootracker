@@ -1,0 +1,14 @@
+---
+import Page from '../layouts/Page.astro';
+import { Content, frontmatter as page } from '../content/downloads.md';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+<Page title={page.title} description={page.description}>
+  <section class="document wrap">
+    <p class="eyebrow">{page.eyebrow} <span class="badge">Alpha software</span></p>
+    <h1>{page.title}</h1><p class="lede">{page.description}</p>
+    <div class="download-callout"><div><h2>Get the latest alpha.</h2><p>Packages, installation notes and what's changed, all in one place.</p></div><a class="button primary" href="https://github.com/paiheulevrai/Choochootracker/releases">View releases on GitHub ↗</a></div>
+    <div class="prose"><Content /></div>
+    <div class="actions"><a class="button secondary" href={`${base}/play/`}>Try it in your browser ↗</a><a class="text-link" href={`${base}/learn/`}>Find your feet with the guides →</a></div>
+  </section>
+</Page>

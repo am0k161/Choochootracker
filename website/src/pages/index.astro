@@ -1,0 +1,59 @@
+---
+import Page from '../layouts/Page.astro';
+import '../styles/home.css';
+import siteLogo from '../assets/choochootracker-site.png';
+import { Content as Intro, frontmatter as hero } from '../content/home.md';
+import { frontmatter as workflow } from '../content/workflow.md';
+import { Content as About, frontmatter as about } from '../content/about.md';
+import { Content as Engines, frontmatter as engines } from '../content/featured-engines.md';
+import { frontmatter as sampling } from '../content/03-sampling.md';
+import { frontmatter as effects } from '../content/04-effects.md';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const homeShots = `${base}/homepage-screenshots`;
+---
+<Page title={hero.title} description={hero.description}>
+  <div class="showcase">
+    <section class="opening wrap">
+      <p class="eyebrow">{hero.eyebrow}</p><img class="hero-logo" src={siteLogo.src} width="112" height="112" alt="" /><h1>{hero.title}</h1><p class="tagline">{hero.tagline}</p>
+      <div class="opening-description"><Intro /></div>
+      <div class="actions"><a class="button primary" href={`${base}/play/`}>Launch web app ↗</a><a class="button secondary" href={`${base}/downloads/`}>Download</a></div>
+      <p class="alpha"><span class="badge">Alpha</span> Free and open source. Save often. Choo choo.</p>
+      <div class="screen-stage" aria-label="Song arrangement, synthesis and mixing in ChooChooTracker">
+        {hero.openingScreens.map(screen => <figure class={`stage-${screen.position}`}><a href={`${homeShots}/${screen.image}`}><img src={`${homeShots}/${screen.image}`} alt={screen.alt} width="640" height="480" fetchpriority={screen.position === 'main' ? 'high' : undefined} /></a><figcaption>{screen.caption}</figcaption></figure>)}
+      </div>
+    </section>
+    <nav class="chapter-bar" aria-label="Explore ChooChooTracker"><div class="wrap"><a href="#workflow"><span>Make a track</span><span class="chapter-arrow" aria-hidden="true">↓</span></a><a href="#engines"><span>Sound engines</span><span class="chapter-arrow" aria-hidden="true">↓</span></a><a href="#sound-design"><span>Sampling & effects</span><span class="chapter-arrow" aria-hidden="true">↓</span></a><a href="#community"><span>The FOSS project</span><span class="chapter-arrow" aria-hidden="true">↓</span></a></div></nav>
+    <section id="workflow" class="workflow-band"><div class="wrap"><header class="chapter-heading"><p class="eyebrow">{workflow.eyebrow}</p><h2>{workflow.title}<br /><span>{workflow.titleSecondLine}</span></h2><p class="chapter-intro">{workflow.intro}</p></header><div class="journey">{workflow.steps.map(step => <article><div class="step-title"><h3>{step.title}</h3></div><p>{step.text}</p><a href={`${homeShots}/${step.image}`}><img src={`${homeShots}/${step.image}`} alt={step.title} width="640" height="480" loading="lazy" /></a></article>)}</div></div></section>
+    <section id="explore" class="engine-showcase wrap">
+      <header id="engines" class="chapter-heading"><p class="eyebrow">{engines.eyebrow}</p><h2>{engines.title}</h2><div class="chapter-intro"><Engines /></div></header>
+      <div class="engine-lineup">{engines.engines.map(engine => (
+        <article class:list={{ 'engine-text-only': !engine.image }}>
+          {engine.image && <a class="engine-capture" href={`${homeShots}/${engine.image}`} aria-label={`Enlarge ${engine.name}`}><img src={`${homeShots}/${engine.image}`} alt={`${engine.name} instrument controls`} width="640" height="480" loading="lazy" /></a>}
+          <div class="engine-copy">
+            <p class="eyebrow">{engine.category}</p>
+            <h3>{engine.name}</h3>
+            <p>{engine.description}</p>
+          </div>
+        </article>
+      ))}</div>
+    </section>
+    <section id="sound-design" class="sound-workbench wrap" aria-labelledby="sampling-title">
+      <header><p class="eyebrow">{sampling.eyebrow}</p><h2 id="sampling-title">{sampling.title}</h2></header>
+      <div class="sound-screens">
+        <a href={`${homeShots}/sample-editor.png`}><img src={`${homeShots}/sample-editor.png`} alt="Sample editor with waveform and editing controls" width="640" height="480" loading="lazy" /></a>
+        <a href={`${homeShots}/sample-slices.png`}><img src={`${homeShots}/sample-slices.png`} alt="Sample waveform divided into slices" width="640" height="480" loading="lazy" /></a>
+      </div>
+      <div class="sound-description sound-features">{sampling.features.map(group => <section><h3>{group.title}</h3><ul>{group.items.map(item => <li>{item}</li>)}</ul></section>)}</div>
+    </section>
+    <section id="effects" class="sound-workbench wrap" aria-labelledby="effects-title">
+      <header><p class="eyebrow">{effects.eyebrow}</p><h2 id="effects-title">{effects.title}</h2></header>
+      <div class="sound-screens">
+        <a href={`${homeShots}/insert-fx.png`}><img src={`${homeShots}/insert-fx.png`} alt="Track insert effect controls" width="640" height="480" loading="lazy" /></a>
+        <a href={`${homeShots}/reverb.png`}><img src={`${homeShots}/reverb.png`} alt="Reverb send effect controls" width="640" height="480" loading="lazy" /></a>
+      </div>
+      <div class="sound-description sound-features">{effects.features.map(group => <section><h3>{group.title}</h3><ul>{group.items.map(item => <li>{item}</li>)}</ul></section>)}</div>
+    </section>
+    <section id="community" class="community-band"><div class="wrap community-layout"><div><p class="eyebrow">{about.eyebrow}</p><h2>{about.title}</h2><div class="community-actions"><a href="https://github.com/paiheulevrai/Choochootracker">Explore the source ↗</a><a href="https://github.com/paiheulevrai/Choochootracker/graphs/contributors">Meet the contributors ↗</a><a href="https://discord.gg/Ut9vM6zgKU">Join us on Discord ↗</a></div></div><div class="community-story"><About /></div></div></section>
+    <section class="learning-end wrap"><div><p class="eyebrow">Ready when you are</p><h2>Let's make<br />some music.</h2><a class="button primary" href={`${base}/play/`}>Launch web app ↗</a></div><div class="guide-links"><a href={`${base}/user-guide/`}><span>Learn with screenshots & examples<strong>Visual field guide</strong></span><span aria-hidden="true">↗</span></a><a href={`${base}/manual/`}><span>Instruments, effects & commands<strong>User manual</strong></span><span aria-hidden="true">↗</span></a></div></section>
+  </div>
+</Page>

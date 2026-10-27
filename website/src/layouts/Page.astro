@@ -1,0 +1,52 @@
+---
+import '@fontsource/fira-sans/400.css';
+import '@fontsource/fira-sans/500.css';
+import '@fontsource/fira-sans/600.css';
+import '@fontsource/fira-sans/700.css';
+import '../styles/site.css';
+import appIcon from '../../../tracker/packaging/linux-appimage/choochootracker.png';
+import siteLogo from '../assets/choochootracker-site.png';
+const { title = 'Mobile groovebox. Multi-engine tracker.', description = 'ChooChooTracker is a portable multi-engine music tracker for handheld consoles, computers and the web.' } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+const home = `${base}/`;
+const path = Astro.url.pathname;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#1e2022" />
+    <meta name="description" content={description} />
+    <meta property="og:title" content={`${title} — ChooChooTracker`} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content={new URL(`${base}/screenshots/song.png`, Astro.site).href} />
+    <link rel="canonical" href={new URL(path, Astro.site)} />
+    <link rel="icon" type="image/png" href={appIcon.src} />
+    <title>{title} — ChooChooTracker</title>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="site-header">
+      <a class="wordmark" href={home} aria-label="ChooChooTracker home"><img src={siteLogo.src} width="48" height="48" alt="" /></a>
+      <nav aria-label="Main navigation">
+        <a href={`${home}#explore`}>Explore</a>
+        <a href={`${base}/learn/`} aria-current={path.endsWith('/learn/') ? 'page' : undefined}>Learn</a>
+        <a href={`${base}/downloads/`} aria-current={path.endsWith('/downloads/') ? 'page' : undefined}>Downloads</a>
+        {!path.endsWith('/play/') && (<a class="nav-play" href={`${base}/play/`}>Launch web app <span aria-hidden="true">↗</span></a>)}
+      </nav>
+    </header>
+    <main id="main"><slot /></main>
+    <footer class="site-footer">
+      <div><a class="wordmark" href={home}><img src={siteLogo.src} width="40" height="40" alt="" /><span class="brand-name">ChooChoo<span>Tracker</span></span></a><p>Mobile groovebox. Multi-engine tracker. Choo choo.</p></div>
+      <nav aria-label="Community and project">
+        <a href="https://github.com/paiheulevrai/Choochootracker">GitHub</a>
+        <a href="https://discord.gg/Ut9vM6zgKU">Discord</a>
+        <a href="https://github.com/paiheulevrai/Choochootracker/issues">Report a bug</a>
+        <a href={`${base}/play/privacy.html`}>Web app privacy</a>
+      </nav>
+      <p class="credits">Built on ChipNomad. With code from Mutable Instruments and many generous contributors. <a href="https://github.com/paiheulevrai/Choochootracker#credits-and-license">Credits & licenses</a></p>
+    </footer>
+  </body>
+</html>

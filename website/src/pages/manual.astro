@@ -1,0 +1,29 @@
+---
+import Page from '../layouts/Page.astro';
+import '../styles/manual.css';
+import { Content, getHeadings } from '../../../docs/USER_MANUAL.md';
+const headings = getHeadings();
+const chapters = headings.filter(heading => heading.depth === 2).map(heading => {
+  const start = headings.indexOf(heading) + 1;
+  const end = headings.findIndex((next, index) => index >= start && next.depth <= 2);
+  return { ...heading, children: headings.slice(start, end < 0 ? undefined : end) };
+});
+---
+<Page title="User manual" description="ChooChooTracker instruments, controls, effects and workflow reference.">
+  <div class="manual-layout">
+    <aside class="manual-sidebar" aria-label="Manual contents">
+      <details class="manual-contents" open>
+        <summary>Contents</summary>
+        <nav aria-label="Manual chapters">
+          {chapters.map(chapter => (
+            <details class="manual-chapter">
+              <summary><a href={`#${chapter.slug}`}>{chapter.text}</a></summary>
+              <ul>{chapter.children.map(heading => <li class:list={{ 'manual-subtopic': heading.depth > 3 }}><a href={`#${heading.slug}`}>{heading.text}</a></li>)}</ul>
+            </details>
+          ))}
+        </nav>
+      </details>
+    </aside>
+    <article class="manual-content"><Content /></article>
+  </div>
+</Page>
