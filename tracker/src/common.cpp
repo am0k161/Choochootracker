@@ -111,23 +111,22 @@ void initDefaultAppSettings(void) {
   // Zero out key mapping (platform-specific defaults applied later)
   memset(&appSettings.keyMapping, 0, sizeof(KeyMapping));
 
-  // Color scheme defaults
-  appSettings.colorScheme.background = 0x050c1f;
-  appSettings.colorScheme.textEmpty = 0x10284a;
-  appSettings.colorScheme.textInfo = 0x52799b;
-  appSettings.colorScheme.textDefault = 0xc9bfa5;
-  appSettings.colorScheme.textLabel = 0x7d8fa6;
-  appSettings.colorScheme.textNames = 0x9fcf8f;
-  appSettings.colorScheme.valueBar = 0x64d6ff;
-  appSettings.colorScheme.textValue = 0xffd665;
-  appSettings.colorScheme.textTitles = 0xe6b84f;
-  appSettings.colorScheme.playMarkers = 0x64d6ff;
-  appSettings.colorScheme.cursor = 0x65d8ff;
-  appSettings.colorScheme.selection = 0x245072;
-  appSettings.colorScheme.warning = 0xff6655;
+  // Color scheme defaults: themes/Bb22200.cth
+  appSettings.colorScheme.background = 0x2e3032;
+  appSettings.colorScheme.textEmpty = 0xbfc0c0;
+  appSettings.colorScheme.textInfo = 0xd15000;
+  appSettings.colorScheme.textDefault = 0xc8cae2;
+  appSettings.colorScheme.textLabel = appSettings.colorScheme.textNames = appSettings.colorScheme.valueBar = -1;
+  appSettings.colorScheme.textValue = 0xff7000;
+  appSettings.colorScheme.textTitles = 0xff6e00;
+  appSettings.colorScheme.playMarkers = 0xffff4f;
+  appSettings.colorScheme.cursor = 0xff0f00;
+  appSettings.colorScheme.selection = 0xeaeae8;
+  appSettings.colorScheme.warning = 0xe45649;
+  colorSchemeFillMissing(&appSettings.colorScheme);
 
   // String defaults
-  strncpy(appSettings.themeName, "Choo", THEME_NAME_LENGTH);
+  strncpy(appSettings.themeName, "Bb22200", THEME_NAME_LENGTH);
   appSettings.themeName[THEME_NAME_LENGTH] = '\0';
   appSettings.projectFilename[0] = '\0';
 #ifdef WEB_BUILD
