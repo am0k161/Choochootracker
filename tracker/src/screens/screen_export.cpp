@@ -11,6 +11,9 @@
 #ifdef DESKTOP_BUILD
 #include "export/export_m8s.h"
 #endif
+#ifdef EXPORT_HAS_FUR
+#include "export/export_fur.h"
+#endif
 #include "midi/smf_file.h"
 #include <string.h>
 
@@ -191,6 +194,10 @@ int exportCommonColumnCount(int row) {
   } else if (row == EXPORT_ROW_LSDJ) {
     return 1;
 #endif
+#ifdef EXPORT_HAS_FUR
+  } else if (row == EXPORT_ROW_FUR) {
+    return 1;
+#endif
   }
   return 0;
 }
@@ -219,6 +226,9 @@ void exportCommonDrawStatic(void) {
 #ifdef EXPORT_HAS_LSDJ
   gfxPrint(0, EXPORT_ROW_LSDJ + 3, "LSDJ");
 #endif
+#ifdef EXPORT_HAS_FUR
+  gfxPrint(0, EXPORT_ROW_FUR + 3, "FURNACE");
+#endif
 }
 
 void exportCommonDrawCursor(int col, int row) {
@@ -245,6 +255,10 @@ void exportCommonDrawCursor(int col, int row) {
 #ifdef EXPORT_HAS_LSDJ
   } else if (row == EXPORT_ROW_LSDJ) {
     gfxCursor(13, EXPORT_ROW_LSDJ + 3, 26);
+#endif
+#ifdef EXPORT_HAS_FUR
+  } else if (row == EXPORT_ROW_FUR) {
+    gfxCursor(13, EXPORT_ROW_FUR + 3, 6);
 #endif
   }
 }
@@ -312,6 +326,10 @@ void exportCommonDrawField(int col, int row, CellState state) {
     } else {
       gfxPrint(13, line, "Choose template");
     }
+#endif
+#ifdef EXPORT_HAS_FUR
+  } else if (row == EXPORT_ROW_FUR) {
+    gfxPrint(13, EXPORT_ROW_FUR + 3, "Export");
 #endif
   }
 }
@@ -468,6 +486,37 @@ static void lsdjRunExport(void) {
 }
 #endif // EXPORT_HAS_LSDJ
 
+#ifdef EXPORT_HAS_FUR
+// Furnace export: no template, the module is built from the project alone.
+// The module goes next to the project file (the folder it was loaded from or
+// saved to), so that it sits with the project; a project that has no folder
+// yet uses the usual export folder.
+static void furRunExport(void) {
+  char exportPath[1024];
+  const char* name = appSettings.projectFilename[0] ? appSettings.projectFilename : "choochootracker";
+  if (appSettings.projectPath[0] && fileDirectoryExists(appSettings.projectPath)) {
+    snprintf(exportPath, sizeof(exportPath), "%s%c%s.fur", appSettings.projectPath, PATH_SEPARATOR, name);
+    for (int i = 1; i <= 999 && fileExists(exportPath); i++) {
+      snprintf(exportPath, sizeof(exportPath), "%s%c%s_%03d.fur", appSettings.projectPath, PATH_SEPARATOR, name, i);
+    }
+  } else {
+    if (exportEnsureProjectDir() != 0) {
+      screenMessage(MESSAGE_TIME_ERROR, "Cannot create export folder");
+      return;
+    }
+    generateExportPath(exportPath, sizeof(exportPath), "fur");
+  }
+  if (projectExportFur(&chipnomadState->project, exportPath) == 0) {
+    screenMessage(MESSAGE_TIME, "Exported %s", exportPath);
+#ifdef ANDROID_BUILD
+    fileExportDocument(exportPath, "application/octet-stream");
+#endif
+  } else {
+    screenMessage(MESSAGE_TIME_ERROR, "%s", projectExportFurError);
+  }
+}
+#endif // EXPORT_HAS_FUR
+
 int exportCommonOnEdit(int col, int row, CellEditAction action) {
   int handled = 0;
 
@@ -590,6 +639,14 @@ int exportCommonOnEdit(int col, int row, CellEditAction action) {
     } else if (action == CellEditAction::tap || action == CellEditAction::doubleTap) {
       if (lsdjTemplatePath[0]) lsdjRunExport();
       else lsdjPickTemplate();
+      handled = 1;
+    }
+#endif
+#ifdef EXPORT_HAS_FUR
+  } else if (row == EXPORT_ROW_FUR) {
+    if (currentExporter) return 1;
+    if (action == CellEditAction::tap || action == CellEditAction::doubleTap) {
+      furRunExport();
       handled = 1;
     }
 #endif
