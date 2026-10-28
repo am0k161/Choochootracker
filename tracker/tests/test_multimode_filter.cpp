@@ -1,5 +1,6 @@
 #include "doctest.h"
 #include "synth/multimode_filter.h"
+#include "synth/audio_math.h"
 
 #include <cmath>
 #include <initializer_list>
@@ -19,6 +20,99 @@ float toneRms(uint8_t character, uint8_t mode, bool slope24, float frequency,
   return sqrtf((float)(power / 4096.0));
 }
 
+// Reference equations before coefficient caching / the zero-resonance shortcut.
+// Keep the per-sample division and feedback evaluation to detect changes to the
+// sound or integrator history when resonance is modulated through zero.
+float referenceK35(k35_t& f, float input, float G, float K, bool highpass) {
+  const float H = 1.0f - G;
+  float feedback;
+  if (highpass) {
+    const float num = input + K * H * (H * f.z2 - f.z3 - H * G * f.z1);
+    const float u = num / (1.0f - K * H * H * G);
+    const float y = H * (u - f.z1);
+    feedback = H * (G * y + f.z2 * H - f.z3);
+  } else {
+    const float S1 = f.z1 * H;
+    const float u = (input + K * H * (S1 - f.z3)) / (1.0f - K * H * G);
+    feedback = H * (G * u + S1 - f.z3);
+  }
+  const float u = input + K * k35_tanh(feedback);
+  const float v1 = (u - f.z1) * G;
+  const float y1 = v1 + f.z1;
+  const float stage2Input = highpass ? H * (u - f.z1) : y1;
+  f.z1 = y1 + v1;
+  const float v2 = (stage2Input - f.z2) * G;
+  const float y2 = v2 + f.z2;
+  f.z2 = y2 + v2;
+  const float v3 = ((highpass ? y2 : y1) - f.z3) * G;
+  const float y3 = v3 + f.z3;
+  f.z3 = y3 + v3;
+  return highpass ? stage2Input - y2 : y2;
+}
+
+}
+
+TEST_CASE("Aggro optimization preserves the K35 response through resonance transitions") {
+  for (float rate : {32000.0f, 44100.0f, 48000.0f})
+    for (uint8_t mode = 0; mode < 3; ++mode)
+      for (bool slope24 : {false, true})
+        for (float level : {0.01f, 0.5f, 2.0f}) {
+          MultimodeFilter filter;
+          filter.init(rate);
+          k35_t reference[2][4] = {};
+          double errorPower = 0.0;
+          float maxError = 0.0f;
+          // Includes cutoff changes, silence, saturation, and nonzero -> zero
+          // -> nonzero resonance without resetting any integrator states.
+          const float resonances[] = {0.0f, 0.7f, 0.0f, 1.0f, 0.0f, 0.4f};
+          for (int segment = 0; segment < 6; ++segment) {
+            const float cutoff = segment < 3 ? 1000.0f : rate * 0.4f;
+            const float resonance = resonances[segment];
+            const float g = tanf(3.14159265358979323846f * cutoff / rate);
+            const float G = g / (1.0f + g), K = 1.99f * resonance * resonance;
+            for (int i = 0; i < 4096; ++i) {
+              // Repeated configure calls must not reset the filter's history.
+              if (!(i % 64)) filter.configure(true, 3, mode, slope24, cutoff, resonance);
+              for (int channel = 0; channel < 2; ++channel) {
+                const float input = i >= 3072 ? 0.0f : level *
+                  (sinf((i + segment * 4096) * (0.073f + channel * 0.01f)) +
+                   0.3f * sinf(i * 0.193f));
+                float expected = audioTanh(input * 1.4f);
+                const int cells = slope24 ? 2 : 1;
+                for (int cell = 0; cell < cells; ++cell)
+                  expected = referenceK35(reference[channel][cell], expected, G, K, mode != 0);
+                if (mode == 1)
+                  for (int cell = 0; cell < cells; ++cell)
+                    expected = referenceK35(reference[channel][cell + 2], expected, G, K, false);
+                expected = audioTanh(expected * 1.2f);
+                const float output = filter.process(input, channel);
+                REQUIRE(std::isfinite(output));
+                const float error = fabsf(output - expected);
+                maxError = fmaxf(maxError, error);
+                errorPower += double(error) * error;
+              }
+            }
+          }
+          INFO("rate=", rate, " mode=", int(mode), " slope24=", slope24, " level=", level);
+          CHECK(maxError < 0.0001f);
+          CHECK(sqrt(errorPower / (6 * 4096 * 2)) < 0.00001);
+        }
+}
+
+TEST_CASE("Aggro coefficient cache refreshes after a character or sample rate change") {
+  MultimodeFilter reused;
+  for (float rate : {32000.0f, 44100.0f, 48000.0f}) {
+    reused.init(rate);
+    reused.configure(true, 1, 0, false, 1000.0f, 0.7f);
+    reused.configure(true, 3, 0, false, 1000.0f, 0.7f);
+    MultimodeFilter fresh;
+    fresh.init(rate);
+    fresh.configure(true, 3, 0, false, 1000.0f, 0.7f);
+    for (int i = 0; i < 2048; ++i) {
+      const float input = 0.5f * sinf(i * 0.1f);
+      CHECK(reused.process(input) == fresh.process(input));
+    }
+  }
 }
 
 TEST_CASE("filter cutoff control is exponential and round-trips") {

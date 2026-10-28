@@ -41,7 +41,7 @@ class MultimodeFilter {
   float snarlDelaySamples_[2] = {};
   float snarlTargetDelay_ = 64.0f;
   int snarlWrite_[2] = {};
-  float k35G_ = 0.0f, k35K_ = 0.0f;
+  k35_coefficients_t k35Coefficients_ = {};
   k35_t k35_[2][4] = {};
   rosic::TeeBeeFilter acid_[2];
   float acidBassState_[2] = {};

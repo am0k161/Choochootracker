@@ -23,8 +23,9 @@
  *   - Vadim Zavalishin, "The Art of VA Filter Design" (TPT framework)
  *
  * License: MIT (matches the parent Aphex module).
- * ChooChooTracker adaptation: G and K are calculated on parameter changes,
- * and the HP output uses its second pole for a 12 dB/octave response.
+ * ChooChooTracker adaptation: coefficients are calculated on parameter changes;
+ * zero resonance skips the feedback calculation but still updates all states.
+ * The HP output uses its second pole for a 12 dB/octave response.
  */
 
 #ifndef APHEX_K35_H
@@ -39,6 +40,22 @@
 typedef struct {
     float z1, z2, z3;   /* TPT integrator states (LP-side memories of each one-pole) */
 } k35_t;
+
+/* Shared by all cells/channels; none of these terms depend on audio samples. */
+typedef struct {
+    float G, K, H, KH, HG;
+    float inverseLpfDenom, inverseHpfDenom;
+} k35_coefficients_t;
+
+static inline void k35_configure(k35_coefficients_t *c, float G, float K) {
+    c->G = G;
+    c->K = K;
+    c->H = 1.0f - G;
+    c->KH = K * c->H;
+    c->HG = c->H * G;
+    c->inverseLpfDenom = 1.0f / (1.0f - c->KH * G);
+    c->inverseHpfDenom = 1.0f / (1.0f - c->KH * c->H * G);
+}
 
 static inline void k35_reset(k35_t *f) {
     f->z1 = 0.0f;
@@ -85,21 +102,19 @@ static inline float k35_tanh(float x) {
  *  We use that to predict y_hp1 (the resonance feedback signal), apply tanh
  *  to that signal alone, then recompute u from saturated feedback.
  */
-static inline float k35_lpf_tick(k35_t *f, float in, float G, float K) {
-    float H = 1.0f - G;             /* H = 1/(1+g) */
-
-    float S1 = f->z1 * H;           /* LPF1 zero-input output */
-
-    /* === Predictor: linear loop solution === */
-    float feed_S    = K * H * (S1 - f->z3);
-    float denom     = 1.0f - K * H * G;
-    float u_lin     = (in + feed_S) / denom;
-    float y_lp1_pre = G * u_lin + S1;                       /* LPF1 prediction */
-    float y_hp1_pre = H * (y_lp1_pre - f->z3);              /* HPF1 = feedback */
-
-    /* === Corrector: saturate ONLY the feedback signal === */
-    float fb = K * k35_tanh(y_hp1_pre);
-    float u  = in + fb;
+static inline float k35_lpf_tick(k35_t *f, float in, const k35_coefficients_t *c) {
+    const float G = c->G;
+    float u = in;
+    if (c->K != 0.0f) {
+        float S1 = f->z1 * c->H;
+        /* Predictor: linear loop solution. */
+        float feed_S = c->KH * (S1 - f->z3);
+        float u_lin = (in + feed_S) * c->inverseLpfDenom;
+        float y_lp1_pre = G * u_lin + S1;
+        float y_hp1_pre = c->H * (y_lp1_pre - f->z3);
+        /* Corrector: saturate ONLY the feedback signal. */
+        u += c->K * k35_tanh(y_hp1_pre);
+    }
 
     /* === State updates with corrected u === */
     /* LPF1 */
@@ -140,20 +155,19 @@ static inline float k35_lpf_tick(k35_t *f, float in, float G, float K) {
  *      b_pre = HPF3(a_pre) = (1-G)·(a_pre - z3)
  *  Saturate b_pre, recompute u, run the integrators.
  */
-static inline float k35_hpf_tick(k35_t *f, float in, float G, float K) {
-    float H = 1.0f - G;
-
-    /* === Predictor: linear loop solution === */
-    float num   = in + K * H * (H * f->z2 - f->z3 - H * G * f->z1);
-    float denom = 1.0f - K * H * H * G;
-    float u_lin = num / denom;
-    float y_pre = H * (u_lin - f->z1);              /* predicted HPF1 output */
-    float a_pre = G * y_pre + f->z2 * H;            /* predicted LPF1 output */
-    float b_pre = H * (a_pre - f->z3);              /* predicted HPF3 output = feedback */
-
-    /* === Corrector: saturate feedback only === */
-    float fb = K * k35_tanh(b_pre);
-    float u  = in + fb;
+static inline float k35_hpf_tick(k35_t *f, float in, const k35_coefficients_t *c) {
+    const float G = c->G, H = c->H;
+    float u = in;
+    if (c->K != 0.0f) {
+        /* Predictor: linear loop solution. */
+        float num = in + c->KH * (H * f->z2 - f->z3 - c->HG * f->z1);
+        float u_lin = num * c->inverseHpfDenom;
+        float y_pre = H * (u_lin - f->z1);
+        float a_pre = G * y_pre + f->z2 * H;
+        float b_pre = H * (a_pre - f->z3);
+        /* Corrector: saturate feedback only. */
+        u += c->K * k35_tanh(b_pre);
+    }
 
     /* === Output and state updates === */
     float y = H * (u - f->z1);                      /* K35 HPF output */

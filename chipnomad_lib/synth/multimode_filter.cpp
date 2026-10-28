@@ -46,13 +46,19 @@ void MultimodeFilter::configure(bool enabled, uint8_t character, uint8_t mode,
   mode_ = mode > 2 ? 0 : mode;
   slope24dB_ = slope24dB;
   color_ = color;
-  cutoffHz_ = clampCutoff(cutoffHz, sampleRate_);
-  resonance_ = fmaxf(0.0f, fminf(1.0f, resonance));
+  const float nextCutoff = clampCutoff(cutoffHz, sampleRate_);
+  const float nextResonance = fmaxf(0.0f, fminf(1.0f, resonance));
+  const bool coefficientsChanged = characterChanged || nextCutoff != cutoffHz_ ||
+                                   nextResonance != resonance_;
+  cutoffHz_ = nextCutoff;
+  resonance_ = nextResonance;
 
   if (character_ == 3) {
-    const float g = tanf(kPi * cutoffHz_ / sampleRate_);
-    k35G_ = g / (1.0f + g);
-    k35K_ = 1.99f * resonance_ * resonance_;
+    if (coefficientsChanged) {
+      const float g = tanf(kPi * cutoffHz_ / sampleRate_);
+      k35_configure(&k35Coefficients_, g / (1.0f + g),
+                    1.99f * resonance_ * resonance_);
+    }
   } else if (character_ == 4) {
     const int selected = mode_ == 0
       ? (slope24dB_ ? rosic::TeeBeeFilter::TB_303 : rosic::TeeBeeFilter::LP_12)
@@ -141,14 +147,14 @@ float MultimodeFilter::processAggro(float input, int channel) {
   const int cells = slope24dB_ ? 2 : 1;
   if (mode_ == 1) {
     for (int i = 0; i < cells; ++i)
-      output = k35_hpf_tick(&k35_[channel][i], output, k35G_, k35K_);
+      output = k35_hpf_tick(&k35_[channel][i], output, &k35Coefficients_);
     for (int i = 0; i < cells; ++i)
-      output = k35_lpf_tick(&k35_[channel][i + 2], output, k35G_, k35K_);
+      output = k35_lpf_tick(&k35_[channel][i + 2], output, &k35Coefficients_);
   } else {
     for (int i = 0; i < cells; ++i) {
       k35_t* cell = &k35_[channel][i];
-      output = mode_ == 2 ? k35_hpf_tick(cell, output, k35G_, k35K_)
-                          : k35_lpf_tick(cell, output, k35G_, k35K_);
+      output = mode_ == 2 ? k35_hpf_tick(cell, output, &k35Coefficients_)
+                          : k35_lpf_tick(cell, output, &k35Coefficients_);
     }
   }
   return audioTanh(output * 1.2f);
