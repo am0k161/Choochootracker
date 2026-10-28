@@ -174,6 +174,7 @@ struct AppSettings {
   int audioInputDeviceCount;
   // Armed capture devices as indices into audioInputDeviceNames, -1 = empty.
   int8_t audioInputArmed[AUDIO_INPUT_MAX_ARMED];
+  int audioInputEnabled; // hardware capture master switch; internal track routing is unaffected
   int audioInputMonitor; // 1 = route capture to output at -6 dB
   char recordingPath[PATH_LENGTH + 1]; // Last recording output folder
 };

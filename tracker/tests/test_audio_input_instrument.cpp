@@ -47,20 +47,20 @@ TEST_CASE("Audio in capture is stereo and independent from dry monitoring") {
   manager.setMonitor(1);
   int16_t input[] = {8192, -16384, 4096, -8192};
   manager.onCapture(input, 2, 2);
-  float live[8]; manager.readLiveInput(live, 4);
+  float live[8]; REQUIRE(manager.readLiveInput(live, 4));
   CHECK(live[0] == .25f); CHECK(live[1] == -.5f);
   CHECK(live[2] == .125f); CHECK(live[3] == -.25f);
   for (int i = 4; i < 8; ++i) CHECK(live[i] == 0);
-  int16_t monitor[4]{}; manager.mixMonitor(monitor, 2);
-  CHECK(monitor[0] == 4096); CHECK(monitor[1] == -8192);
+  float monitor[4]{}; manager.mixMonitor(monitor, 2);
+  CHECK(monitor[0] == .125f); CHECK(monitor[1] == -.25f);
   int16_t mono[] = {8192, -4096}; manager.onCapture(mono, 2, 1);
-  manager.readLiveInput(live, 2);
+  REQUIRE(manager.readLiveInput(live, 2));
   CHECK(live[0] == .25f); CHECK(live[1] == .25f);
   CHECK(live[2] == -.125f); CHECK(live[3] == -.125f);
   std::vector<int16_t> backlog(4096 * 2);
   for (int i = 0; i < 4096; ++i) { backlog[i * 2] = i; backlog[i * 2 + 1] = -i; }
   manager.onCapture(backlog.data(), 4096, 2);
-  float recent[128]; manager.readLiveInput(recent, 64);
+  float recent[128]; REQUIRE(manager.readLiveInput(recent, 64));
   CHECK(recent[0] == doctest::Approx(3008 / 32768.0f));
   CHECK(recent[1] == doctest::Approx(-3008 / 32768.0f));
 }

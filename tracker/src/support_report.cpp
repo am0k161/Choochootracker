@@ -1,6 +1,7 @@
 #include "support_report.h"
 
 #include "audio_manager.h"
+#include "audio_input_manager.h"
 #include "common.h"
 #include "corelib/corelib_file.h"
 #include "corelib/corelib_mainloop.h"
@@ -109,6 +110,9 @@ int supportReportWrite(const char* path, const char* screenName) {
   fprintf(file, "audio.buffer_size=%d\n", appSettings.audioBufferSize);
   fprintf(file, "audio.cpu_load_percent=%d\n",
           audioManager.getCpuLoadPercent ? audioManager.getCpuLoadPercent() : -1);
+  fprintf(file, "audio.input_enabled=%d\n", appSettings.audioInputEnabled);
+  fprintf(file, "audio.input_armed=%d\n", audioInputManager.armedCount());
+  fprintf(file, "audio.input_capture_open=%d\n", audioInputManager.captureOpen() ? 1 : 0);
   fprintf(file, "ui.target_fps=%d\n", mainLoopGetTargetFps());
   fprintf(file, "ui.frame_time_us=%d\n", mainLoopGetFrameTimeUs());
   fprintf(file, "ui.audio_monitor_active=%d\n", monitorDisplayActive() ? 1 : 0);

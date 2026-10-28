@@ -106,6 +106,7 @@ void initDefaultAppSettings(void) {
   appSettings.audioInputDeviceCount = 0;
   memset(appSettings.audioInputDeviceNames, 0, sizeof(appSettings.audioInputDeviceNames));
   for (int i = 0; i < AUDIO_INPUT_MAX_ARMED; i++) appSettings.audioInputArmed[i] = -1;
+  appSettings.audioInputEnabled = 0;
   appSettings.audioInputMonitor = 0;
   appSettings.recordingPath[0] = '\0';
 
@@ -283,6 +284,7 @@ int settingsSave(void) {
     if (appSettings.audioInputArmed[i] >= 0 && appSettings.audioInputArmed[i] < appSettings.audioInputDeviceCount)
       fprintf(file, "audioInputArmed.%d: %s\n", i, appSettings.audioInputDeviceNames[appSettings.audioInputArmed[i]]);
   }
+  fprintf(file, "audioInputEnabled: %d\n", appSettings.audioInputEnabled);
   fprintf(file, "audioInputMonitor: %d\n", appSettings.audioInputMonitor);
   fprintf(file, "recordingPath: %s\n", appSettings.recordingPath);
 
@@ -366,6 +368,7 @@ int settingsLoad(void) {
   // Colours the file doesn't have are filled in after reading it.
   appSettings.colorScheme.textLabel = appSettings.colorScheme.textNames = appSettings.colorScheme.valueBar = -1;
   bool hasClockSource = false;
+  bool hasAudioInputEnabled = false;
   while (fgets(lineBuffer, sizeof(lineBuffer), file) != NULL) {
     char* line = lineBuffer;
     // Strip newline characters from the end of the line
@@ -536,6 +539,12 @@ int settingsLoad(void) {
           appSettings.audioInputArmed[slot] = (int8_t)index;
         }
       }
+    } else if (strncmp(line, "audioInputEnabled: ", 19) == 0) {
+      int enabled;
+      if (sscanf(line + 19, "%d", &enabled) == 1 && (enabled == 0 || enabled == 1)) {
+        appSettings.audioInputEnabled = enabled;
+        hasAudioInputEnabled = true;
+      }
     } else if (strncmp(line, "audioInputMonitor: ", 19) == 0) {
       int enabled;
       if (sscanf(line + 19, "%d", &enabled) == 1 && (enabled == 0 || enabled == 1))
@@ -687,6 +696,11 @@ int settingsLoad(void) {
   for (int i = 0; i < AUDIO_INPUT_MAX_ARMED; i++) {
     if (appSettings.audioInputArmed[i] >= appSettings.audioInputDeviceCount) appSettings.audioInputArmed[i] = -1;
   }
+  if (!hasAudioInputEnabled) {
+    for (int i = 0; i < AUDIO_INPUT_MAX_ARMED; ++i)
+      if (appSettings.audioInputArmed[i] >= 0) appSettings.audioInputEnabled = 1;
+  }
+  if (appSettings.audioInputEnabled != 0 && appSettings.audioInputEnabled != 1) appSettings.audioInputEnabled = 0;
   if (appSettings.audioInputMonitor != 0 && appSettings.audioInputMonitor != 1) appSettings.audioInputMonitor = 0;
   return 0;
 }

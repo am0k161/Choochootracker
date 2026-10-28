@@ -143,22 +143,17 @@ static void audioCallback(int16_t* buffer, int stereoSamples) {
   // A short render is normal when a song ends. Preserve its valid prefix;
   // pre-clear also makes an early render failure safe without stale samples.
   memset(floatBuffer, 0, stereoSamples * 2 * sizeof(*floatBuffer));
-  audioInputManager.readLiveInput(samplePreviewBuffer, stereoSamples);
-  chipnomadRender(chipnomadState, floatBuffer, stereoSamples, samplePreviewBuffer);
+  const bool hasLiveInput = appSettings.audioInputEnabled &&
+    audioInputManager.readLiveInput(samplePreviewBuffer, stereoSamples);
+  chipnomadRender(chipnomadState, floatBuffer, stereoSamples,
+    hasLiveInput ? samplePreviewBuffer : nullptr);
   renderPreview(samplePreviewBuffer, stereoSamples);
   for (int i = 0; i < stereoSamples * 2; ++i) floatBuffer[i] += samplePreviewBuffer[i];
 
-  // Convert float to int16_t
-  for (int i = 0; i < stereoSamples * 2; i++) {
-    const float sample = floatBuffer[i];
-    buffer[i] = !std::isfinite(sample) ? 0 :
-      (int16_t)(sample >= 1.0f ? 32767 : sample <= -1.0f ? -32768 : sample * 32767.0f);
-  }
-
   // Audio input monitoring (Phase 2.4): route armed capture into the output
   // when enabled. No-op (single atomic load) when monitor is off.
-  audioInputManager.mixMonitor(buffer, stereoSamples);
-  outputLimiter.process(buffer, floatBuffer, stereoSamples, aSampleRate);
+  audioInputManager.mixMonitor(floatBuffer, stereoSamples);
+  outputLimiter.process(floatBuffer, buffer, stereoSamples);
 
   const auto elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
     std::chrono::steady_clock::now() - startedAt).count();
@@ -175,7 +170,7 @@ static int start(int sampleRate, int bufferSize) {
 
   aSampleRate = sampleRate;
   aBufferSize = bufferSize;
-  outputLimiter.reset();
+  outputLimiter.reset(sampleRate);
   cpuLoadPercent.store(0, std::memory_order_relaxed);
   memset(&samplePreview, 0, sizeof(samplePreview));
   samplePreviewVoice.init((float)sampleRate);
@@ -247,6 +242,7 @@ static int reconfigure(int sampleRate, int bufferSize) {
   samplePreviewBuffer = newPreviewBuffer;
   aSampleRate = sampleRate;
   aBufferSize = bufferSize;
+  outputLimiter.reset(sampleRate);
   cpuLoadPercent.store(0, std::memory_order_relaxed);
   if (audioSetup(audioCallback, sampleRate, bufferSize) == 0) {
     if (sampleRate != oldSampleRate && audioInputManager.reconfigureRate(sampleRate)) {
@@ -272,6 +268,7 @@ static int reconfigure(int sampleRate, int bufferSize) {
   samplePreviewBuffer = oldPreviewBuffer;
   aSampleRate = oldSampleRate;
   aBufferSize = oldBufferSize;
+  outputLimiter.reset(oldSampleRate);
   free(newFloatBuffer);
   free(newPreviewBuffer);
   if (audioSetup(audioCallback, oldSampleRate, oldBufferSize) == 0) {
@@ -296,6 +293,7 @@ static int restart(void) {
   if (!floatBuffer || !samplePreviewBuffer) return 1;
   audioPause(1);
   audioCleanup();
+  outputLimiter.reset(aSampleRate);
   if (audioSetup(audioCallback, aSampleRate, aBufferSize)) return 1;
   audioPause(0);
   return 0;
@@ -305,6 +303,7 @@ static int refreshDevices(void) {
   if (!floatBuffer || !samplePreviewBuffer) return 1;
   audioPause(1);
   audioCleanup();
+  outputLimiter.reset(aSampleRate);
   if (audioInputRefreshDevices()) return 1;
   if (audioSetup(audioCallback, aSampleRate, aBufferSize)) {
     if (!appSettings.audioOutputDeviceName[0]) return 1;

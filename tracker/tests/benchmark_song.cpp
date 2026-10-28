@@ -1,8 +1,10 @@
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <cstdlib>
+#include <cstdint>
 #include <vector>
 
 #include "chipnomad_lib.h"
@@ -10,14 +12,58 @@
 #include "playback.h"
 #include "project.h"
 #include "screens/screens.h"
+#include "output_safety_limiter.h"
 
 void getSelectionBounds(ScreenData*, int*, int*, int*, int*) {}
 
 namespace {
-constexpr int kBlockFrames = 2048;
+constexpr int kBlockFrames = 1024;
 constexpr int kWarmupSeconds = 3;
 constexpr int kMeasuredSeconds = 20;
 constexpr int kRounds = 5;
+
+class LegacyOutputLimiter {
+ public:
+  void reset() {
+    gain_ = 1.0f;
+    previousInput_[0] = previousInput_[1] = 0.0f;
+    previousOutput_[0] = previousOutput_[1] = 0.0f;
+  }
+
+  void process(const float* mix, int16_t* output, float* scratch, int frames, int sampleRate) {
+    const int count = frames * 2;
+    for (int i = 0; i < count; ++i) {
+      const float sample = mix[i];
+      output[i] = !std::isfinite(sample) ? 0 :
+        (int16_t)(sample >= 1.0f ? 32767 : sample <= -1.0f ? -32768 : sample * 32767.0f);
+    }
+    const float dcDecay = std::exp(-94.24778f / sampleRate);
+    double power = 0.0;
+    float peak = 0.0f;
+    for (int i = 0; i < count; ++i) {
+      const float sample = output[i] / 32768.0f;
+      const int channel = i & 1;
+      const float filtered = sample - previousInput_[channel] + dcDecay * previousOutput_[channel];
+      previousInput_[channel] = sample;
+      previousOutput_[channel] = filtered;
+      scratch[i] = filtered;
+      power += filtered * filtered;
+      peak = std::max(peak, std::fabs(filtered));
+    }
+    const float rms = std::sqrt(power / count);
+    float target = 1.0f;
+    if (peak > 0.8f) target = 0.8f / peak;
+    if (rms > 0.35f) target = std::min(target, 0.35f / rms);
+    gain_ = std::min(target, gain_ + frames / (0.25f * sampleRate));
+    for (int i = 0; i < count; ++i)
+      output[i] = static_cast<int16_t>(scratch[i] * gain_ * 32767.0f);
+  }
+
+ private:
+  float gain_ = 1.0f;
+  float previousInput_[2] = {};
+  float previousOutput_[2] = {};
+};
 
 void configureVariant(Project* project, const char* variant) {
   if (!std::strcmp(variant, "no-effects")) {
@@ -53,7 +99,8 @@ void configureVariant(Project* project, const char* variant) {
   }
 }
 
-double render(Project* project, int sampleRate, int seconds, const char* variant, volatile double* checksum) {
+double render(Project* project, int sampleRate, int seconds, const char* variant,
+              const char* pipeline, int startRow, volatile double* checksum) {
   ChipNomadState* state = chipnomadCreate();
   if (!state) return -1.0;
   state->ownsProjectResources = 0;
@@ -64,9 +111,15 @@ double render(Project* project, int sampleRate, int seconds, const char* variant
   chipnomadReserveRenderBuffers(state, kBlockFrames);
   state->benchmarkBypassPan = !std::strcmp(variant, "no-pan");
   if (!std::strcmp(variant, "no-monitor")) state->audioMonitor->setEnabled(false);
-  playbackStartSong(&state->playbackState, 0, 0, 1);
+  playbackStartSong(&state->playbackState, startRow, 0, 1);
 
   std::vector<float> buffer(kBlockFrames * 2);
+  std::vector<float> scratch(kBlockFrames * 2);
+  std::vector<int16_t> output(kBlockFrames * 2);
+  OutputSafetyLimiter limiter;
+  LegacyOutputLimiter legacyLimiter;
+  limiter.reset(sampleRate);
+  legacyLimiter.reset();
   int remaining = seconds * sampleRate;
   const auto started = std::chrono::steady_clock::now();
   while (remaining > 0) {
@@ -75,7 +128,12 @@ double render(Project* project, int sampleRate, int seconds, const char* variant
       chipnomadDestroy(state);
       return -1.0;
     }
-    *checksum += buffer[(remaining / kBlockFrames) % (frames * 2)];
+    if (!std::strcmp(pipeline, "optimized"))
+      limiter.process(buffer.data(), output.data(), frames);
+    else if (!std::strcmp(pipeline, "legacy"))
+      legacyLimiter.process(buffer.data(), output.data(), scratch.data(), frames, sampleRate);
+    const int sample = (remaining / kBlockFrames) % (frames * 2);
+    *checksum += !std::strcmp(pipeline, "none") ? buffer[sample] : output[sample];
     remaining -= frames;
   }
   const double elapsed = std::chrono::duration<double>(
@@ -89,8 +147,10 @@ int main(int argc, char** argv) {
   const char* path = argc > 1 ? argv[1] : "packaging/common/projects/alf dance.cct";
   const int sampleRate = argc > 2 ? std::atoi(argv[2]) : 96000;
   const char* variant = argc > 3 ? argv[3] : "full";
-  if (sampleRate != 48000 && sampleRate != 96000) {
-    std::fprintf(stderr, "Sample rate must be 48000 or 96000\n");
+  const char* pipeline = argc > 4 ? argv[4] : "optimized";
+  const int startRow = argc > 5 ? (int)std::strtol(argv[5], nullptr, 0) : 0;
+  if (sampleRate != 32000 && sampleRate != 44100 && sampleRate != 48000 && sampleRate != 96000) {
+    std::fprintf(stderr, "Sample rate must be 32000, 44100, 48000 or 96000\n");
     return 1;
   }
   Project project;
@@ -106,14 +166,21 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "Unknown variant: %s\n", variant);
     return 1;
   }
+  if (std::strcmp(pipeline, "optimized") && std::strcmp(pipeline, "legacy") &&
+      std::strcmp(pipeline, "none")) {
+    std::fprintf(stderr, "Output pipeline must be optimized, legacy or none\n");
+    return 1;
+  }
   configureVariant(&project, variant);
-  std::printf("variant: %s, sample rate: %d\n", variant, sampleRate);
+  std::printf("variant: %s, output: %s, sample rate: %d, start row: %02X\n",
+              variant, pipeline, sampleRate, startRow);
 
   volatile double checksum = 0.0;
-  if (render(&project, sampleRate, kWarmupSeconds, variant, &checksum) < 0.0) return 1;
+  if (render(&project, sampleRate, kWarmupSeconds, variant, pipeline, startRow, &checksum) < 0.0)
+    return 1;
   std::vector<double> results;
   for (int round = 0; round < kRounds; ++round) {
-    double elapsed = render(&project, sampleRate, kMeasuredSeconds, variant, &checksum);
+    double elapsed = render(&project, sampleRate, kMeasuredSeconds, variant, pipeline, startRow, &checksum);
     if (elapsed < 0.0) return 1;
     results.push_back(elapsed);
     std::printf("round %d: %.6f s (%.2f%% realtime)\n", round + 1, elapsed,

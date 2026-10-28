@@ -169,6 +169,8 @@ void AudioInputManager::closeCaptureIfIdle() {
     if (armed_[i] >= 0) return;
   audioInputCleanup();
   captureOpen_ = false;
+  monitorRing_.clear();
+  liveRing_.clear();
 }
 
 void AudioInputManager::onCaptureTrampoline(const int16_t* buffer, int stereoSamples, int channels) {
@@ -369,7 +371,7 @@ unsigned int audioInputManagerRecordingDroppedCount(void) {
   return ring ? ring->dropped.load(std::memory_order_relaxed) : 0;
 }
 
-void AudioInputManager::mixMonitor(int16_t* buffer, int stereoSamples) {
+void AudioInputManager::mixMonitor(float* buffer, int stereoSamples) {
   if (!monitor_.load(std::memory_order_acquire)) return;
   // Route the first armed slot's live capture into the output at -6 dB to
   // avoid feedback. Uses a dedicated monitor ring so monitoring never
@@ -379,12 +381,9 @@ void AudioInputManager::mixMonitor(int16_t* buffer, int stereoSamples) {
     // monitorChunk_ holds 1024 stereo frames; clamp for larger buffer sizes.
     int want = stereoSamples < 1024 ? stereoSamples : 1024;
     int popped = monitorRing_.pop(monitorChunk_, want);
-    for (int i = 0; i < popped * 2; ++i) {
-      int mixed = buffer[i] + ((monitorChunk_[i] * monitorGain_) >> 15);
-      if (mixed > 32767) mixed = 32767;
-      if (mixed < -32768) mixed = -32768;
-      buffer[i] = (int16_t)mixed;
-    }
+    const float gain = monitorGain_ / 32768.0f;
+    for (int i = 0; i < popped * 2; ++i)
+      buffer[i] += monitorChunk_[i] / 32768.0f * gain;
     break;
   }
 }
@@ -401,22 +400,27 @@ AudioInputRing* AudioInputManager::ring(int armedSlot) {
   return &rings_[armedSlot];
 }
 
-void AudioInputManager::readLiveInput(float* stereo, int frames) {
+bool AudioInputManager::readLiveInput(float* stereo, int frames) {
+  if (!stereo || frames <= 0) return false;
   // Capture and output clocks can drift. Bound live latency without touching
   // the recorder ring; only the output consumer advances this read cursor.
   unsigned int available = (liveRing_.head.load(std::memory_order_acquire) + AudioInputRing::CAPACITY -
     liveRing_.tail.load(std::memory_order_relaxed)) % AudioInputRing::CAPACITY;
+  if (!available) return false;
   int excess = (int)available - frames - 1024;
   while (excess > 0) {
     int dropped = liveRing_.pop(liveChunk_, std::min(excess, 1024));
     if (!dropped) break;
     excess -= dropped;
   }
+  bool read = false;
   for (int offset = 0; offset < frames;) {
     int want = std::min(frames - offset, 1024);
     int got = liveRing_.pop(liveChunk_, want);
+    read |= got > 0;
     for (int i = 0; i < want * 2; ++i)
       stereo[offset * 2 + i] = i < got * 2 ? liveChunk_[i] / 32768.0f : 0.0f;
     offset += want;
   }
+  return read;
 }

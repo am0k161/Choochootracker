@@ -48,6 +48,9 @@ TEST_CASE("support report writes a bounded runtime summary") {
     CHECK(report.find("platform=") != std::string::npos);
     CHECK(report.find("screen=Settings\n") != std::string::npos);
     CHECK(report.find("audio.sample_rate=48000\n") != std::string::npos);
+    CHECK(report.find("audio.input_enabled=0\n") != std::string::npos);
+    CHECK(report.find("audio.input_armed=0\n") != std::string::npos);
+    CHECK(report.find("audio.input_capture_open=0\n") != std::string::npos);
     CHECK(report.find("runtime.command_overflow=") != std::string::npos);
     CHECK(report.find("runtime.render_buffer_overflow=") != std::string::npos);
     CHECK(report.find("playback.is_playing=") != std::string::npos);
@@ -63,6 +66,7 @@ TEST_CASE("support report writes a bounded runtime summary") {
     CHECK(report.find("project.title=") == std::string::npos);
     CHECK(report.find("project.author=") == std::string::npos);
   }
+  input.close();
 
   chipnomadDestroy(state);
   chipnomadState = savedState;

@@ -89,11 +89,11 @@ class AudioInputManager {
 
   // Audio thread (output callback). Mixes monitored capture into the output
   // buffer after chipnomadRender(). No-op when monitor is off.
-  void mixMonitor(int16_t* buffer, int stereoSamples);
+  void mixMonitor(float* buffer, int stereoSamples);
 
   // Output callback: independent of recorder and dry monitor consumption.
-  // Always drain, including while stopped, so the next note uses live audio.
-  void readLiveInput(float* stereo, int frames);
+  // Returns false without touching the destination when no live data exists.
+  bool readLiveInput(float* stereo, int frames);
 
   // Test/diagnostic hooks.
   unsigned int droppedCount() const;

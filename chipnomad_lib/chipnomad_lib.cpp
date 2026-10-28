@@ -799,15 +799,24 @@ struct TrackPanMix {
 };
 
 static void updateAudioInputRoutedTracks(ChipNomadState* state) {
-  state->audioInputRoutedTrackMask = 0;
+  uint8_t mask = 0;
   for (int track = 0; track < state->audioProject.tracksCount; ++track) {
     int instrumentIdx = state->playbackState.tracks[track].note.instrument;
     if (instrumentIdx >= PROJECT_MAX_INSTRUMENTS) continue;
     const Instrument& instrument = state->audioProject.instruments[instrumentIdx];
     if (instrument.type == InstrumentType::AudioIn && instrument.audioInputSource > InstrumentAudioInputSource::external &&
         (int)instrument.audioInputSource <= PROJECT_MAX_TRACKS)
-      state->audioInputRoutedTrackMask |= (uint8_t)(1u << ((int)instrument.audioInputSource - 1));
+      mask |= (uint8_t)(1u << ((int)instrument.audioInputSource - 1));
   }
+  const uint8_t added = mask & ~state->audioInputRoutedTrackMask;
+  for (int track = 0; track < PROJECT_MAX_TRACKS; ++track)
+    if (added & (1u << track)) {
+      memset(state->audioInputTrackCurrent + (size_t)track * state->mixBufferSize, 0,
+        (size_t)state->mixBufferSize * sizeof(float));
+      memset(state->audioInputTrackPrevious + (size_t)track * state->mixBufferSize, 0,
+        (size_t)state->mixBufferSize * sizeof(float));
+    }
+  state->audioInputRoutedTrackMask = mask;
 }
 
 static TrackPanMix makeTrackPanMix(ChipNomadState* state, int instrumentPan, int trackPan) {
@@ -841,11 +850,13 @@ static inline void mixTrackChannel(ChipNomadState* state, int trackIdx,
     state->insertBuffer[(size_t)trackIdx * state->mixBufferSize + sampleIndex] += sample;
     return;
   }
-  state->audioInputTrackCurrent[(size_t)trackIdx * state->mixBufferSize + sampleIndex] += sample;
+  const bool routed = state->audioInputRoutedTrackMask & (1u << trackIdx);
+  if (routed)
+    state->audioInputTrackCurrent[(size_t)trackIdx * state->mixBufferSize + sampleIndex] += sample;
   state->audioMonitor->add(trackIdx, sampleIndex, sample);
   if (audioRecorderWantsTrackSample(trackIdx))
     audioRecorderCaptureTrackSample(trackIdx, sampleIndex, sample);
-  if (state->audioInputRoutedTrackMask & (1u << trackIdx)) return;
+  if (routed) return;
   float previous = *mix;
   *mix += sample;
   if (reverbSend != 0.0f) *reverb += sample * reverbSend;
@@ -1526,9 +1537,10 @@ static int prepareRenderChunk(ChipNomadState* state, float* output, int frames) 
     state->audioCommands->setRenderBufferOverflow();
     return 0;
   }
-  for (int t = 0; t < PROJECT_MAX_TRACKS; ++t)
-    memset(state->audioInputTrackCurrent + (size_t)t * state->mixBufferSize, 0,
-      (size_t)requiredSize * sizeof(float));
+  for (int t = 0; t < state->audioProject.tracksCount; ++t)
+    if (state->audioInputRoutedTrackMask & (1u << t))
+      memset(state->audioInputTrackCurrent + (size_t)t * state->mixBufferSize, 0,
+        (size_t)requiredSize * sizeof(float));
   state->sidechainSourceMask = 0;
   state->masterSidechainExcludeMask = 0;
   for (int t = 0; t < state->audioProject.tracksCount; ++t)
@@ -1706,8 +1718,9 @@ static void processTrackInserts(ChipNomadState* state, float* output, int frames
       sidechainFor(state, state->insertValues[t][1][5])
     };
     state->insertChains[t]->process(samples, frames, state->insertValues[t], sidechain);
-    memcpy(state->audioInputTrackCurrent + (size_t)t * state->mixBufferSize,
-           samples, (size_t)frames * 2 * sizeof(float));
+    if (state->audioInputRoutedTrackMask & (1u << t))
+      memcpy(state->audioInputTrackCurrent + (size_t)t * state->mixBufferSize,
+             samples, (size_t)frames * 2 * sizeof(float));
     float reverb = effectiveTrackSend(state, t, true), delay = effectiveTrackSend(state, t, false);
     bool excludeFromMaster = state->masterSidechainExcludeMask & (1u << t);
     bool routed = state->audioInputRoutedTrackMask & (1u << t);
@@ -1890,10 +1903,12 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples, const flo
     state->stopTransition.process(output, frames);
     state->audioMonitor->finishChunk(output, frames, state->sampleRate);
     audioRecorderEndTrackChunk(frames);
-    float* previous = state->audioInputTrackPrevious;
-    state->audioInputTrackPrevious = state->audioInputTrackCurrent;
-    state->audioInputTrackCurrent = previous;
-    state->audioInputTrackPreviousFrames = frames;
+    if (state->audioInputRoutedTrackMask) {
+      float* previous = state->audioInputTrackPrevious;
+      state->audioInputTrackPrevious = state->audioInputTrackCurrent;
+      state->audioInputTrackCurrent = previous;
+      state->audioInputTrackPreviousFrames = frames;
+    }
     samplesLeft -= frames;
     state->frameSampleCounter -= (float)frames;
   }

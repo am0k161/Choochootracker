@@ -99,10 +99,19 @@ TEST_CASE("AudioInputManager onCapture accumulates levels for armed slots") {
   // armed by hand (test-only; arm() cannot succeed against the mock).
   // Access private state via a friend? Not available - instead drive the
   // public API: onCapture with no armed slots must be a safe no-op.
-  int16_t block[16] = {0};
-  audioInputManager.onCapture(block, 8, 2); // must not crash
-  audioInputManager.mixMonitor(block, 8);   // must not crash
+  int16_t capture[16] = {0};
+  float output[16] = {0};
+  audioInputManager.onCapture(capture, 8, 2); // must not crash
+  audioInputManager.mixMonitor(output, 8);    // must not crash
   CHECK(true);
+}
+
+TEST_CASE("AudioInputManager empty live input leaves the output untouched") {
+  AudioInputManager manager;
+  float output[] = {1.0f, 2.0f, 3.0f, 4.0f};
+  CHECK_FALSE(manager.readLiveInput(output, 2));
+  CHECK(output[0] == 1.0f);
+  CHECK(output[3] == 4.0f);
 }
 
 TEST_CASE("AudioInputManager levels pipeline: capture -> snapshot -> receive") {

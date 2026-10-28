@@ -5,5 +5,6 @@
 
 constexpr int AUDIO_INPUT_FROM_INSTRUMENT = 1;
 extern const AppScreen screenAudioInput;
+int audioInputSetEnabled(int enabled);
 
 #endif

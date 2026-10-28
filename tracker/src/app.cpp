@@ -692,10 +692,12 @@ void appSetup(void) {
 
   // Audio input: enumerate capture devices and re-arm the ones saved in
   // settings (Phase 4). Monitor state comes from settings too.
-  audioInputManager.reconfigureRate(appSettings.audioSampleRate);
-  audioInputManager.enumerate();
-  syncArmedDevicesFromSettings();
-  audioInputManager.setMonitor(appSettings.audioInputMonitor);
+  if (appSettings.audioInputEnabled) {
+    audioInputManager.reconfigureRate(appSettings.audioSampleRate);
+    audioInputManager.enumerate();
+    syncArmedDevicesFromSettings();
+  }
+  audioInputManager.setMonitor(appSettings.audioInputEnabled ? appSettings.audioInputMonitor : 0);
 
   int savedInputPort = findMidiPortByName(1, appSettings.midiInputDeviceName);
   if (savedInputPort >= 0 && midiRouterOpenInput(savedInputPort) == 0) appSettings.midiInputDevice = savedInputPort;
@@ -855,8 +857,10 @@ static void handleAudioDeviceRemoved(int isCapture) {
     screenMessage(MESSAGE_TIME_ERROR, "Audio refresh failed");
     return;
   }
-  audioInputManager.enumerate();
-  syncArmedDevicesFromSettings();
+  if (appSettings.audioInputEnabled) {
+    audioInputManager.enumerate();
+    syncArmedDevicesFromSettings();
+  }
 }
 
 void appOnEvent(MainLoopEventData eventData) {

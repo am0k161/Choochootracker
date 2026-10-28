@@ -42,13 +42,6 @@ static void audioStatic(void) {
   gfxSetFgColor(appSettings.colorScheme.textLabel); gfxPrint(0, 6, "Audio interfaces");
 }
 
-static int audioInputArmedCount(void) {
-  int count = 0;
-  for (int i = 0; i < AUDIO_INPUT_MAX_ARMED; i++)
-    if (appSettings.audioInputArmed[i] >= 0) count++;
-  return count;
-}
-
 static void audioCursor(int, int row) {
   if (row == 0) gfxCursor(23, 2, appSettings.audioSampleRate == 44100 ? 8 : 6);
   else if (row == 1) gfxCursor(23, 3, appSettings.audioBufferSize >= 1024 ? 4 : 3);
@@ -78,7 +71,7 @@ static void audioField(int, int row, CellState state) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, 8, " - Audio Input");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     gfxClearRect(23, 8, 3, 1);
-    gfxPrint(23, 8, audioInputArmedCount() > 0 ? "ON" : "OFF");
+    gfxPrint(23, 8, appSettings.audioInputEnabled ? "ON" : "OFF");
   } else {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, 4, "CPU load");
     drawAudioCpuLoad();
@@ -94,12 +87,16 @@ static int audioEdit(int, int row, CellEditAction action) {
     if (action == CellEditAction::clear || action == CellEditAction::decrease ||
         action == CellEditAction::decreaseBig || action == CellEditAction::multiDecrease ||
         action == CellEditAction::multiDecreaseBig) {
-      audioInputManager.disarmAll();
-      for (int i = 0; i < AUDIO_INPUT_MAX_ARMED; ++i) appSettings.audioInputArmed[i] = -1;
-      if (settingsSave()) screenMessage(MESSAGE_TIME_ERROR, "Could not save audio setting");
+      audioInputSetEnabled(0);
+      return 1;
+    }
+    if (action == CellEditAction::increase || action == CellEditAction::increaseBig ||
+        action == CellEditAction::multiIncrease || action == CellEditAction::multiIncreaseBig) {
+      audioInputSetEnabled(1);
       return 1;
     }
     if (action != CellEditAction::tap) return 0;
+    if (audioInputSetEnabled(1)) return 1;
     screenSetup(&screenAudioInput, 0);
     return 1;
   }

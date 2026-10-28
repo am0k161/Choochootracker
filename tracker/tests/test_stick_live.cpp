@@ -602,6 +602,30 @@ TEST_CASE_FIXTURE(StickLiveFixture, "MIDI device names round-trip through settin
   CHECK(std::string(appSettings.midiOutputDeviceName) == "FluidSynth virtual port");
 }
 
+TEST_CASE_FIXTURE(StickLiveFixture, "audio input master switch preserves devices and migrates old settings") {
+  appSettings.audioInputDeviceCount = 1;
+  std::strcpy(appSettings.audioInputDeviceNames[0], "USB Audio");
+  appSettings.audioInputArmed[0] = 0;
+  appSettings.audioInputEnabled = 1;
+  REQUIRE(settingsSave() == 0);
+
+  REQUIRE(audioInputSetEnabled(0) == 0);
+  CHECK(appSettings.audioInputEnabled == 0);
+  CHECK(appSettings.audioInputArmed[0] == 0);
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.audioInputEnabled == 0);
+  CHECK(appSettings.audioInputArmed[0] == 0);
+
+  FILE* file = fopen(realSettingsPath.c_str(), "w");
+  REQUIRE(file != nullptr);
+  fprintf(file, "audioInputDeviceCount: 1\n");
+  fprintf(file, "audioInputDeviceName.0: USB Audio\n");
+  fprintf(file, "audioInputArmed.0: USB Audio\n");
+  fclose(file);
+  REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.audioInputEnabled == 1);
+}
+
 TEST_CASE_FIXTURE(StickLiveFixture, "MIDI clock mode round-trips through settings save/load") {
   appSettings.clockSource = ClockSource::midiClock;
   REQUIRE(settingsSave() == 0);

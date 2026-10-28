@@ -178,6 +178,30 @@ void syncArmedDevicesFromSettings(void) {
   for (int i = 0; i < wantedCount; ++i) audioInputManager.arm(wanted[i]);
 }
 
+int audioInputSetEnabled(int enabled) {
+  enabled = enabled ? 1 : 0;
+  if (enabled == appSettings.audioInputEnabled) return 0;
+  if (!enabled && audioInputManagerRecordingActive()) {
+    screenMessage(MESSAGE_TIME_ERROR, "Stop recording first");
+    return 1;
+  }
+  audioManager.pause();
+  if (enabled) {
+    appSettings.audioInputEnabled = 1;
+    audioInputManager.reconfigureRate(appSettings.audioSampleRate);
+    audioInputManager.enumerate();
+    syncArmedDevicesFromSettings();
+    audioInputManager.setMonitor(appSettings.audioInputMonitor);
+  } else {
+    audioInputManager.setMonitor(0);
+    audioInputManager.disarmAll();
+    appSettings.audioInputEnabled = 0;
+  }
+  audioManager.resume();
+  if (settingsSave()) screenMessage(MESSAGE_TIME_ERROR, "Could not save audio setting");
+  return 0;
+}
+
 static int onEdit(int col, int row, CellEditAction action);
 
 static int isCellValid(int col, int row) {
@@ -259,8 +283,11 @@ static void setup(int input) {
   returnToInstrument = input == AUDIO_INPUT_FROM_INSTRUMENT;
   screenAudioInputData.cursorRow = 0;
   screenAudioInputData.cursorCol = 0;
-  audioInputManager.enumerate();
-  syncArmedDevicesFromSettings();
+  if (!appSettings.audioInputEnabled) audioInputSetEnabled(1);
+  else {
+    audioInputManager.enumerate();
+    syncArmedDevicesFromSettings();
+  }
 }
 
 static void fullRedraw(void) {
