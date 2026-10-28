@@ -29,7 +29,14 @@ jobs:
           git -C "$cache/sdl-source" fetch --depth 1 origin 3c68ed01fee7feffd4ea338b1cc5018a455e2be9
           git -C "$cache/sdl-source" checkout --detach FETCH_HEAD
           test "$(git -C "$cache/sdl-source" rev-parse HEAD)" = 3c68ed01fee7feffd4ea338b1cc5018a455e2be9
-          cp "$cache/sdl-source"/prebuilt/mini/* "$cache/sdl/lib/"
+          # Keep the known Miyoo runtime shipped in v1.0.19. The SDL source
+          # checkout below supplies headers only; its newer runtime changed
+          # the renderer and added EGL/GLES dependencies.
+          curl --fail --location --retry 3 --output "$cache/old-miyoo.zip" \
+            https://github.com/paiheulevrai/Choochootracker/releases/download/v1.0.19-alpha/ChooChooTracker-2026-10-19-1.0.19-alpha-MiyooPorts.zip
+          echo '72201a55264661e5a4c10c492c9d5bf9c48af77be9390bcbba441df0f4c4a326  '"$cache/old-miyoo.zip" | sha256sum --check
+          unzip -p "$cache/old-miyoo.zip" 'Roms/PORTS/Games/ChooChooTracker/libs/libSDL2-2.0.so.0' > "$cache/sdl/lib/libSDL2-2.0.so.0"
+          unzip -p "$cache/old-miyoo.zip" 'Roms/PORTS/Games/ChooChooTracker/libs/libneonarmmiyoo.so' > "$cache/sdl/lib/libneonarmmiyoo.so"
           ln -s libSDL2-2.0.so.0 "$cache/sdl/lib/libSDL2.so"
           toolchain=$(find "$cache/toolchain" -type f -path '*/bin/arm-linux-gnueabihf-g++' -printf '%h\n' | sed 's#/bin$##' | head -1)
           test -n "$toolchain"
@@ -46,8 +53,7 @@ jobs:
           cp include/*.h "$cache/sdl/include/SDL2/"
           cp include/*.h "$cache/sdl/include/SDL/"
           test -f "$cache/sdl/lib/libSDL2-2.0.so.0"
-          test -f "$cache/sdl/lib/libEGL.so"
-          test -f "$cache/sdl/lib/libGLESv2.so"
+          test -f "$cache/sdl/lib/libneonarmmiyoo.so"
       - name: Build MiyooPorts package
         run: |
           cache="$RUNNER_TEMP/miyoo"
@@ -65,8 +71,7 @@ jobs:
           ! readelf -V choochootracker.miyoo | grep -Eq 'GLIBC_(2\.29|[3-9]\.)'
           ! readelf -d choochootracker.miyoo | grep -q 'libstdc++'
           unzip -l "$package" | grep -Fq 'Roms/PORTS/Games/ChooChooTracker/libs/libSDL2-2.0.so.0'
-          unzip -l "$package" | grep -Fq 'Roms/PORTS/Games/ChooChooTracker/libs/libEGL.so'
-          unzip -l "$package" | grep -Fq 'Roms/PORTS/Games/ChooChooTracker/libs/libGLESv2.so'
+          unzip -l "$package" | grep -Fq 'Roms/PORTS/Games/ChooChooTracker/libs/libneonarmmiyoo.so'
       - uses: actions/upload-artifact@v4
         with:
           name: choochootracker-miyooports
