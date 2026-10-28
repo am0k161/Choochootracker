@@ -1,0 +1,1 @@
+Android alpha release with synthesis engines, samples, MIDI, Ableton Link and WAV export.

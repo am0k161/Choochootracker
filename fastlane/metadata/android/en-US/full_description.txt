@@ -1,0 +1,5 @@
+ChooChooTracker is a music tracker and groovebox for Android. Compose songs with a gamepad, hardware keyboard or on-screen controls, in portrait or landscape.
+
+It includes synthesis engines, sample playback, effects, MIDI support and WAV export. Projects and samples stay on your device. You can import files and save exports through Android's document picker, or use a shared working folder in the direct Android build.
+
+Ableton Link can synchronize tempo with other apps and devices on the same local network. No account is required.
