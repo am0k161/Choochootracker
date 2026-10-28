@@ -16,7 +16,7 @@ jobs:
       - name: Install packaging tools
         run: |
           sudo apt-get update
-          sudo apt-get install --yes curl git p7zip-full xz-utils zip unzip
+          sudo apt-get install --yes autoconf automake curl git libtool p7zip-full xz-utils zip unzip
       - name: Fetch Miyoo SDK
         run: |
           cache="$RUNNER_TEMP/miyoo"
@@ -31,9 +31,20 @@ jobs:
           test "$(git -C "$cache/sdl-source" rev-parse HEAD)" = 3c68ed01fee7feffd4ea338b1cc5018a455e2be9
           cp "$cache/sdl-source"/prebuilt/mini/* "$cache/sdl/lib/"
           ln -s libSDL2-2.0.so.0 "$cache/sdl/lib/libSDL2.so"
+          toolchain=$(find "$cache/toolchain" -type f -path '*/bin/arm-linux-gnueabihf-g++' -printf '%h\n' | sed 's#/bin$##' | head -1)
+          test -n "$toolchain"
+          export CC="$toolchain/bin/arm-linux-gnueabihf-gcc"
+          export CXX="$toolchain/bin/arm-linux-gnueabihf-g++"
+          export AR="$toolchain/bin/arm-linux-gnueabihf-ar"
+          export RANLIB="$toolchain/bin/arm-linux-gnueabihf-ranlib"
+          cd "$cache/sdl-source/sdl2"
+          ./autogen.sh
+          ./configure --host=arm-linux --disable-oss --disable-alsa \
+            --disable-video-opengl --disable-video-opengles --disable-video-opengles2 \
+            --enable-audio-mini --enable-video-mini
           mkdir -p "$cache/sdl/include/SDL2" "$cache/sdl/include/SDL"
-          cp "$cache/sdl-source"/sdl2/include/*.h "$cache/sdl/include/SDL2/"
-          cp "$cache/sdl-source"/sdl2/include/*.h "$cache/sdl/include/SDL/"
+          cp include/*.h "$cache/sdl/include/SDL2/"
+          cp include/*.h "$cache/sdl/include/SDL/"
           test -f "$cache/sdl/lib/libSDL2-2.0.so.0"
           test -f "$cache/sdl/lib/libEGL.so"
           test -f "$cache/sdl/lib/libGLESv2.so"
