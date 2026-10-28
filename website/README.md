@@ -2,8 +2,7 @@
 
 English presentation site, built with Astro. Fira Sans is bundled locally; no
 font service, analytics or audio/video player is loaded by the presentation pages.
-The tracker only loads when visiting the app. This is a **local preview** until
-the design is approved; no publishing workflow is enabled by this change.
+The tracker only loads when visiting the app.
 
 ## Preview locally
 
@@ -60,17 +59,18 @@ remote font provider; Fira Sans is bundled from Fontsource.
 responsive layout. The [homepage template](src/pages/index.astro) contains
 button labels, the feature strip and guide links.
 
-## GitHub Pages, when approved
+## GitHub Pages
 
 The default configuration targets
 `https://paiheulevrai.github.io/Choochootracker/`. The `GITHUB_REPOSITORY`
 environment variable selects another owner/repository at build time. All site
 links include the repository subpath.
 
-Publish the contents of `dist/` as a GitHub Pages artifact after running
-`npm ci`, `npm run build` and `npm run check`. Select GitHub Actions as the
-Pages source when a deployment workflow is added. Rebuild the site after
-updating the checked-in `web/dist/` app bundle or guide assets.
+The `.github/workflows/pages.yml` workflow publishes `dist/` on pushes to
+`main` that change the site or its assets, and can also be run manually. In the
+repository settings, set **Pages → Build and deployment → Source** to **GitHub
+Actions**. Rebuild the site after updating the checked-in `web/dist/` app bundle
+or guide assets.
 
 Downloads currently link to the releases list, which includes prereleases.
 GitHub's `/releases/latest` shortcut excludes prereleases, so it is unsuitable
