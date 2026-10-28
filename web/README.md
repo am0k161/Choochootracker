@@ -84,6 +84,7 @@ Import the repository as a normal Vercel project (leave the **Root Directory**
 at the repository root). The root `vercel.json` publishes the checked-in
 `web/dist` bundle as a static site; Vercel does not need Emscripten installed.
 
-After changing the tracker, regenerate and commit `web/dist`. The build command
-and the other platform instructions are kept in
-[`tracker/README.md`](../tracker/README.md).
+GitHub Actions rebuilds and commits `web/dist` when Web, tracker or engine
+sources change on `main`. Cloudflare Pages then publishes the updated site and
+browser app from the connected repository. The build command and other platform
+instructions are kept in [`tracker/README.md`](../tracker/README.md).

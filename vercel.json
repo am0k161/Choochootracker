@@ -1,5 +1,5 @@
 {
-  "buildCommand": "sh docs/user-guide/publish.sh",
+  "buildCommand": "sh docs/user-guide/publish.sh && node web/scripts/add-vercel-migration-notice.mjs",
   "outputDirectory": "web/dist",
   "framework": null,
   "cleanUrls": true,

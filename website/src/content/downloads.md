@@ -20,6 +20,6 @@ Found a bug? Please report it on GitHub or Discord! Every bug we fix spares hund
 
 ## Coming from the Vercel web app?
 
-Vercel will soon kick us out because of our success (and our unwillingness to pay them for more traffic quota). 
+ChooChooTracker has moved to the [new web app](https://choochootracker.pages.dev/play/). Please move there as soon as possible. The old Vercel app will remain available temporarily so you can migrate your browser projects.
 
-Before moving, open the old app and download each project you want to keep using **Download .cct**. Then import those files into the new web app. Browser storage belongs to the site's address: your old projects won't appear here automatically. Keep copies of any samples and banks you imported, too.
+Browser storage belongs to each site's address, so your old projects will not appear on the new site automatically. On the Vercel app, download each project you want to keep with **Download .cct**. Keep copies of imported samples and sound banks. Then open the new web app and import your files. Do not clear the old site's browser data until you have finished migrating.

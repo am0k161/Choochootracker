@@ -163,9 +163,11 @@ Set-Location tracker
   "EMXX=$empy $empp"
 ```
 
-The deploy target updates the checked-in browser bundle in `web/dist/`; Vercel
-serves it directly. Commit that directory after every WebAssembly source
-change. The bundled SDK requires its own Python, hence the explicit `EMXX`.
+The deploy target updates the checked-in browser bundle in `web/dist/`. GitHub
+Actions rebuilds and commits that directory when Web, tracker or engine sources
+change on `main`; Cloudflare Pages and the legacy Vercel site then publish the
+updated bundle. The bundled SDK requires its own Python, hence the explicit
+`EMXX`.
 If Windows reports `clang++.exe: permission denied`, unblock the bundled
 compiler with `Unblock-File -LiteralPath .tmp\emsdk\upstream\bin\clang++.exe`,
 verify `clang++.exe --version`, then retry.
