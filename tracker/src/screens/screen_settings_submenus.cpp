@@ -34,10 +34,13 @@ static void drawAudioCpuLoad(void) {
   if (load == displayedCpuLoad) return;
   displayedCpuLoad = load;
   gfxSetFgColor(appSettings.colorScheme.textInfo);
-  gfxPrintf(23, 5, "%03d%%", load);
+  gfxPrintf(23, 4, "%03d%%", load);
 }
 
-static void audioStatic(void) { gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "AUDIO"); }
+static void audioStatic(void) {
+  gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "AUDIO");
+  gfxSetFgColor(appSettings.colorScheme.textLabel); gfxPrint(0, 6, "Audio interfaces");
+}
 
 static int audioInputArmedCount(void) {
   int count = 0;
@@ -49,8 +52,8 @@ static int audioInputArmedCount(void) {
 static void audioCursor(int, int row) {
   if (row == 0) gfxCursor(23, 2, appSettings.audioSampleRate == 44100 ? 8 : 6);
   else if (row == 1) gfxCursor(23, 3, appSettings.audioBufferSize >= 1024 ? 4 : 3);
-  else if (row == 2) gfxCursor(14, 4, 16);
-  else if (row == 4) gfxCursor(23, 6, 3); // "OFF"/"ON" value width
+  else if (row == 2) gfxCursor(15, 7, 16);
+  else if (row == 4) gfxCursor(23, 8, 3); // "OFF"/"ON" value width
 }
 static void audioField(int, int row, CellState state) {
   const ColorScheme cs = appSettings.colorScheme;
@@ -66,18 +69,18 @@ static void audioField(int, int row, CellState state) {
     gfxClearRect(23, 3, 4, 1);
     gfxPrintf(23, 3, "%d", appSettings.audioBufferSize);
   } else if (row == 2) {
-    gfxSetFgColor(cs.textLabel); gfxPrint(0, 4, "Audio Output");
+    gfxSetFgColor(cs.textLabel); gfxPrint(0, 7, " - Audio Output");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
-    gfxClearRect(14, 4, 16, 1);
-    gfxPrintf(14, 4, "%.16s", appSettings.audioOutputDeviceName[0] ?
+    gfxClearRect(15, 7, 16, 1);
+    gfxPrintf(15, 7, "%.16s", appSettings.audioOutputDeviceName[0] ?
       appSettings.audioOutputDeviceName : "Default");
   } else if (row == 4) {
-    gfxSetFgColor(cs.textLabel); gfxPrint(0, 6, "Audio Input");
+    gfxSetFgColor(cs.textLabel); gfxPrint(0, 8, " - Audio Input");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
-    gfxClearRect(23, 6, 3, 1);
-    gfxPrint(23, 6, audioInputArmedCount() > 0 ? "ON" : "OFF");
+    gfxClearRect(23, 8, 3, 1);
+    gfxPrint(23, 8, audioInputArmedCount() > 0 ? "ON" : "OFF");
   } else {
-    gfxSetFgColor(cs.textLabel); gfxPrint(0, 5, "CPU load");
+    gfxSetFgColor(cs.textLabel); gfxPrint(0, 4, "CPU load");
     drawAudioCpuLoad();
   }
 }
@@ -101,6 +104,7 @@ static int audioEdit(int, int row, CellEditAction action) {
     return 1;
   }
   if (row == 2) {
+    if (action == CellEditAction::tap) return 1;
     int count = audioOutputDeviceCount();
     if (count < 0) count = 0;
     int current = 0;
@@ -110,7 +114,7 @@ static int audioEdit(int, int row, CellEditAction action) {
           strcmp(name, appSettings.audioOutputDeviceName) == 0) { current = i + 1; break; }
     int next = current;
     if (action == CellEditAction::clear) next = 0;
-    else if (action == CellEditAction::tap || action == CellEditAction::increase ||
+    else if (action == CellEditAction::increase ||
              action == CellEditAction::increaseBig || action == CellEditAction::multiIncrease ||
              action == CellEditAction::multiIncreaseBig) next = current < count ? current + 1 : 0;
     else if (action == CellEditAction::decrease || action == CellEditAction::decreaseBig ||
