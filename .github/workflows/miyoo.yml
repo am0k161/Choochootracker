@@ -24,16 +24,19 @@ jobs:
           curl --fail --location --retry 3 --output "$cache/toolchain.tar.xz" \
             https://github.com/shauninman/miyoomini-toolchain-buildroot/releases/download/v0.0.3/miyoomini-toolchain.tar.xz
           tar -xf "$cache/toolchain.tar.xz" -C "$cache/toolchain"
-          curl --fail --location --retry 3 --output "$cache/sdl.tar.gz" \
-            https://github.com/XK9274/sdl2_miyoo/releases/download/sdl2-miyoo-f6319cf9/libSDL2-miyoo-nogl-f6319cf9.tar.gz
-          tar -xzf "$cache/sdl.tar.gz" -C "$cache/sdl/lib"
+          git init "$cache/sdl-source"
+          git -C "$cache/sdl-source" remote add origin https://github.com/Rparadise-Team/sdl2_miyoo_new.git
+          git -C "$cache/sdl-source" fetch --depth 1 origin 3c68ed01fee7feffd4ea338b1cc5018a455e2be9
+          git -C "$cache/sdl-source" checkout --detach FETCH_HEAD
+          test "$(git -C "$cache/sdl-source" rev-parse HEAD)" = 3c68ed01fee7feffd4ea338b1cc5018a455e2be9
+          cp "$cache/sdl-source"/prebuilt/mini/* "$cache/sdl/lib/"
           ln -s libSDL2-2.0.so.0 "$cache/sdl/lib/libSDL2.so"
-          git clone --depth 1 --branch sdl2-miyoo-f6319cf9 https://github.com/XK9274/sdl2_miyoo.git "$cache/sdl-source"
           mkdir -p "$cache/sdl/include/SDL2" "$cache/sdl/include/SDL"
-          cp "$cache/sdl-source"/include/*.h "$cache/sdl/include/SDL2/"
-          cp "$cache/sdl-source"/include/*.h "$cache/sdl/include/SDL/"
+          cp "$cache/sdl-source"/sdl2/include/*.h "$cache/sdl/include/SDL2/"
+          cp "$cache/sdl-source"/sdl2/include/*.h "$cache/sdl/include/SDL/"
           test -f "$cache/sdl/lib/libSDL2-2.0.so.0"
-          test -f "$cache/sdl/lib/libneonarmmiyoo.so"
+          test -f "$cache/sdl/lib/libEGL.so"
+          test -f "$cache/sdl/lib/libGLESv2.so"
       - name: Build MiyooPorts package
         run: |
           cache="$RUNNER_TEMP/miyoo"
@@ -51,7 +54,8 @@ jobs:
           ! readelf -V choochootracker.miyoo | grep -Eq 'GLIBC_(2\.29|[3-9]\.)'
           ! readelf -d choochootracker.miyoo | grep -q 'libstdc++'
           unzip -l "$package" | grep -Fq 'Roms/PORTS/Games/ChooChooTracker/libs/libSDL2-2.0.so.0'
-          unzip -l "$package" | grep -Fq 'Roms/PORTS/Games/ChooChooTracker/libs/libneonarmmiyoo.so'
+          unzip -l "$package" | grep -Fq 'Roms/PORTS/Games/ChooChooTracker/libs/libEGL.so'
+          unzip -l "$package" | grep -Fq 'Roms/PORTS/Games/ChooChooTracker/libs/libGLESv2.so'
       - uses: actions/upload-artifact@v4
         with:
           name: choochootracker-miyooports

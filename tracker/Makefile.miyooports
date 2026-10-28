@@ -54,7 +54,7 @@ MiyooPorts-deploy: MiyooPorts
 	rm -rf $(PACKAGE_ROOT)
 	mkdir -p $(PORT_DIR)/libs $(PACKAGE_ROOT)/Roms/PORTS/Shortcuts $(PACKAGE_ROOT)/Roms/PORTS/Imgs ../releases
 	cp $(TARGET) $(PORT_DIR)/choochootracker
-	cp $(MIYOO_SDL2_ROOT)/lib/libSDL2-2.0.so.0 $(MIYOO_SDL2_ROOT)/lib/libneonarmmiyoo.so $(PORT_DIR)/libs/
+	cp $(MIYOO_SDL2_ROOT)/lib/libSDL2-2.0.so.0 $(MIYOO_SDL2_ROOT)/lib/libEGL.so $(MIYOO_SDL2_ROOT)/lib/libGLESv2.so $(PORT_DIR)/libs/
 	cp -r packaging/common/. $(PORT_DIR)/
 	cp packaging/miyoo_ports/launch.sh $(PORT_DIR)/
 	cp packaging/miyoo_ports/ChooChooTracker.port $(PACKAGE_ROOT)/Roms/PORTS/Shortcuts/
