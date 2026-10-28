@@ -2,9 +2,12 @@ import { defineConfig } from 'astro/config';
 
 const repository = process.env.GITHUB_REPOSITORY || 'paiheulevrai/Choochootracker';
 const [owner, name] = repository.split('/');
+const cloudflarePages = process.env.CF_PAGES === '1';
 export default defineConfig({
-  site: `https://${owner}.github.io`,
-  base: name.endsWith('.github.io') ? '/' : `/${name}`,
+  site: cloudflarePages
+    ? 'https://choochootracker.pages.dev'
+    : `https://${owner}.github.io`,
+  base: cloudflarePages || name.endsWith('.github.io') ? '/' : `/${name}`,
   trailingSlash: 'always',
   markdown: {
     remarkPlugins: [() => (tree, file) => {

@@ -59,26 +59,31 @@ remote font provider; Fira Sans is bundled from Fontsource.
 responsive layout. The [homepage template](src/pages/index.astro) contains
 button labels, the feature strip and guide links.
 
-## GitHub Pages
+## Cloudflare Pages
 
-The default configuration targets
-`https://paiheulevrai.github.io/Choochootracker/`. The `GITHUB_REPOSITORY`
-environment variable selects another owner/repository at build time. All site
-links include the repository subpath.
+The Cloudflare Pages build uses the root URL and targets
+`https://choochootracker.pages.dev` for canonical links. Outside Cloudflare,
+the local preview keeps the repository subpath.
 
-The `.github/workflows/pages.yml` workflow publishes `dist/` on pushes to
-`main` that change the site or its assets, and can also be run manually. In the
-repository settings, set **Pages → Build and deployment → Source** to **GitHub
-Actions**. Rebuild the site after updating the checked-in `web/dist/` app bundle
-or guide assets.
+Create a Pages project from the GitHub repository and set:
+
+- Production branch: `main`
+- Root directory: `website`
+- Build command: `npm ci && npm run build && npm run check`
+- Build output directory: `dist`
+- Project name: `choochootracker` (for `choochootracker.pages.dev`, if available)
+
+Cloudflare Pages then deploys each push to `main`. The Node version is pinned by
+[`website/.node-version`](.node-version). Rebuild after updating the checked-in
+`web/dist/` app bundle or guide assets.
 
 Downloads currently link to the releases list, which includes prereleases.
 GitHub's `/releases/latest` shortcut excludes prereleases, so it is unsuitable
 as the sole alpha download link. No version number is hard-coded here.
 
 Browser projects do not automatically migrate from the Vercel origin; the
-downloads page explains export/import. Keep the old app available during any
-future migration. Nothing in this site build changes the Vercel deployment.
+downloads page explains export/import. The existing Vercel deployment is not
+changed by this setup.
 
 ## Manual theme
 

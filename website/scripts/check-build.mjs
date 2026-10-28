@@ -4,7 +4,7 @@ import { readFile, stat } from 'node:fs/promises';
 const dist = new URL('../dist/', import.meta.url);
 const repository = process.env.GITHUB_REPOSITORY || 'paiheulevrai/Choochootracker';
 const name = repository.split('/')[1];
-const base = name.endsWith('.github.io') ? '/' : `/${name}/`;
+const base = process.env.CF_PAGES === '1' || name.endsWith('.github.io') ? '/' : `/${name}/`;
 for (const path of ['index.html', 'learn/index.html', 'downloads/index.html', 'manual/index.html', 'play/index.html']) {
   const html = await readFile(new URL(path, dist), 'utf8');
   assert(html.includes('lang="en"'), `${path}: English document`);
