@@ -42,6 +42,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef CCT_FLFO_MAX_CONTROL_FRAMES
+#define CCT_FLFO_MAX_CONTROL_FRAMES 8
+#endif
+
+#ifdef CCT_EFFECT_REFERENCE_PATH
+static constexpr bool kOptimizeEffectBuses = false;
+#else
+static constexpr bool kOptimizeEffectBuses = true;
+#endif
+
 static void detectAYPitchConflicts(ChipNomadState* state);
 static void updateBraidsVoices(ChipNomadState* state);
 static void updateSampleVoices(ChipNomadState* state);
@@ -62,8 +72,8 @@ static void updateOPLVoices(ChipNomadState* state);
 static void updateSimpleChipVoices(ChipNomadState* state);
 static void updateSIDVoices(ChipNomadState* state);
 static void applyVoiceEvents(ChipNomadState* state, uint64_t dueMicros);
-static int hasAudioRateModulation(const ChipNomadState* state);
-static void updateAudioRateModulations(ChipNomadState* state);
+static int audioRateModulationFrames(const ChipNomadState* state);
+static void updateAudioRateModulations(ChipNomadState* state, int frames);
 static void motionRecordFrame(ChipNomadState* state);
 static int instrumentFXCutoff(uint8_t value);
 static int slewEngineFX(PlaybackTrackState*, FX, int);
@@ -1287,16 +1297,20 @@ void chipnomadInitChips(ChipNomadState* state, int sampleRate, ChipFactory facto
   }
 }
 
-static int hasAudioRateModulation(const ChipNomadState* state) {
+static int audioRateModulationFrames(const ChipNomadState* state) {
+  int frames = CCT_FLFO_MAX_CONTROL_FRAMES;
+  bool active = false;
   for (int trackIdx = 0; trackIdx < state->audioProject.tracksCount; ++trackIdx) {
     const PlaybackTrackState* track = &state->playbackState.tracks[trackIdx];
     for (int i = 0; i < 4; ++i) {
       const PlaybackModState* mod = &track->note.modulation[i];
-      if (mod->modulation && mod->modulation->type == ModulationType::FLFO &&
-          mod->modulation->destination != 0) return 1;
+      if (!mod->modulation || mod->modulation->type != ModulationType::FLFO ||
+          mod->modulation->destination == 0) continue;
+      active = true;
+      frames = std::min(frames, playbackModAudioControlFrames(mod, (float)state->sampleRate));
     }
   }
-  return 0;
+  return active ? frames : 0;
 }
 
 int chipnomadReserveRenderBuffers(ChipNomadState* state, int frames) {
@@ -1419,11 +1433,11 @@ static void applyVoicePostModulations(const PlaybackTrackState* track, Instrumen
   for (int i = 0; i < 7; ++i) *values[i] = clampInt(*values[i], 0, 255);
 }
 
-static void updateAudioRateModulations(ChipNomadState* state) {
+static void updateAudioRateModulations(ChipNomadState* state, int frames) {
   for (int trackIdx = 0; trackIdx < state->audioProject.tracksCount; ++trackIdx) {
     PlaybackTrackState* track = &state->playbackState.tracks[trackIdx];
     for (int i = 0; i < 4; ++i)
-      playbackModNextAudio(&track->note.modulation[i], (float)state->sampleRate);
+      playbackModNextAudioFrames(&track->note.modulation[i], (float)state->sampleRate, frames);
   }
   updateSoundbankVoices(state);
   updateSampleVoices(state); updateAudioInputVoices(state);
@@ -1530,7 +1544,18 @@ static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
   return allTracksStopped && state->opllPreviewTrack < 0 && !state->masterEffects->tailActive();
 }
 
-static int prepareRenderChunk(ChipNomadState* state, float* output, int frames) {
+static void activeEffectBuses(ChipNomadState* state, bool* reverb, bool* delay) {
+  *reverb = state->masterEffects->reverbTailActive();
+  *delay = state->masterEffects->delayTailActive();
+  for (int i = 0; i < state->audioProject.tracksCount; ++i) {
+    *reverb |= effectiveTrackSend(state, i, true) > 0.0f;
+    *delay |= effectiveTrackSend(state, i, false) > 0.0f;
+  }
+  *reverb |= *delay && state->audioProject.delayReverbSend > 0;
+}
+
+static int prepareRenderChunk(ChipNomadState* state, float* output, int frames,
+                              bool* hasReverb, bool* hasDelay) {
   for (int i = 0; i < state->audioProject.tracksCount; ++i) state->voiceMonitors[i].active = 0;
   int requiredSize = frames * 2;
   if (requiredSize > state->mixBufferSize) {
@@ -1579,8 +1604,11 @@ static int prepareRenderChunk(ChipNomadState* state, float* output, int frames) 
   }
   state->audioMonitor->beginChunk(frames);
   memset(output, 0, requiredSize * sizeof(float));
-  memset(state->reverbBuffer, 0, requiredSize * sizeof(float));
-  memset(state->delayBuffer, 0, requiredSize * sizeof(float));
+  activeEffectBuses(state, hasReverb, hasDelay);
+  if (!kOptimizeEffectBuses || *hasReverb)
+    memset(state->reverbBuffer, 0, requiredSize * sizeof(float));
+  if (!kOptimizeEffectBuses || *hasDelay)
+    memset(state->delayBuffer, 0, requiredSize * sizeof(float));
   return 1;
 }
 
@@ -1739,16 +1767,11 @@ static void processTrackInserts(ChipNomadState* state, float* output, int frames
   }
 }
 
-static void processMasterMix(ChipNomadState* state, float* output, int frames) {
+static void processMasterMix(ChipNomadState* state, float* output, int frames,
+                             bool hasReverb, bool hasDelay) {
   // An effect runs while any track sends to it, and keeps running on silence
   // until its tail has died away, so per-note sends (RSN/DSN) ring out like a
   // mixer send instead of stopping at the next note.
-  bool hasReverb = state->masterEffects->reverbTailActive();
-  bool hasDelay = state->masterEffects->delayTailActive();
-  for (int i = 0; i < state->audioProject.tracksCount; ++i) {
-    hasReverb |= effectiveTrackSend(state, i, true) > 0.0f || state->audioProject.delayReverbSend > 0;
-    hasDelay |= effectiveTrackSend(state, i, false) > 0.0f;
-  }
   state->masterEffects->process(hasReverb ? state->reverbBuffer : NULL,
                                 hasDelay ? state->delayBuffer : NULL, output, frames, &state->audioProject);
   if (state->masterInsertChain && state->masterInsertChain->active()) {
@@ -1814,9 +1837,14 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples, const flo
       break;
     }
     int frames = (int)state->frameSampleCounter < samplesLeft ? (int)state->frameSampleCounter : samplesLeft;
-    if (hasAudioRateModulation(state)) { updateAudioRateModulations(state); frames = 1; }
+    const int modulationFrames = audioRateModulationFrames(state);
+    if (modulationFrames > 0) {
+      frames = std::min(frames, modulationFrames);
+      updateAudioRateModulations(state, frames);
+    }
     float* output = buffer + (samples - samplesLeft) * 2;
-    if (!prepareRenderChunk(state, output, frames)) return 0;
+    bool hasReverb, hasDelay;
+    if (!prepareRenderChunk(state, output, frames, &hasReverb, &hasDelay)) return 0;
     updateAudioInputRoutedTracks(state);
     // Track-bounce capture bracket: the capture sites only run for tracks
     // with an active voice, so the chunk end fills the remainder with
@@ -1899,7 +1927,7 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples, const flo
     processTrackEQ(state, frames);
     captureSidechains(state, frames);
     processTrackInserts(state, output, frames);
-    processMasterMix(state, output, frames);
+    processMasterMix(state, output, frames, hasReverb, hasDelay);
     state->stopTransition.process(output, frames);
     state->audioMonitor->finishChunk(output, frames, state->sampleRate);
     audioRecorderEndTrackChunk(frames);

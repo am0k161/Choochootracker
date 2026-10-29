@@ -1,4 +1,5 @@
 #include "drum_synth_voice.h"
+#include "audio_math.h"
 
 #include <math.h>
 #include <string.h>
@@ -59,6 +60,8 @@ void DrumSynthVoice::render(float* output, size_t frames) {
     1.335162f, 1.286303f, 1.332512f, 1.084859f, 1.337063f, 1.329288f
   };
   const float calibration = modelGain[(int)instrument_->engine];
+  const float inverseDriveSaturation = 1.0f / audioTanh(drive);
+  const float fmRatio = .25f * powf(2.0f, tone * 2.5f);
   for (size_t i = 0; i < frames; ++i) {
     if (age_ >= duration_) { kill(); memset(output + i, 0, (frames - i) * sizeof(float)); break; }
     float progress = age_ / duration_, fast = expf(-age_ / (0.006f + 0.050f * (1.0f - tone)));
@@ -108,8 +111,7 @@ void DrumSynthVoice::render(float* output, size_t frames) {
         sample += brightNoise * noise * .50f * fast;
         break;
       case DrumSynthEngine::fm: {
-        float ratio = .25f * powf(2.0f, tone * 2.5f);
-        float mod = oscillator(frequency_ * ratio, 0, 1) * fm * 9.0f * fast;
+        float mod = oscillator(frequency_ * fmRatio, 0, 1) * fm * 9.0f * fast;
         sample = oscillator(frequency_ * (1.0f + sweep * 2.0f * fast + mod), 0, 0) * .85f + brightNoise * noise * .45f;
         break;
       }
@@ -148,7 +150,7 @@ void DrumSynthVoice::render(float* output, size_t frames) {
         break;
       default: break;
     }
-    sample = tanhf(sample * drive) / tanhf(drive) * envelope_;
+    sample = audioTanh(sample * drive) * inverseDriveSaturation * envelope_;
     output[i] = post_.process(sample * calibration);
     age_ += 1.0f / sampleRate_;
   }

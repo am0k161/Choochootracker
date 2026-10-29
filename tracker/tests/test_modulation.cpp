@@ -1510,6 +1510,33 @@ TEST_CASE("FLFO wavetable reads the selected table") {
   CHECK(state.outValue == 32385);
 }
 
+TEST_CASE("FLFO control quantum follows effective speed and advances the full segment") {
+  Modulation slow = {.type = ModulationType::FLFO, .destination = 1, .amount = 127,
+                     .p1 = static_cast<uint8_t>(LFOShape::rampUp), .p3 = 0};
+  PlaybackModState block;
+  playbackModInit(&block, &slow);
+  CHECK(playbackModAudioControlFrames(&block, 32000.0f) == 8);
+
+  PlaybackModState scalar;
+  playbackModInit(&scalar, &slow);
+  int scalarSum = 0;
+  for (int i = 0; i < 8; ++i) {
+    playbackModNextAudio(&scalar, 32000.0f);
+    scalarSum += scalar.outValue;
+  }
+  playbackModNextAudioFrames(&block, 32000.0f, 8);
+  CHECK(block.phase == doctest::Approx(scalar.phase).epsilon(1e-6));
+  const float average = scalarSum / 8.0f;
+  CHECK(block.outValue >= average - 1.0f);
+  CHECK(block.outValue <= average + 1.0f);
+
+  Modulation fast = slow;
+  fast.p3 = 255;
+  PlaybackModState fastState;
+  playbackModInit(&fastState, &fast);
+  CHECK(playbackModAudioControlFrames(&fastState, 32000.0f) == 1);
+}
+
 TEST_CASE("structural LFO triggers restart only LFO and SLFO state") {
   Modulation mod = {.type = ModulationType::SLFO, .amount = 127,
                     .p1 = static_cast<uint8_t>(LFOShape::tri),

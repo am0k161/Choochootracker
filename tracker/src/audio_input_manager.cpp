@@ -22,7 +22,11 @@ bool AudioInputRing::push(const int16_t* stereo, int stereoSampleCount, int chan
   if (!stereo || stereoSampleCount <= 0 || (channels != 1 && channels != 2)) return false;
   unsigned int localHead = head.load(std::memory_order_relaxed);
   const unsigned int localTail = tail.load(std::memory_order_acquire);
+#ifdef CCT_AUDIO_RING_REFERENCE_PATH
   const unsigned int free = (localTail + CAPACITY - localHead - 1) % CAPACITY;
+#else
+  const unsigned int free = (localTail - localHead - 1) & MASK;
+#endif
   if ((unsigned int)stereoSampleCount > free) {
     // Publish whole capture blocks or none: a partially written block is
     // inaudible, so count all of its frames as lost.
@@ -31,6 +35,7 @@ bool AudioInputRing::push(const int16_t* stereo, int stereoSampleCount, int chan
                                                     std::memory_order_relaxed);
     return false;
   }
+#ifdef CCT_AUDIO_RING_REFERENCE_PATH
   unsigned int next = localHead;
   for (int i = 0; i < stereoSampleCount; ++i) {
     samples[next * 2] = stereo[i * channels];
@@ -38,14 +43,30 @@ bool AudioInputRing::push(const int16_t* stereo, int stereoSampleCount, int chan
     next = (next + 1) % CAPACITY;
   }
   head.store(next, std::memory_order_release);
+#else
+  if (channels == 2) {
+    const unsigned int first = std::min((unsigned int)stereoSampleCount, CAPACITY - localHead);
+    memcpy(samples + localHead * 2, stereo, (size_t)first * 2 * sizeof(int16_t));
+    if (first < (unsigned int)stereoSampleCount)
+      memcpy(samples, stereo + first * 2,
+        (size_t)(stereoSampleCount - first) * 2 * sizeof(int16_t));
+  } else {
+    for (int i = 0; i < stereoSampleCount; ++i) {
+      const unsigned int next = (localHead + i) & MASK;
+      samples[next * 2] = samples[next * 2 + 1] = stereo[i];
+    }
+  }
+  head.store((localHead + stereoSampleCount) & MASK, std::memory_order_release);
+#endif
   return true;
 }
 
 int AudioInputRing::pop(int16_t* stereo, int stereoSampleCount) {
+  if (!stereo || stereoSampleCount <= 0) return 0;
   unsigned int localTail = tail.load(std::memory_order_relaxed);
+#ifdef CCT_AUDIO_RING_REFERENCE_PATH
   int read = 0;
   while (read < stereoSampleCount) {
-    // Empty when the read cursor has caught up with the write cursor.
     if (localTail == head.load(std::memory_order_acquire)) break;
     stereo[read * 2] = samples[localTail * 2];
     stereo[read * 2 + 1] = samples[localTail * 2 + 1];
@@ -53,6 +74,15 @@ int AudioInputRing::pop(int16_t* stereo, int stereoSampleCount) {
     ++read;
   }
   tail.store(localTail, std::memory_order_release);
+#else
+  const unsigned int localHead = head.load(std::memory_order_acquire);
+  const int read = std::min(stereoSampleCount, (int)((localHead - localTail) & MASK));
+  const unsigned int first = std::min((unsigned int)read, CAPACITY - localTail);
+  memcpy(stereo, samples + localTail * 2, (size_t)first * 2 * sizeof(int16_t));
+  if (first < (unsigned int)read)
+    memcpy(stereo + first * 2, samples, (size_t)(read - first) * 2 * sizeof(int16_t));
+  tail.store((localTail + read) & MASK, std::memory_order_release);
+#endif
   return read;
 }
 
@@ -404,8 +434,8 @@ bool AudioInputManager::readLiveInput(float* stereo, int frames) {
   if (!stereo || frames <= 0) return false;
   // Capture and output clocks can drift. Bound live latency without touching
   // the recorder ring; only the output consumer advances this read cursor.
-  unsigned int available = (liveRing_.head.load(std::memory_order_acquire) + AudioInputRing::CAPACITY -
-    liveRing_.tail.load(std::memory_order_relaxed)) % AudioInputRing::CAPACITY;
+  unsigned int available = (liveRing_.head.load(std::memory_order_acquire) -
+    liveRing_.tail.load(std::memory_order_relaxed)) & AudioInputRing::MASK;
   if (!available) return false;
   int excess = (int)available - frames - 1024;
   while (excess > 0) {

@@ -5,6 +5,9 @@
 #include "synth/opl_voice.h"
 #include "synth/simple_chip_voice.h"
 #include "synth/four_op_voice.h"
+#include "synth/drum_synth_voice.h"
+#include "synth/mme_voice.h"
+#include "synth/sintered_voice.h"
 #include "opll_presets.h"
 #include "simple_chip_presets.h"
 #include "opl_patch.h"
@@ -13,7 +16,9 @@
 #include <cstring>
 #include <thread>
 #include <atomic>
+#ifndef _WIN32
 #include <sys/resource.h>
+#endif
 #include "fm_catalog.h"
 #include <algorithm>
 #include <chrono>
@@ -25,6 +30,16 @@ static void stats(const char* kind,int rate,int frames,int count,int seconds,std
  double sum=0;int misses=0;for(double t:times){sum+=t;misses+=t>frames*1e6/rate;}std::sort(times.begin(),times.end());
  printf("%s,%d,%d,%d,%d,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%zu\n",kind,rate,frames,count,seconds,sum/times.size(),times[times.size()/2],times[size_t(times.size()*.95)],times[size_t(times.size()*.99)],times.back(),misses,bytes);fflush(stdout);
 }
+static void insertFamily(const char* name,int module,int seconds,volatile double& checksum) {
+  InsertConfig config[2]{}; insertSelect(&config[0],module);
+  config[0].values[0]=220; config[0].values[1]=192; config[0].values[2]=160; config[0].values[3]=255;
+  InsertAutomation automation{}; InsertChain chain(48000); chain.sync(config,&automation);
+  uint8_t effective[2][8]{};memcpy(effective[0],config[0].values,8);
+  std::vector<float> audio(1024),source(1024);for(size_t i=0;i<source.size();++i)source[i]=sinf(i*.017f)*.7f;
+  std::vector<double>times;times.reserve(seconds*48000/512);
+  for(int b=0;b<seconds*48000/512+100;++b){memcpy(audio.data(),source.data(),audio.size()*sizeof(float));auto start=std::chrono::steady_clock::now();chain.process(audio.data(),512,effective);checksum+=audio[0];if(b>=100)times.push_back(std::chrono::duration<double,std::micro>(std::chrono::steady_clock::now()-start).count());}
+  stats(name,48000,512,1,seconds,times,sizeof(InsertChain));
+}
 template<class Voice,class Configure>static void family(const char* name,int count,int seconds,Configure configure,volatile double& checksum){
  auto voices=std::make_unique<Voice[]>(count);for(int i=0;i<count;++i){voices[i].init(48000);configure(voices[i],i);voices[i].noteOn();}std::vector<float>audio(1024);std::vector<double>times;times.reserve(seconds*48000/512);
  for(int b=0;b<seconds*48000/512+100;++b){auto start=std::chrono::steady_clock::now();if(b%73==0)voices[(b/73)%count].noteOff();if(b%73==7){configure(voices[(b/73)%count],(b/73)%count);voices[(b/73)%count].noteOn();}for(int i=0;i<count;++i){voices[i].render(audio.data(),512);checksum+=audio[0];}if(b>=100)times.push_back(std::chrono::duration<double,std::micro>(std::chrono::steady_clock::now()-start).count());}
@@ -32,7 +47,7 @@ template<class Voice,class Configure>static void family(const char* name,int cou
 }
 int main(int argc,char** argv) {
   bool soak=argc>1&&!strcmp(argv[1],"--soak");int seconds=soak?600:argc>1?std::atoi(argv[1]):30;if(seconds<1||seconds>600)return 1;
-  bool bounded=false,songsOnly=false,sampleMix=false,songFMAmp=false; int insertTracks=1,songTracks=8;
+  bool bounded=false,songsOnly=false,sampleMix=false,songFMAmp=false,hotMathOnly=false; int insertTracks=1,songTracks=8;
   for(int arg=2;arg<argc;++arg) {
     if(!strcmp(argv[arg],"--bounded"))bounded=true;
     else if(!strcmp(argv[arg],"--songs-only"))songsOnly=true;
@@ -42,12 +57,13 @@ int main(int argc,char** argv) {
     else if(!strcmp(argv[arg],"--four-tracks"))songTracks=4;
     else if(!strcmp(argv[arg],"--sample-mix"))sampleMix=true;
     else if(!strcmp(argv[arg],"--song-fm-amp"))songFMAmp=true;
+    else if(!strcmp(argv[arg],"--hot-math-only"))hotMathOnly=true;
     else return 2;
   }
   volatile double checksum=0;
   if(songFMAmp)fprintf(stderr,"Song fixtures enable FM amp ADSR: 16,32,192,48; shape128.\n");
   printf("kind,rate,frames,notes,seconds,mean_us,p50_us,p95_us,p99_us,worst_us,deadline_misses,part_bytes\n");
-  if(!soak&&!songsOnly)for(int rate:{44100,48000,96000})for(int frames:{128,512})for(int count:{1,4,8,16,32}) {
+  if(!soak&&!songsOnly&&!hotMathOnly)for(int rate:{44100,48000,96000})for(int frames:{128,512})for(int count:{1,4,8,16,32}) {
     auto parts=std::make_unique<DX7Part[]>(8);InstrumentDX7 patches[8]{};
     for(int i=0;i<8;++i){parts[i].init(rate);initDX7Patch(&patches[i]);patches[i].voice[134]=i?21:4;patches[i].voice[135]=(i%4)*2;patches[i].voice[139]=i*10;patches[i].voice[143]=3;}
     for(int i=0;i<count;++i){auto& v=parts[i/4].voices[i%4];v.configure(&patches[i/4],4800+(i%7)*300,1.f/4);v.noteOn();}
@@ -62,17 +78,34 @@ int main(int argc,char** argv) {
     stats("DX7",rate,frames,count,seconds,times,sizeof(DX7Part));
   }
 
-  if(!soak&&!songsOnly)for(int count:{1,8,32}) {
+  if(!soak&&!songsOnly&&!hotMathOnly)for(int count:{1,8,32}) {
     if(bounded&&count>8)continue; // Optional 32-voice non-DX7 overload stress.
     for(auto type:{InstrumentType::OPLL,InstrumentType::VRC7}){Instrument i{};getInstrumentFunctions(type).init(&i);family<OPLLVoice>(getInstrumentDefinition(type)->uiName,count,seconds,[&](auto& v,int n){v.configure(&i.chip.opll,4800+(n%12)*100,.5);},checksum);}
     for(auto type:{InstrumentType::SegaPSG,InstrumentType::GBPulse,InstrumentType::GBNoise}){Instrument i{};getInstrumentFunctions(type).init(&i);family<SimpleChipVoice>(getInstrumentDefinition(type)->uiName,count,seconds,[&](auto& v,int n){v.configure(type,&i.chip.simpleChip,4800+(n%12)*100,.5);},checksum);}
     for(auto type:{InstrumentType::GenesisFM,InstrumentType::ArcadeFM}){Instrument i{};getInstrumentFunctions(type).init(&i);family<FourOpVoice>(getInstrumentDefinition(type)->uiName,count,seconds,[&](auto& v,int n){v.configure(type,&i.chip.fourOp,4800+(n%12)*100,.5);},checksum);}
     for(int topology=0;topology<3;++topology){InstrumentOPL p{};initOPLPatch(&p);p.topology=(OPLTopology)topology;p.operators[2]=p.operators[0];p.operators[3]=p.operators[1];p.connection[1]=1;p.secondDetune=4;family<OPLVoice>(topology==0?"OPL2":topology==1?"OPL3 four":"OPL3 dual",count,seconds,[&](auto& v,int n){v.configure(topology?InstrumentType::OPL3:InstrumentType::OPL2,&p,4800+(n%12)*100,.5);},checksum);}
   }
+  if(!soak&&!songsOnly)for(int count:{1,8,32}) {
+    if(bounded&&count>8)continue;
+    Instrument drum{}, mme{}, sintered{};
+    getInstrumentFunctions(InstrumentType::DrumSynth).init(&drum);
+    getInstrumentFunctions(InstrumentType::MME).init(&mme);
+    getInstrumentFunctions(InstrumentType::Sintered).init(&sintered);
+    drum.chip.drumSynth.drive=224; drum.chip.drumSynth.decay=224;
+    mme.chip.mme.feedback=192; mme.chip.mme.shaper=224; mme.chip.mme.sustain=255;
+    sintered.chip.sintered.mod=192; sintered.chip.sintered.c=224; sintered.chip.sintered.decay=224;
+    family<DrumSynthVoice>("Bogie hot math",count,seconds,[&](auto& v,int n){v.configure(&drum.chip.drumSynth,4800+(n%12)*100,.5,20000,0);},checksum);
+    family<MMEVoice>("MME hot math",count,seconds,[&](auto& v,int n){v.configure(&mme.chip.mme,4800+(n%12)*100,.5,20000,0);},checksum);
+    family<SinteredVoice>("Sintered hot math",count,seconds,[&](auto& v,int n){v.configure(&sintered.chip.sintered,4800+(n%12)*100,.5,20000,0);},checksum);
+  }
+  if(!soak&&!songsOnly) {
+    insertFamily("Saturation insert hot math",insertSaturation,seconds,checksum);
+    insertFamily("Rotary insert hot math",insertRotary,seconds,checksum);
+  }
   // Actual eight-track sequencer with pre-existing and new instruments, sends
   // and two representative inserts; --four-inserts and --all-inserts retain
   // four/sixteen-slot stress. Playback/modulation overhead stays inside blocks.
-  for(int scene=0;scene<3;++scene) {
+  for(int scene=0;scene<3&&!hotMathOnly;++scene) {
     const bool heavy=scene>0,chords=scene==2;
     if((soak&&!chords)||(sampleMix&&scene==1))continue;
     auto* state=chipnomadCreate();if(projectLoad(&state->project,"packaging/common/projects/gm-midi-demo.cct"))return 3;
@@ -92,7 +125,13 @@ int main(int argc,char** argv) {
     chipnomadInitChips(state,48000,nullptr);chipnomadReserveRenderBuffers(state,512);chipnomadQueueProjectRefresh(state);chipnomadQueuePlaybackStartSong(state,0,0,1);std::vector<float>audio(1024);std::vector<double>times;times.reserve(seconds*48000/512);
     std::atomic<bool>stop{false};std::atomic<unsigned>scans{0};std::thread browser;
     if(soak)browser=std::thread([&]{while(!stop){std::vector<FMPresetEntry>entries;if(!loadFMCatalog("../.tmp/chip-audit/scale-catalog.tsv",entries)||entries.size()!=10000)std::abort();++scans;std::this_thread::sleep_for(std::chrono::milliseconds(50));}});
-    auto paced=std::chrono::steady_clock::now();for(int b=0;b<seconds*48000/512+100;++b){auto start=std::chrono::steady_clock::now();chipnomadRender(state,audio.data(),512);checksum+=audio[0];if(b>=100)times.push_back(std::chrono::duration<double,std::micro>(std::chrono::steady_clock::now()-start).count());if(soak)std::this_thread::sleep_until(paced+std::chrono::microseconds((b+1)*int64_t(512)*1000000/48000));}stop=true;if(browser.joinable())browser.join();if(soak){struct rusage usage{};getrusage(RUSAGE_SELF,&usage);fprintf(stderr,"Paced host soak: %d seconds plus warmup; 10k metadata scans=%u maxrss_native_units=%ld\n",seconds,unsigned(scans),usage.ru_maxrss);}char label[96];snprintf(label,sizeof(label),"%s (%d tracks)+%d inserts+sends",sampleMix?(chords?"4WAV+2chip+2FM chord song":"4WAV+2chip+2FM song"):(chords?"FM-heavy chord song":heavy?"FM-heavy song":"Mixed song"),songTracks,std::min(songTracks,insertTracks)*2);stats(label,48000,512,songTracks+(chords?3:0),seconds,times,sizeof(ChipNomadState));chipnomadDestroy(state);
+    auto paced=std::chrono::steady_clock::now();for(int b=0;b<seconds*48000/512+100;++b){auto start=std::chrono::steady_clock::now();chipnomadRender(state,audio.data(),512);checksum+=audio[0];if(b>=100)times.push_back(std::chrono::duration<double,std::micro>(std::chrono::steady_clock::now()-start).count());if(soak)std::this_thread::sleep_until(paced+std::chrono::microseconds((b+1)*int64_t(512)*1000000/48000));}stop=true;if(browser.joinable())browser.join();if(soak){
+#ifndef _WIN32
+      struct rusage usage{};getrusage(RUSAGE_SELF,&usage);fprintf(stderr,"Paced host soak: %d seconds plus warmup; 10k metadata scans=%u maxrss_native_units=%ld\n",seconds,unsigned(scans),usage.ru_maxrss);
+#else
+      fprintf(stderr,"Paced host soak: %d seconds plus warmup; 10k metadata scans=%u\n",seconds,unsigned(scans));
+#endif
+    }char label[96];snprintf(label,sizeof(label),"%s (%d tracks)+%d inserts+sends",sampleMix?(chords?"4WAV+2chip+2FM chord song":"4WAV+2chip+2FM song"):(chords?"FM-heavy chord song":heavy?"FM-heavy song":"Mixed song"),songTracks,std::min(songTracks,insertTracks)*2);stats(label,48000,512,songTracks+(chords?3:0),seconds,times,sizeof(ChipNomadState));chipnomadDestroy(state);
   }
   fprintf(stderr,"Offline render, not device callbacks; checksum %.9f; no hardware underrun/thermal observation\n",double(checksum));
 }

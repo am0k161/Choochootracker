@@ -30,6 +30,8 @@ void playbackModSetAYWavetables(PlaybackModState* state, const uint8_t (*ayWavet
 void playbackModRestart(PlaybackModState* state);
 void playbackModNext(PlaybackModState* state);
 void playbackModNextAudio(PlaybackModState* state, float sampleRate);
+void playbackModNextAudioFrames(PlaybackModState* state, float sampleRate, int frames);
+int playbackModAudioControlFrames(const PlaybackModState* state, float sampleRate);
 void playbackModNoteOff(PlaybackModState* state);
 
 // Helper function to scale modulation output to a specific range

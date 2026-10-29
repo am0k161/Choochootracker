@@ -1,4 +1,5 @@
 #include "mme_voice.h"
+#include "audio_math.h"
 
 #include <math.h>
 #include <string.h>
@@ -70,8 +71,8 @@ float MMEVoice::diode(float x) const {
 float MMEVoice::shaper(float x) const {
   float amount = parameters_.shaper / 255.0f;
   if (amount <= 0.0f) return x;
-  float saturated = tanhf(x * (1.0f + amount * 5.0f));
-  float folded = fabsf(fmodf(saturated * (1.0f + amount * 3.0f) + 1.0f, 4.0f) - 2.0f) - 1.0f;
+  float saturated = audioTanh(x * (1.0f + amount * 5.0f));
+  float folded = fabsf(audioFmod4(saturated * (1.0f + amount * 3.0f) + 1.0f) - 2.0f) - 1.0f;
   float foldMix = mmeClamp((amount - .55f) / .45f, 0.0f, 1.0f);
   return saturated + (folded - saturated) * foldMix;
 }
@@ -133,18 +134,18 @@ void MMEVoice::render(float* output, size_t frames) {
       phaseB_ += (resetPhase - phaseB_) * amount;
     }
     const float injected = feedback_ * feedbackGain;
-    float a = tanhf(pairedOscillator(phaseA_, false, pairPosition) + injected * (.35f + .75f * flow));
-    float b = tanhf(pairedOscillator(phaseB_, true, pairPosition) - injected * (1.10f - .50f * flow));
+    float a = audioTanh(pairedOscillator(phaseA_, false, pairPosition) + injected * (.35f + .75f * flow));
+    float b = audioTanh(pairedOscillator(phaseB_, true, pairPosition) - injected * (1.10f - .50f * flow));
     float sample = 0.0f;
     switch (parameters_.model) {
       case MMEModel::ring: {
-        float analog = tanhf((diode(a + b * amount * 2.0f) + diode(a - b * amount * 2.0f)) * 12.0f);
+        float analog = audioTanh((diode(a + b * amount * 2.0f) + diode(a - b * amount * 2.0f)) * 12.0f);
         float digital = (4.0f * a * b * amount); digital /= 1.0f + fabsf(digital);
         sample = analog + (digital - analog) * flow; break;
       }
       case MMEModel::fold: {
         float sum = (a + b * (0.15f + amount) + a * b * .25f) * (.02f + amount * 1.4f);
-        sample = fabsf(fmodf(sum + 1.0f, 4.0f) - 2.0f) - 1.0f; break;
+        sample = fabsf(audioFmod4(sum + 1.0f) - 2.0f) - 1.0f; break;
       }
       case MMEModel::cross: {
         float ab = pairedOscillator(phaseA_ + (b + feedback_) * amount * 0.28f, false, pairPosition);
@@ -168,9 +169,9 @@ void MMEVoice::render(float* output, size_t frames) {
       case MMEModel::vocode: sample = vocode(b * amount, a); break;
       default: break;
     }
-    sample = tanhf(sample + injected * 1.2f);
+    sample = audioTanh(sample + injected * 1.2f);
     sample = shaper(sample);
-    const float rawFeedback = tanhf(feedback_ * (.10f + feedbackGain) + sample * (.45f + feedbackControl * 1.9f));
+    const float rawFeedback = audioTanh(feedback_ * (.10f + feedbackGain) + sample * (.45f + feedbackControl * 1.9f));
     // A recursive DC offset turns a wild patch into silence or a flat line.
     // Keep the turbulence, but only reinject its AC component.
     feedbackDC_ += .025f * (rawFeedback - feedbackDC_);

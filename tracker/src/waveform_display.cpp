@@ -164,7 +164,7 @@ static Bitmap* drawVoiceWaveform(int trackIdx) {
   if (!monitor->active) {
     displayedVoiceActive[trackIdx] = 0;
     Bitmap* bitmap = waveformBitmaps[trackIdx];
-    memset(bitmap->data, 0, bitmap->widthPixels * bitmap->heightPixels);
+    gfxBitmapClear(bitmap);
     return bitmap;
   }
 
@@ -185,7 +185,7 @@ static Bitmap* drawVoiceWaveform(int trackIdx) {
   }
 
   Bitmap* bitmap = waveformBitmaps[trackIdx];
-  memset(bitmap->data, 0, bitmap->widthPixels * bitmap->heightPixels);
+  gfxBitmapClear(bitmap);
   int previousY = charH / 2;
   for (int x = 0; x < charW; ++x) {
     int sampleIdx = charW > 1 ? (x * (VOICE_MONITOR_SAMPLES - 1)) / (charW - 1) : 0;
@@ -217,7 +217,7 @@ static Bitmap* renderWaveform(int trackIdx) {
   // Check if track is playing
   if (track->note.pitchFinal == EMPTY_VALUE_8) {
     Bitmap* bitmap = waveformBitmaps[trackIdx];
-    memset(bitmap->data, 0, bitmap->widthPixels * bitmap->heightPixels);
+    gfxBitmapClear(bitmap);
     return bitmap;
   }
 
@@ -242,7 +242,7 @@ static Bitmap* renderWaveform(int trackIdx) {
   int noiseShadeBase = 128 + noisePeriod * 2;
 
   Bitmap* bitmap = waveformBitmaps[trackIdx];
-  memset(bitmap->data, 0, bitmap->widthPixels * bitmap->heightPixels);
+  gfxBitmapClear(bitmap);
 
   if (!envEnabled) {
     // Simple volume-based waveform

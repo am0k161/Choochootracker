@@ -2,6 +2,7 @@
 #include "project.h"
 #include "synth/drum_synth_voice.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -53,6 +54,28 @@ TEST_CASE("DrumSynth cowbell FM changes the generated waveform") {
   double difference = 0.0;
   for (size_t i = 0; i < plain.size(); ++i) difference += std::fabs(plain[i] - fm[i]);
   CHECK(difference > 1.0);
+}
+
+TEST_CASE("DrumSynth render is stable across callback block sizes") {
+  for (int engine = 0; engine < (int)DrumSynthEngine::totalCount; ++engine) {
+    InstrumentDrumSynth instrument = {};
+    instrument.engine = (DrumSynthEngine)engine; instrument.decay = 220;
+    instrument.tone = 180; instrument.sweep = 170; instrument.noise = 150;
+    instrument.fm = 140; instrument.drive = 190;
+    DrumSynthVoice whole, chunked; whole.init(48000); chunked.init(48000);
+    whole.configure(&instrument, 6000, 1, 20000, 0);
+    chunked.configure(&instrument, 6000, 1, 20000, 0);
+    whole.noteOn(); chunked.noteOn();
+    std::vector<float> a(4096), b(4096);
+    whole.render(a.data(), a.size());
+    for (size_t offset = 0; offset < b.size(); offset += 128)
+      chunked.render(b.data() + offset, 128);
+    float maximumDifference = 0.0f;
+    for (size_t i = 0; i < a.size(); ++i)
+      maximumDifference = std::max(maximumDifference, std::fabs(a[i] - b[i]));
+    CAPTURE(engine); CAPTURE(maximumDifference);
+    CHECK(maximumDifference < 0.001f);
+  }
 }
 
 TEST_CASE("DrumSynth every macro changes every model") {

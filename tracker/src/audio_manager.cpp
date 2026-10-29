@@ -147,8 +147,10 @@ static void audioCallback(int16_t* buffer, int stereoSamples) {
     audioInputManager.readLiveInput(samplePreviewBuffer, stereoSamples);
   chipnomadRender(chipnomadState, floatBuffer, stereoSamples,
     hasLiveInput ? samplePreviewBuffer : nullptr);
-  renderPreview(samplePreviewBuffer, stereoSamples);
-  for (int i = 0; i < stereoSamples * 2; ++i) floatBuffer[i] += samplePreviewBuffer[i];
+  if (previewMode != PREVIEW_NONE) {
+    renderPreview(samplePreviewBuffer, stereoSamples);
+    for (int i = 0; i < stereoSamples * 2; ++i) floatBuffer[i] += samplePreviewBuffer[i];
+  }
 
   // Audio input monitoring (Phase 2.4): route armed capture into the output
   // when enabled. No-op (single atomic load) when monitor is off.

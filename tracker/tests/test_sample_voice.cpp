@@ -61,6 +61,33 @@ TEST_CASE("SampleVoice renders PCM16 with envelope and every filter mode") {
   }
 }
 
+TEST_CASE("SampleVoice repeated configuration preserves plain playback exactly") {
+  int16_t pcm[2048];
+  for (int i = 0; i < 2048; ++i) pcm[i] = (int16_t)(sinf(i * 0.071f) * 24000.0f);
+  InstrumentSample sample{};
+  sample.sampleRate = 44100;
+  sample.frameCount = 2048;
+  sample.channels = 1;
+  sample.data = pcm;
+  sample.end = 255;
+  sample.sustain = 255;
+
+  SampleVoice cached, reference;
+  cached.init(48000.0f);
+  reference.init(48000.0f);
+  cached.configure(&sample, 137.0f, 0.8f, 100.0f, 0, 255, 0, 20000, 0);
+  reference.configure(&sample, 137.0f, 0.8f, 100.0f, 0, 255, 0, 20000, 0);
+  cached.noteOn();
+  reference.noteOn();
+  float a[64 * 2], b[64 * 2];
+  for (int block = 0; block < 8; ++block) {
+    cached.configure(&sample, 137.0f, 0.8f, 100.0f, 0, 255, 0, 20000, 0);
+    cached.render(a, 64);
+    reference.render(b, 64);
+    for (int i = 0; i < 128; ++i) CHECK(a[i] == b[i]);
+  }
+}
+
 TEST_CASE("SampleVoice smooths the first trigger and retrigger without shifting stereo envelopes") {
   int16_t pcm[512];
   for (int i = 0; i < 512; ++i) pcm[i] = i < 256 ? 16000 : -16000;

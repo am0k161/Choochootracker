@@ -5,6 +5,7 @@
 #include "corelib_audio.h"
 
 #include <cstring>
+#include <vector>
 
 // The test build links the audio mock: audioInputDeviceCount() returns 0 and
 // audioInputSetup() fails, so arm() exercises the failure path. Ring and
@@ -23,6 +24,30 @@ TEST_CASE("AudioInputRing push/pop preserves interleaved stereo order") {
 
   // Empty ring: pop returns 0.
   CHECK(ring.pop(out, 4) == 0);
+}
+
+TEST_CASE("AudioInputRing preserves stereo and mono data across wraparound") {
+  AudioInputRing ring;
+  std::vector<int16_t> first((AudioInputRing::CAPACITY - 4) * 2);
+  for (size_t i = 0; i < first.size(); ++i) first[i] = (int16_t)i;
+  REQUIRE(ring.push(first.data(), AudioInputRing::CAPACITY - 4));
+  std::vector<int16_t> discard((AudioInputRing::CAPACITY - 8) * 2);
+  REQUIRE(ring.pop(discard.data(), AudioInputRing::CAPACITY - 8) == AudioInputRing::CAPACITY - 8);
+
+  int16_t wrapped[] = {101, -101, 102, -102, 103, -103, 104, -104, 105, -105, 106, -106};
+  REQUIRE(ring.push(wrapped, 6));
+  int16_t tail[20]{};
+  REQUIRE(ring.pop(tail, 10) == 10);
+  for (int i = 0; i < 8; ++i) CHECK(tail[i] == first[first.size() - 8 + i]);
+  for (int i = 0; i < 12; ++i) CHECK(tail[8 + i] == wrapped[i]);
+
+  int16_t mono[] = {7, -8, 9};
+  REQUIRE(ring.push(mono, 3, 1));
+  int16_t stereo[6]{};
+  REQUIRE(ring.pop(stereo, 3) == 3);
+  CHECK(stereo[0] == 7); CHECK(stereo[1] == 7);
+  CHECK(stereo[2] == -8); CHECK(stereo[3] == -8);
+  CHECK(stereo[4] == 9); CHECK(stereo[5] == 9);
 }
 
 TEST_CASE("AudioInputRing drops on full and bumps counter") {

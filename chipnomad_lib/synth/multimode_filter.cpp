@@ -7,6 +7,11 @@
 static constexpr float kPi = 3.14159265358979323846f;
 static constexpr float kMinCutoff = FILTER_CUTOFF_MIN_HZ;
 static constexpr float kMaxCutoff = FILTER_CUTOFF_MAX_HZ;
+#ifdef CCT_DISABLE_CONFIG_CACHE
+static constexpr bool kCacheConfigurations = false;
+#else
+static constexpr bool kCacheConfigurations = true;
+#endif
 
 static float clampCutoff(float cutoff, float sampleRate) {
   if (!(cutoff >= kMinCutoff)) cutoff = kMinCutoff;
@@ -39,17 +44,26 @@ void MultimodeFilter::configure(bool enabled, uint8_t character, uint8_t mode,
                                 uint8_t color) {
   // Projects saved while Prism existed keep their Color setting and play as Snarl.
   const uint8_t nextCharacter = character == 7 ? 6 : character > 7 ? 1 : character;
+  const uint8_t nextMode = mode > 2 ? 0 : mode;
+  const float nextCutoff = clampCutoff(cutoffHz, sampleRate_);
+  const float nextResonance = fmaxf(0.0f, fminf(1.0f, resonance));
+  if (kCacheConfigurations && enabled == enabled_ && nextCharacter == character_ && nextMode == mode_ &&
+      slope24dB == slope24dB_ && color == color_ && nextCutoff == cutoffHz_ &&
+      nextResonance == resonance_) return;
+
   const bool characterChanged = nextCharacter != character_;
+  const bool cutoffChanged = nextCutoff != cutoffHz_;
+  const bool resonanceChanged = nextResonance != resonance_;
+  const bool colorChanged = color != color_;
+  const bool slopeChanged = slope24dB != slope24dB_;
+  const bool coefficientsChanged = characterChanged || cutoffChanged || resonanceChanged;
+  const bool refreshCoefficients = !kCacheConfigurations || coefficientsChanged;
   if (characterChanged) reset();
   enabled_ = enabled;
   character_ = nextCharacter;
-  mode_ = mode > 2 ? 0 : mode;
+  mode_ = nextMode;
   slope24dB_ = slope24dB;
   color_ = color;
-  const float nextCutoff = clampCutoff(cutoffHz, sampleRate_);
-  const float nextResonance = fmaxf(0.0f, fminf(1.0f, resonance));
-  const bool coefficientsChanged = characterChanged || nextCutoff != cutoffHz_ ||
-                                   nextResonance != resonance_;
   cutoffHz_ = nextCutoff;
   resonance_ = nextResonance;
 
@@ -79,32 +93,38 @@ void MultimodeFilter::configure(bool enabled, uint8_t character, uint8_t mode,
       for (auto& filter : acid_) filter.setResonance(percent);
       acidResonance_ = percent;
     }
-    // Restore the bass attenuated by TeeBee's resonance feedback.
-    const float bassCutoff = fminf(150.0f, cutoffHz_ * 0.35f);
-    acidBassAlpha_ = 1.0f - expf(-2.0f * kPi * bassCutoff / sampleRate_);
-    const float bassLevel = slope24dB_ ? fminf(1.0f, 0.4f + cutoffHz_ / 1600.0f) : 0.8f;
-    acidBassGain_ = 0.8f * bassLevel * (1.0f - expf(-5.0f * resonance_));
+    if (refreshCoefficients || slopeChanged) {
+      // Restore the bass attenuated by TeeBee's resonance feedback.
+      const float bassCutoff = fminf(150.0f, cutoffHz_ * 0.35f);
+      acidBassAlpha_ = 1.0f - expf(-2.0f * kPi * bassCutoff / sampleRate_);
+      const float bassLevel = slope24dB_ ? fminf(1.0f, 0.4f + cutoffHz_ / 1600.0f) : 0.8f;
+      acidBassGain_ = 0.8f * bassLevel * (1.0f - expf(-5.0f * resonance_));
+    }
   } else {
-    // Preserve the previous Clean/Classic resonance taper.
-    const float r2 = resonance_ * resonance_;
-    const float r4 = r2 * r2;
-    damping_ = character_ <= 2
-      ? 1.0f / (0.5f + (character_ == 2 ? r4 * 0.7f : r4) * 19.5f)
-      : 1.5f - 1.25f * r2;
-    coefficients(cutoffHz_, sampleRate_, damping_, coeff_[0]);
+    if (refreshCoefficients) {
+      // Preserve the previous Clean/Classic resonance taper.
+      const float r2 = resonance_ * resonance_;
+      const float r4 = r2 * r2;
+      damping_ = character_ <= 2
+        ? 1.0f / (0.5f + (character_ == 2 ? r4 * 0.7f : r4) * 19.5f)
+        : 1.5f - 1.25f * r2;
+      coefficients(cutoffHz_, sampleRate_, damping_, coeff_[0]);
+    }
     if (character_ >= 5) {
-      const float onePoleTangent = tanf(kPi * cutoffHz_ / sampleRate_);
-      onePoleG_ = onePoleTangent / (1.0f + onePoleTangent);
       // 00 = 0%, 80 = 150%, FF = 300%; the upper half adds the wild range.
       const float normal = fminf(color_ / 128.0f, 1.0f);
       const float extension = fmaxf((int(color_) - 128) * (2.0f / 127.0f), 0.0f);
-      if (character_ == 6) {
+      if (!kCacheConfigurations || characterChanged || cutoffChanged) {
+        const float onePoleTangent = tanf(kPi * cutoffHz_ / sampleRate_);
+        onePoleG_ = onePoleTangent / (1.0f + onePoleTangent);
+      }
+      if (character_ == 6 && (!kCacheConfigurations || characterChanged || cutoffChanged || colorChanged)) {
         snarlTargetDelay_ = fmaxf(8.0f, fminf(240.0f,
           sampleRate_ / (cutoffHz_ * (0.35f + 0.2f * normal + 0.1f * extension))));
         if (characterChanged)
           snarlDelaySamples_[0] = snarlDelaySamples_[1] = snarlTargetDelay_;
       }
-      if (character_ == 5) {
+      if (character_ == 5 && (!kCacheConfigurations || coefficientsChanged || colorChanged)) {
         innerDamping_ = fmaxf(0.12f,
           0.55f + 0.35f * (1.0f - resonance_) - 0.35f * extension);
         coefficients(cutoffHz_ * (0.25f + 0.15f * normal + 0.15f * extension),

@@ -6,6 +6,11 @@
 #include "project.h"
 
 static constexpr float tailThreshold = 0.000001f;
+#ifdef CCT_EFFECT_REFERENCE_PATH
+static constexpr bool kOptimizeEffects = false;
+#else
+static constexpr bool kOptimizeEffects = true;
+#endif
 
 static float mixerGain(uint8_t value) {
   if (value == 0) return 0.0f;
@@ -117,12 +122,16 @@ void MasterEffects::process(float* reverbBus, float* delayBus, float* output,
       delaySamples = std::max<size_t>(1, std::min(delaySamples, capacity - 1));
       float filterCoefficient = lowpassCoefficient(project->delayFilterCutoffHz);
       size_t read = (delayWrite_ + capacity - delaySamples) % capacity;
+      bool tailActive = false;
       for (size_t i = 0; i < frames; ++i) {
         float wetL = lowpass(delayLine_[read * 2], filterCoefficient, delayFilterState_[0]);
         float wetR = lowpass(delayLine_[read * 2 + 1], filterCoefficient, delayFilterState_[1]);
-        if (fabsf(delayBus[i * 2]) > tailThreshold || fabsf(delayBus[i * 2 + 1]) > tailThreshold ||
-            fabsf(wetL) > tailThreshold || fabsf(wetR) > tailThreshold)
-          delayTailFrames_ = delaySamples + frames;
+        const bool sampleTailActive = (!kOptimizeEffects || !tailActive) &&
+          (fabsf(delayBus[i * 2]) > tailThreshold ||
+          fabsf(delayBus[i * 2 + 1]) > tailThreshold ||
+          fabsf(wetL) > tailThreshold || fabsf(wetR) > tailThreshold);
+        if (kOptimizeEffects) tailActive |= sampleTailActive;
+        else if (sampleTailActive) delayTailFrames_ = delaySamples + frames;
         delayLine_[delayWrite_ * 2] = delayBus[i * 2] + wetR * feedback;
         delayLine_[delayWrite_ * 2 + 1] = delayBus[i * 2 + 1] + wetL * feedback;
         output[i * 2] += wetL * returnGain;
@@ -134,6 +143,7 @@ void MasterEffects::process(float* reverbBus, float* delayBus, float* output,
         if (++read == capacity) read = 0;
         if (++delayWrite_ == capacity) delayWrite_ = 0;
       }
+      if (kOptimizeEffects && tailActive) delayTailFrames_ = delaySamples + frames;
     } else {
       static constexpr uint8_t divisionTicks[] = {6, 8, 12, 18, 24, 36, 48};
       static constexpr uint8_t headMasks[] = {1, 2, 4, 3, 5, 6, 7};
@@ -151,8 +161,10 @@ void MasterEffects::process(float* reverbBus, float* delayBus, float* output,
       size_t springCapacity = springLine_.size() / 2;
       const float springDelayA = std::max(1.0f, std::min(sampleRate_ * 0.031f, (float)springCapacity - 2.0f));
       const float springDelayB = std::max(1.0f, std::min(sampleRate_ * 0.047f, (float)springCapacity - 2.0f));
+      const float springFilterCoefficient = lowpassCoefficient(5500.0f);
       float flutterControl = std::min<int>(project->tapeFlutter, 100) / 100.0f;
       float flutterDepth = sampleRate_ * 0.020f * flutterControl * flutterControl;
+      bool tailActive = false;
       for (size_t i = 0; i < frames; ++i) {
         float flutter = sinf(flutterPhase_) * flutterDepth;
         float tapeL = 0.0f, tapeR = 0.0f;
@@ -168,15 +180,22 @@ void MasterEffects::process(float* reverbBus, float* delayBus, float* output,
           size_t b = (springWrite_ + springCapacity - (size_t)springDelayB) % springCapacity;
           springL = 0.5f * (springLine_[a * 2] + springLine_[b * 2]);
           springR = 0.5f * (springLine_[a * 2 + 1] + springLine_[b * 2 + 1]);
-          springL = lowpass(springL, lowpassCoefficient(5500.0f), springFilterState_[0]);
-          springR = lowpass(springR, lowpassCoefficient(5500.0f), springFilterState_[1]);
+          const float coefficient = kOptimizeEffects ? springFilterCoefficient
+                                                     : lowpassCoefficient(5500.0f);
+          springL = lowpass(springL, coefficient, springFilterState_[0]);
+          springR = lowpass(springR, coefficient, springFilterState_[1]);
           springLine_[springWrite_ * 2] = delayBus[i * 2] + springR * springFeedback;
           springLine_[springWrite_ * 2 + 1] = delayBus[i * 2 + 1] + springL * springFeedback;
           if (++springWrite_ == springCapacity) springWrite_ = 0;
         }
-        if (fabsf(delayBus[i * 2]) > tailThreshold || fabsf(delayBus[i * 2 + 1]) > tailThreshold ||
-            fabsf(wetL) > tailThreshold || fabsf(wetR) > tailThreshold ||
-            fabsf(springL) * springGain > tailThreshold || fabsf(springR) * springGain > tailThreshold)
+        const bool sampleTailActive = (!kOptimizeEffects || !tailActive) &&
+          (fabsf(delayBus[i * 2]) > tailThreshold ||
+          fabsf(delayBus[i * 2 + 1]) > tailThreshold ||
+          fabsf(wetL) > tailThreshold || fabsf(wetR) > tailThreshold ||
+          fabsf(springL) * springGain > tailThreshold ||
+          fabsf(springR) * springGain > tailThreshold);
+        if (kOptimizeEffects) tailActive |= sampleTailActive;
+        else if (sampleTailActive)
           delayTailFrames_ = (size_t)(baseDelay * 3.0f) + frames;
         delayLine_[delayWrite_ * 2] = delayBus[i * 2] + wetL * tapeFeedback;
         delayLine_[delayWrite_ * 2 + 1] = delayBus[i * 2 + 1] + wetR * tapeFeedback;
@@ -190,6 +209,8 @@ void MasterEffects::process(float* reverbBus, float* delayBus, float* output,
         if (flutterPhase_ >= 6.283185307179586f) flutterPhase_ -= 6.283185307179586f;
         if (++delayWrite_ == capacity) delayWrite_ = 0;
       }
+      if (kOptimizeEffects && tailActive)
+        delayTailFrames_ = (size_t)(baseDelay * 3.0f) + frames;
     }
   }
 
@@ -213,9 +234,14 @@ void MasterEffects::process(float* reverbBus, float* delayBus, float* output,
     if (algorithm) {
       beadsReverbFrames_.resize(frames);
       float highpassCoeff = highpassCoefficient(project->beadsReverbHighpassCutoffHz);
+      bool tailActive = false;
       for (size_t i = 0; i < frames; ++i) {
         beadsReverbFrames_[i].l = highpass(reverbBus[i * 2], highpassCoeff, beadsReverbHighpassInputState_[0], beadsReverbHighpassOutputState_[0]);
         beadsReverbFrames_[i].r = highpass(reverbBus[i * 2 + 1], highpassCoeff, beadsReverbHighpassInputState_[1], beadsReverbHighpassOutputState_[1]);
+        const bool inputActive = (!kOptimizeEffects || !tailActive) &&
+          (fabsf(reverbBus[i * 2]) > tailThreshold ||
+           fabsf(reverbBus[i * 2 + 1]) > tailThreshold);
+        if (kOptimizeEffects) tailActive |= inputActive;
       }
       float time = project->beadsReverbTime / 255.0f;
       beadsReverb_.set_mix(1.0f);
@@ -225,20 +251,29 @@ void MasterEffects::process(float* reverbBus, float* delayBus, float* output,
       for (size_t i = 0; i < frames; ++i) {
         output[i * 2] += beadsReverbFrames_[i].l * gain;
         output[i * 2 + 1] += beadsReverbFrames_[i].r * gain;
-        if (fabsf(beadsReverbFrames_[i].l) > tailThreshold || fabsf(beadsReverbFrames_[i].r) > tailThreshold) reverbTailFrames_ = (size_t)sampleRate_;
+        const bool outputActive = (!kOptimizeEffects || !tailActive) &&
+          (fabsf(beadsReverbFrames_[i].l) > tailThreshold ||
+           fabsf(beadsReverbFrames_[i].r) > tailThreshold);
+        if (kOptimizeEffects) tailActive |= outputActive;
+        else if (outputActive) reverbTailFrames_ = (size_t)sampleRate_;
       }
+      if (kOptimizeEffects && tailActive) reverbTailFrames_ = (size_t)sampleRate_;
       return;
     }
     reverbFrames_.resize(frames);
     float filterCoefficient = lowpassCoefficient(project->reverbFilterCutoffHz);
     float highpassCoeff = highpassCoefficient(project->reverbHighpassCutoffHz);
+    bool tailActive = false;
     for (size_t i = 0; i < frames; ++i) {
       float left = highpass(reverbBus[i * 2], highpassCoeff, reverbHighpassInputState_[0], reverbHighpassOutputState_[0]);
       float right = highpass(reverbBus[i * 2 + 1], highpassCoeff, reverbHighpassInputState_[1], reverbHighpassOutputState_[1]);
       reverbFrames_[i].l = lowpass(left, filterCoefficient, reverbFilterState_[0]);
       reverbFrames_[i].r = lowpass(right, filterCoefficient, reverbFilterState_[1]);
-      if (fabsf(reverbBus[i * 2]) > tailThreshold || fabsf(reverbBus[i * 2 + 1]) > tailThreshold)
-        reverbTailFrames_ = (size_t)sampleRate_;
+      const bool inputActive = (!kOptimizeEffects || !tailActive) &&
+        (fabsf(reverbBus[i * 2]) > tailThreshold ||
+         fabsf(reverbBus[i * 2 + 1]) > tailThreshold);
+      if (kOptimizeEffects) tailActive |= inputActive;
+      else if (inputActive) reverbTailFrames_ = (size_t)sampleRate_;
     }
     reverb_.set_amount(1.0f);
     reverb_.set_input_gain(0.2f);
@@ -255,9 +290,13 @@ void MasterEffects::process(float* reverbBus, float* delayBus, float* output,
     for (size_t i = 0; i < frames; ++i) {
       output[i * 2] += reverbFrames_[i].l * gain;
       output[i * 2 + 1] += reverbFrames_[i].r * gain;
-      if (fabsf(reverbFrames_[i].l) > tailThreshold || fabsf(reverbFrames_[i].r) > tailThreshold)
-        reverbTailFrames_ = (size_t)sampleRate_;
+      const bool outputActive = (!kOptimizeEffects || !tailActive) &&
+        (fabsf(reverbFrames_[i].l) > tailThreshold ||
+         fabsf(reverbFrames_[i].r) > tailThreshold);
+      if (kOptimizeEffects) tailActive |= outputActive;
+      else if (outputActive) reverbTailFrames_ = (size_t)sampleRate_;
     }
+    if (kOptimizeEffects && tailActive) reverbTailFrames_ = (size_t)sampleRate_;
   }
 
 }

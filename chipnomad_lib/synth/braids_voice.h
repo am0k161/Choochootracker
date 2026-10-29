@@ -7,6 +7,7 @@
 #include "braids/macro_oscillator.h"
 #include "braids/signature_waveshaper.h"
 #include "braids/vco_jitter_source.h"
+#include "braids_sample_rate.h"
 #include "voice_post_processor.h"
 
 enum class BraidsFilterMode : uint8_t {
@@ -64,6 +65,7 @@ class BraidsVoice {
   braids::VcoJitterSource jitterSource_;
 
   float outputSampleRate_;
+  int16_t pitchOffset_;
   float sourcePhase_, previousSource_, currentSource_;
   float decimatorHistory_[62];
   size_t decimatorPosition_;

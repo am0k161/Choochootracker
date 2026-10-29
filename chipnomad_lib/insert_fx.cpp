@@ -1,6 +1,7 @@
 #include "formant_filter.h"
 #include "insert_fx.h"
 #include "beads_insert.h"
+#include "synth/audio_math.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -650,10 +651,15 @@ struct InsertChain::Impl {
             float dryL = l[i], dryR = r[i];
             float left = dryL, right = dryR;
             if (s.module == insertRotary) {
-              left = tanhf(left * drive) / drive;
-              right = tanhf(right * drive) / drive;
+              left = audioTanh(left * drive) / drive;
+              right = audioTanh(right * drive) / drive;
             }
-            float modL = sinf(s.phase), modR = sinf(s.phase + 3.14159265359f);
+            const float modL = sinf(s.phase);
+#ifdef CCT_INSERT_MATH_REFERENCE_PATH
+            const float modR = sinf(s.phase + 3.14159265359f);
+#else
+            const float modR = -modL;
+#endif
             float nominalBase = s.module == insertChorus ? 15.0f :
                                 s.module == insertFlanger ? 2.5f : 9.0f;
             float base = std::max(nominalBase, depthMs + 1.0f);
@@ -669,7 +675,11 @@ struct InsertChain::Impl {
               wetL = lowpass(s, 0, wetL);
               wetR = lowpass(s, 1, wetR);
             } else if (s.module == insertRotary) {
+#ifdef CCT_INSERT_MATH_REFERENCE_PATH
               float pan = sinf(s.phase) * p[1] * 0.5f;
+#else
+              float pan = modL * p[1] * 0.5f;
+#endif
               wetL *= 1.0f - pan;
               wetR *= 1.0f + pan;
             }
@@ -717,8 +727,8 @@ struct InsertChain::Impl {
           float level = powf(10.0f, p[2] / 20.0f);
           for (int i = 0; i < n; ++i) {
             float dryL = l[i], dryR = r[i];
-            float wetL = lowpass(s, 0, tanhf(dryL * drive) / drive) * level;
-            float wetR = lowpass(s, 1, tanhf(dryR * drive) / drive) * level;
+            float wetL = lowpass(s, 0, audioTanh(dryL * drive) / drive) * level;
+            float wetR = lowpass(s, 1, audioTanh(dryR * drive) / drive) * level;
             l[i] = dryL + p[3] * (wetL - dryL);
             r[i] = dryR + p[3] * (wetR - dryR);
           }
@@ -778,7 +788,7 @@ struct InsertChain::Impl {
             for (int ch = 0; ch < 2; ++ch) {
               float x = wet[ch];
               if (values[2]) {
-                float wrapped = fmodf(x * foldDrive + 1.0f, 4.0f);
+                float wrapped = audioFmod4(x * foldDrive + 1.0f);
                 if (wrapped < 0) wrapped += 4.0f;
                 x = 0.95f * (1.0f - fabsf(wrapped - 2.0f))
                     + 0.05f * std::clamp(x, -1.0f, 1.0f);

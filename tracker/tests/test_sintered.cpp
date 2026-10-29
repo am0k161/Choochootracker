@@ -2,6 +2,7 @@
 #include "project.h"
 #include "synth/sintered_voice.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -29,6 +30,25 @@ TEST_CASE("Sintered motion center is static and both envelope sides alter sound"
   a.noteOn(); b.noteOn(); c.noteOn(); std::vector<float> x(4096), y(4096), z(4096); a.render(x.data(), x.size()); b.render(y.data(), y.size()); c.render(z.data(), z.size());
   double adDiff = 0.0, dDiff = 0.0; for (size_t i = 0; i < x.size(); ++i) { adDiff += std::fabs(x[i] - y[i]); dDiff += std::fabs(x[i] - z[i]); }
   CHECK(adDiff > .01); CHECK(dDiff > .01);
+}
+
+TEST_CASE("Sintered block-rate constants are stable across callback block sizes") {
+  for (int model = 0; model < (int)SinteredModel::totalCount; ++model) {
+    InstrumentSintered s = sinteredFixture((SinteredModel)model);
+    s.motion = 220;
+    SinteredVoice whole, chunked; whole.init(48000); chunked.init(48000);
+    whole.configure(&s, 6000, 1, 20000, 0); chunked.configure(&s, 6000, 1, 20000, 0);
+    whole.noteOn(); chunked.noteOn();
+    std::vector<float> a(4096), b(4096);
+    whole.render(a.data(), a.size());
+    for (size_t offset = 0; offset < b.size(); offset += 128)
+      chunked.render(b.data() + offset, 128);
+    float maximumDifference = 0.0f;
+    for (size_t i = 0; i < a.size(); ++i)
+      maximumDifference = std::max(maximumDifference, std::fabs(a[i] - b[i]));
+    CAPTURE(model); CAPTURE(maximumDifference);
+    CHECK(maximumDifference < 0.001f);
+  }
 }
 
 TEST_CASE("Sintered CNI round trip preserves its controls") {

@@ -15,3 +15,12 @@ TEST_CASE("audio tanh lookup stays close to libm") {
   CHECK(audioTanh(-100.0f) == -1.0f);
   CHECK(audioTanh(100.0f) == 1.0f);
 }
+
+TEST_CASE("period-four audio remainder preserves fmod semantics") {
+  for (int i = -524287; i <= 524287; ++i) {
+    const float x = i / 4096.0f;
+    CHECK(audioFmod4(x) == std::fmod(x, 4.0f));
+  }
+  CHECK(std::isnan(audioFmod4(NAN)));
+  CHECK(audioFmod4(10000.25f) == std::fmod(10000.25f, 4.0f));
+}

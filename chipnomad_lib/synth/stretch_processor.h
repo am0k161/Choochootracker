@@ -74,6 +74,8 @@ class StretchProcessor {
   // changes when the window itself is reconfigured.
   bool windowReverse_ = false;
   double stretchRatio_ = 1.0;
+  float transposeSemitones_ = 0.0f;
+  bool transposeConfigured_ = false;
   double inputAccumulator_ = 0.0;
   double outputSampleRate_ = 0.0;
   uint8_t loopMode_ = 0;

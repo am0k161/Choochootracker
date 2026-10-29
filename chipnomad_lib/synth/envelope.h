@@ -54,7 +54,10 @@ class Envelope {
  protected:
   virtual float curve(float x) const {
     // 00 = logarithmic, 80 = linear, FF = exponential.
-    if (shape_ <= 0x80) return sqrtf(x) + (x - sqrtf(x)) * (shape_ / 128.0f);
+    if (shape_ <= 0x80) {
+      const float root = sqrtf(x);
+      return root + (x - root) * (shape_ / 128.0f);
+    }
     return x + (x * x - x) * ((shape_ - 0x80) / 127.0f);
   }
   void enter(Stage stage) {

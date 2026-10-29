@@ -94,6 +94,31 @@ static const FontResolution* currentResolution = NULL;
 static SDL_Texture* fontTexture = NULL;
 static SDL_Rect charRects[95];
 
+struct CachedCell {
+  uint32_t foreground;
+  uint32_t background;
+  uint8_t glyph;
+  bool valid;
+};
+struct BitmapTexture {
+  SDL_Texture* texture;
+  uint32_t color;
+  bool dirty;
+};
+static CachedCell cellCache[TEXT_ROWS][TEXT_COLS];
+
+static void invalidateCellCache(void) {
+  memset(cellCache, 0, sizeof(cellCache));
+}
+
+static void invalidateCellRect(int x, int y, int w, int h) {
+  const int firstRow = y + gfxGetContentRowOffset();
+  for (int row = firstRow; row < firstRow + h; ++row)
+    for (int col = x; col < x + w; ++col)
+      if (row >= 0 && row < TEXT_ROWS && col >= 0 && col < TEXT_COLS)
+        cellCache[row][col].valid = false;
+}
+
 // Window backbuffers are not persistent on every SDL backend (notably
 // Android/EGL). Keep the tracker frame in an application-owned render target.
 #ifndef WEB_BUILD
@@ -890,12 +915,14 @@ void gfxClear(void) {
   SDL_RenderClear(renderer);
   cursorState.shown = false;
   cursorState.pageCleared = true;
+  invalidateCellCache();
   isDirty = 1;
 }
 
 void gfxPoint(int x, int y, uint32_t color) {
   setColor(color);
   SDL_RenderDrawPoint(renderer, x, y);
+  invalidateCellCache();
   isDirty = 1;
 }
 
@@ -904,6 +931,7 @@ void gfxClearRect(int x, int y, int w, int h) {
   setColor(bgColor);
   SDL_RenderFillRect(renderer, &rect);
   cursorAreaPainted(rect);
+  invalidateCellRect(x, y, w, h);
   isDirty = 1;
 }
 
@@ -914,29 +942,8 @@ void gfxPrint(int x, int y, const char* text) {
   int cy = CHAR_Y(y);
   int len = (int)strlen(text);
 
-  // Draw background rectangles first
-  setColor(bgColor);
-  for (int i = 0; i < len; i++) {
-    if (text[i] == '\r' && text[i + 1] == '\n') {
-      i++;
-      cx = CHAR_X(x);
-      cy += charH;
-      continue;
-    }
-    SDL_Rect bgRect = {cx, cy, charW, charH};
-    SDL_RenderFillRect(renderer, &bgRect);
-    cursorAreaPainted(bgRect);
-    cx += charW;
-    if (cx >= offsetX + TEXT_COLS * charW) {
-      cx = CHAR_X(x);
-      cy += charH;
-    }
-  }
-
-  // Draw characters
-  cx = CHAR_X(x);
-  cy = CHAR_Y(y);
-  SDL_SetTextureColorMod(fontTexture, (fgColor >> 16) & 0xFF, (fgColor >> 8) & 0xFF, fgColor & 0xFF);
+  bool colorSet = false;
+  bool changed = false;
 
   for (int i = 0; i < len; i++) {
     uint8_t C = text[i];
@@ -950,9 +957,32 @@ void gfxPrint(int x, int y, const char* text) {
       continue;
     }
 
-    if (C >= 32 && C <= 126) {
-      SDL_Rect dstRect = {cx, cy, charW, charH};
-      SDL_RenderCopy(renderer, fontTexture, &charRects[C - 32], &dstRect);
+    const int col = (cx - offsetX) / charW;
+    const int row = (cy - offsetY) / charH;
+    CachedCell* cached = row >= 0 && row < TEXT_ROWS && col >= 0 && col < TEXT_COLS
+      ? &cellCache[row][col] : NULL;
+#ifdef CCT_GFX_REFERENCE_PATH
+    const bool same = false;
+#else
+    const bool same = cached && cached->valid && cached->glyph == C &&
+      cached->foreground == fgColor && cached->background == bgColor;
+#endif
+    if (!same) {
+      SDL_Rect bgRect = {cx, cy, charW, charH};
+      setColor(bgColor);
+      SDL_RenderFillRect(renderer, &bgRect);
+      cursorAreaPainted(bgRect);
+
+      if (C >= 32 && C <= 126) {
+        if (!colorSet) {
+          SDL_SetTextureColorMod(fontTexture, (fgColor >> 16) & 0xFF,
+            (fgColor >> 8) & 0xFF, fgColor & 0xFF);
+          colorSet = true;
+        }
+        SDL_RenderCopy(renderer, fontTexture, &charRects[C - 32], &bgRect);
+      }
+      if (cached) *cached = {fgColor, bgColor, C, true};
+      changed = true;
     }
 
     cx += charW;
@@ -961,7 +991,7 @@ void gfxPrint(int x, int y, const char* text) {
       cy += charH;
     }
   }
-  isDirty = 1;
+  isDirty |= changed;
 }
 
 void gfxPrintf(int x, int y, const char* format, ...) {
@@ -997,6 +1027,7 @@ void gfxCursor(int x, int y, int w) {
     SDL_Rect line = { CHAR_X(x), CHAR_Y(y) + charH - 1, w * charW, 1 };
     setColor(cursorColor);
     SDL_RenderFillRect(renderer, &line);
+    invalidateCellRect(x, y, w, 1);
     isDirty = 1;
     return;
   }
@@ -1030,6 +1061,7 @@ void gfxRect(int x, int y, int w, int h) {
     {cx + cw - 1, cy, 1, ch}  // right
   };
   SDL_RenderFillRects(renderer, rects, 4);
+  invalidateCellRect(x, y, w, h);
   isDirty = 1;
 }
 
@@ -1139,24 +1171,33 @@ Bitmap* gfxBitmapCreate(int widthChars, int heightChars) {
     bitmap->widthPixels,
     bitmap->heightPixels
   );
-  if (texture) {
+  BitmapTexture* uploaded = texture ? (BitmapTexture*)malloc(sizeof(BitmapTexture)) : NULL;
+  if (texture && uploaded) {
     SDL_SetTextureBlendMode(texture, SDL_BLENDMODE_BLEND);
     setTextureNearest(texture);
+    *uploaded = {texture, 0, true};
+  } else if (texture) {
+    SDL_DestroyTexture(texture);
   }
-  bitmap->userdata = texture;
+  bitmap->userdata = uploaded;
 
   return bitmap;
 }
 
 void gfxBitmapClear(Bitmap* bitmap) {
+  if (!bitmap) return;
   memset(bitmap->data, 0, bitmap->widthPixels * bitmap->heightPixels);
+  BitmapTexture* uploaded = (BitmapTexture*)bitmap->userdata;
+  if (uploaded) uploaded->dirty = true;
 }
 
 void gfxBitmapFree(Bitmap* bitmap) {
   if (!bitmap) return;
 
   if (bitmap->userdata) {
-    SDL_DestroyTexture((SDL_Texture*)bitmap->userdata);
+    BitmapTexture* uploaded = (BitmapTexture*)bitmap->userdata;
+    SDL_DestroyTexture(uploaded->texture);
+    free(uploaded);
   }
   if (bitmap->data) {
     free(bitmap->data);
@@ -1168,9 +1209,11 @@ void gfxDrawBitmap(Bitmap* bitmap, int col, int row) {
   if (!bitmap || !bitmap->data) return;
   SDL_Rect paintedArea = {CHAR_X(col), CHAR_Y(row), bitmap->widthPixels, bitmap->heightPixels};
   cursorAreaPainted(paintedArea);
+  invalidateCellRect(col, row, bitmap->widthChars, bitmap->heightChars);
 
-  SDL_Texture* texture = (SDL_Texture*)bitmap->userdata;
-  if (!texture) return;
+  BitmapTexture* uploaded = (BitmapTexture*)bitmap->userdata;
+  if (!uploaded || !uploaded->texture) return;
+  SDL_Texture* texture = uploaded->texture;
 
   // Extract color components
   uint8_t fgR = (fgColor >> 16) & 0xFF;
@@ -1180,7 +1223,12 @@ void gfxDrawBitmap(Bitmap* bitmap, int col, int row) {
   // Lock texture and update pixels
   void* pixels;
   int pitch;
-  if (SDL_LockTexture(texture, NULL, &pixels, &pitch) == 0) {
+#ifdef CCT_GFX_REFERENCE_PATH
+  const bool upload = true;
+#else
+  const bool upload = uploaded->dirty || uploaded->color != fgColor;
+#endif
+  if (upload && SDL_LockTexture(texture, NULL, &pixels, &pitch) == 0) {
     uint32_t* pixelData = (uint32_t*)pixels;
 
     for (int y = 0; y < bitmap->heightPixels; y++) {
@@ -1196,6 +1244,8 @@ void gfxDrawBitmap(Bitmap* bitmap, int col, int row) {
     }
 
     SDL_UnlockTexture(texture);
+    uploaded->dirty = false;
+    uploaded->color = fgColor;
   }
 
   // Draw the texture at the specified character position
@@ -1219,6 +1269,7 @@ int gfxGetCharHeight(void) {
 }
 
 void gfxReloadFont(void) {
+  invalidateCellCache();
   if (fontTexture) {
     SDL_DestroyTexture(fontTexture);
     fontTexture = NULL;

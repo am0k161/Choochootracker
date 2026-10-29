@@ -836,7 +836,7 @@ void instrumentCommonDrawEnvelopePreview(uint8_t attack, uint8_t decay, uint8_t 
   if (!envelopePreviewBitmap) return;
 
   Bitmap* bitmap = envelopePreviewBitmap;
-  memset(bitmap->data, 0, bitmap->widthPixels * bitmap->heightPixels);
+  gfxBitmapClear(bitmap);
   const int width = bitmap->widthPixels - 1;
   const int attackEnd = 3 + ((int)attack * width) / (255 * 7);
   const int decayEnd = attackEnd + 3 + ((int)decay * width) / (255 * 6);

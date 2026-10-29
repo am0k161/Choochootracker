@@ -22,6 +22,8 @@ constexpr int AUDIO_INPUT_LEVEL_SAMPLES = 256;
 // writer-thread hiccups without unbounded memory.
 struct AudioInputRing {
   static constexpr unsigned int CAPACITY = 8192;
+  static constexpr unsigned int MASK = CAPACITY - 1;
+  static_assert((CAPACITY & MASK) == 0, "AudioInputRing capacity must be a power of two");
   int16_t samples[CAPACITY * 2]; // interleaved stereo
   std::atomic<unsigned int> head{0}; // producer (capture callback)
   std::atomic<unsigned int> tail{0}; // consumer (writer thread)

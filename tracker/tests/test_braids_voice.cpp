@@ -14,31 +14,33 @@ static int positiveCrossings(const std::vector<float>& samples, size_t start) {
 TEST_CASE("BraidsVoice renders every accessible model") {
   float buffer[4096];
 
-  for (int model = 0;
-       model <= braids::MACRO_OSC_SHAPE_LAST_ACCESSIBLE_FROM_META;
-       ++model) {
-    BraidsVoice voice;
-    voice.init();
-    REQUIRE(voice.setModel(model));
-    voice.setPitch(60 << 7);
-    voice.setParameters(16384, 16384);
-    voice.strike();
-    voice.render(buffer, 4096);
+  for (float rate : {32000.0f, 44100.0f, 48000.0f}) {
+    for (int model = 0;
+         model <= braids::MACRO_OSC_SHAPE_LAST_ACCESSIBLE_FROM_META;
+         ++model) {
+      BraidsVoice voice;
+      voice.init(rate);
+      REQUIRE(voice.setModel(model));
+      voice.setPitch(60 << 7);
+      voice.setParameters(16384, 16384);
+      voice.strike();
+      voice.render(buffer, 4096);
 
-    double energy = 0.0;
-    bool finite = true;
-    float minimum = 1.0f;
-    float maximum = -1.0f;
-    for (float sample : buffer) {
-      finite = finite && std::isfinite(sample);
-      if (sample < minimum) minimum = sample;
-      if (sample > maximum) maximum = sample;
-      energy += std::fabs(sample);
+      double energy = 0.0;
+      bool finite = true;
+      float minimum = 1.0f;
+      float maximum = -1.0f;
+      for (float sample : buffer) {
+        finite = finite && std::isfinite(sample);
+        if (sample < minimum) minimum = sample;
+        if (sample > maximum) maximum = sample;
+        energy += std::fabs(sample);
+      }
+      CHECK(finite);
+      CHECK(minimum >= -1.0f);
+      CHECK(maximum < 1.0f);
+      CHECK_MESSAGE(energy > 0.0, "silent Braids model: ", model, " at ", rate);
     }
-    CHECK(finite);
-    CHECK(minimum >= -1.0f);
-    CHECK(maximum < 1.0f);
-    CHECK_MESSAGE(energy > 0.0, "silent Braids model: ", model);
   }
 }
 
@@ -48,19 +50,18 @@ TEST_CASE("BraidsVoice rejects an unknown model") {
   CHECK_FALSE(voice.setModel(255));
 }
 
-TEST_CASE("BraidsVoice keeps its pitch when decimated to 48 kHz") {
-  BraidsVoice voice96, voice48;
-  std::vector<float> output96(9600), output48(4800);
-  voice96.init(96000.0f);
-  voice48.init(48000.0f);
-  voice96.noteOn();
-  voice48.noteOn();
-  voice96.render(output96.data(), output96.size());
-  voice48.render(output48.data(), output48.size());
-
-  float frequency96 = positiveCrossings(output96, 960) / 0.09f;
-  float frequency48 = positiveCrossings(output48, 480) / 0.09f;
-  CHECK(frequency48 == doctest::Approx(frequency96).epsilon(0.05));
+TEST_CASE("BraidsVoice keeps its pitch at every output sample rate") {
+  int referenceCrossings = 0;
+  for (float rate : {32000.0f, 44100.0f, 48000.0f, 96000.0f}) {
+    BraidsVoice voice;
+    std::vector<float> output((size_t)rate);
+    voice.init(rate);
+    voice.noteOn();
+    voice.render(output.data(), output.size());
+    const int crossings = positiveCrossings(output, (size_t)(rate / 10.0f));
+    if (!referenceCrossings) referenceCrossings = crossings;
+    CHECK(crossings == doctest::Approx(referenceCrossings).epsilon(0.01));
+  }
 }
 
 TEST_CASE("BraidsVoice audio-rate envelope reaches silence after release") {

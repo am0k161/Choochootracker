@@ -115,6 +115,21 @@ TEST_CASE("Aggro coefficient cache refreshes after a character or sample rate ch
   }
 }
 
+TEST_CASE("unchanged filter configuration is bit-identical for every character") {
+  for (uint8_t character = 1; character <= 6; ++character) {
+    MultimodeFilter cached, reference;
+    cached.init(48000.0f);
+    reference.init(48000.0f);
+    cached.configure(true, character, 1, true, 1234.0f, 0.73f, 201);
+    reference.configure(true, character, 1, true, 1234.0f, 0.73f, 201);
+    for (int i = 0; i < 2048; ++i) {
+      if (!(i % 32)) cached.configure(true, character, 1, true, 1234.0f, 0.73f, 201);
+      const float input = 0.4f * sinf(i * 0.071f) + 0.1f * sinf(i * 0.193f);
+      CHECK(cached.process(input) == reference.process(input));
+    }
+  }
+}
+
 TEST_CASE("filter cutoff control is exponential and round-trips") {
   CHECK(filterCutoffFromControl(0) == doctest::Approx(20.0f));
   CHECK(filterCutoffFromControl(255) == doctest::Approx(20000.0f));

@@ -46,6 +46,9 @@ class SampleVoice {
   float outputSampleRate_;
   double position_;
   double step_;
+  uint32_t stepSampleRate_ = 0;
+  float stepPitchCents_ = 0.0f;
+  bool stepConfigured_ = false;
   int direction_;
   bool reverse_;
   uint8_t loopMode_;

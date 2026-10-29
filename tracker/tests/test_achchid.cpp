@@ -44,6 +44,26 @@ TEST_CASE("aChChid output is softly bounded before the mixer") {
   }
 }
 
+TEST_CASE("aChChid repeated configuration is bit-identical") {
+  AChChidVoice cached, reference;
+  cached.init(48000.0f);
+  reference.init(48000.0f);
+  cached.configure(1, 3, 7, 12345, 23456, 17, 4, 2048,
+                   1234, 87, 65, 1700, 42, 0.7f);
+  reference.configure(1, 3, 7, 12345, 23456, 17, 4, 2048,
+                      1234, 87, 65, 1700, 42, 0.7f);
+  cached.noteOn(48, true, false, 0);
+  reference.noteOn(48, true, false, 0);
+  float a[64], b[64];
+  for (int block = 0; block < 16; ++block) {
+    cached.configure(1, 3, 7, 12345, 23456, 17, 4, 2048,
+                     1234, 87, 65, 1700, 42, 0.7f);
+    cached.render(a, 64);
+    reference.render(b, 64);
+    for (int i = 0; i < 64; ++i) CHECK(a[i] == b[i]);
+  }
+}
+
 TEST_CASE("aChChid Braids Shaper visibly reshapes the oscillator") {
   AChChidVoice clean;
   AChChidVoice asym;
@@ -63,18 +83,20 @@ TEST_CASE("aChChid Braids Shaper visibly reshapes the oscillator") {
   CHECK(difference / (cleanOutput.size() - 1024) > 0.05f);
 }
 
-TEST_CASE("aChChid Braids oscillator keeps Open303's octave at 48 kHz") {
-  AChChidVoice voice;
-  voice.init(48000.0f);
-  voice.configure(2, 0, 0, 0, 0, 0, 4, 2048, 20000, 0, 0, 2000, 0, 1.0f);
-  voice.noteOn(45, false, false, 0); // A3 = MIDI 57 = 220 Hz.
-  std::vector<float> output(48000);
-  voice.render(output.data(), (int)output.size());
+TEST_CASE("aChChid Braids oscillator keeps Open303's octave at native rates") {
+  for (float rate : {32000.0f, 44100.0f, 48000.0f}) {
+    AChChidVoice voice;
+    voice.init(rate);
+    voice.configure(2, 0, 0, 0, 0, 0, 4, 2048, 20000, 0, 0, 2000, 0, 1.0f);
+    voice.noteOn(45, false, false, 0); // A3 = MIDI 57 = 220 Hz.
+    std::vector<float> output((size_t)rate);
+    voice.render(output.data(), (int)output.size());
 
-  int crossings = 0;
-  for (size_t i = 4801; i < output.size(); ++i)
-    if (output[i - 1] <= 0.0f && output[i] > 0.0f) ++crossings;
-  CHECK(crossings == doctest::Approx(198).epsilon(0.1));
+    int crossings = 0;
+    for (size_t i = (size_t)(rate / 10.0f) + 1; i < output.size(); ++i)
+      if (output[i - 1] <= 0.0f && output[i] > 0.0f) ++crossings;
+    CHECK(crossings == doctest::Approx(198).epsilon(0.1));
+  }
 }
 
 TEST_CASE("aChChid SID uses all eight chip waveforms and pulse width") {

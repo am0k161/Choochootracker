@@ -87,7 +87,7 @@ void updateSamplePreview(void) {
   } else {
     // Clear preview if no sample
     if (samplePreviewBitmap) {
-      memset(samplePreviewBitmap->data, 0, samplePreviewBitmap->widthPixels * samplePreviewBitmap->heightPixels);
+      gfxBitmapClear(samplePreviewBitmap);
     }
   }
 }

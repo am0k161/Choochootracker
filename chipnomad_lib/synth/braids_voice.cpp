@@ -20,6 +20,11 @@ void BraidsVoice::init(float outputSampleRate) {
   oscillator_.set_parameters(16384, 16384);
   memset(sync_, 0, sizeof(sync_));
   outputSampleRate_ = outputSampleRate > 0.0f ? outputSampleRate : kSampleRate;
+#ifdef CCT_BRAIDS_LEGACY_96K
+  pitchOffset_ = 0;
+#else
+  pitchOffset_ = braidsNativePitchOffset(outputSampleRate_);
+#endif
   sourcePhase_ = 1.0f;
   previousSource_ = currentSource_ = 0.0f;
   memset(decimatorHistory_, 0, sizeof(decimatorHistory_));
@@ -94,7 +99,10 @@ void BraidsVoice::strike() {
 
 void BraidsVoice::renderBlock() {
   memset(sync_, 0, sizeof(sync_));
-  oscillator_.set_pitch(basePitch_ + jitterSource_.Render(drift_));
+  int32_t pitch = basePitch_ + pitchOffset_ + jitterSource_.Render(drift_);
+  if (pitch < -32768) pitch = -32768;
+  if (pitch > 32767) pitch = 32767;
+  oscillator_.set_pitch((int16_t)pitch);
   oscillator_.Render(sync_, block_, kBlockSize);
   static const uint16_t masks[] = {
     0xc000, 0xe000, 0xf000, 0xf800, 0xff00, 0xfff0, 0xffff
@@ -136,8 +144,9 @@ void BraidsVoice::render(float* output, size_t samples) {
     return;
   }
 
-  const float sourceStep = kSampleRate / outputSampleRate_;
   for (size_t i = 0; i < samples; ++i) {
+#ifdef CCT_BRAIDS_LEGACY_96K
+    const float sourceStep = kSampleRate / outputSampleRate_;
     sourcePhase_ += sourceStep;
     while (sourcePhase_ >= 1.0f) {
       sourcePhase_ -= 1.0f;
@@ -147,6 +156,9 @@ void BraidsVoice::render(float* output, size_t samples) {
         ? filterSourceSample(source) : source;
     }
     float sample = previousSource_ + (currentSource_ - previousSource_) * sourcePhase_;
+#else
+    float sample = nextSourceSample();
+#endif
     output[i] = post_.process(sample);
     if (!post_.envelopeActive()) {
       active_ = false;

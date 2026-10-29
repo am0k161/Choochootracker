@@ -65,3 +65,20 @@ TEST_CASE("output limiter sanitizes invalid samples at supported rates") {
     for (int16_t sample : output) CHECK(std::abs((int)sample) <= 26214);
   }
 }
+
+TEST_CASE("output limiter attenuates overload before conversion") {
+  OutputSafetyLimiter limiter;
+  limiter.reset(48000);
+  std::vector<float> mix(1024);
+  std::vector<int16_t> output(mix.size());
+  for (int frame = 0; frame < 512; ++frame) {
+    const float sign = frame & 1 ? -1.0f : 1.0f;
+    mix[frame * 2] = sign * 2.0f;
+    mix[frame * 2 + 1] = sign;
+  }
+  limiter.process(mix.data(), output.data(), 512);
+  const int left = std::abs((int)output[400]);
+  const int right = std::abs((int)output[401]);
+  CHECK(left <= 26214);
+  CHECK(left == doctest::Approx(right * 2).epsilon(0.02));
+}

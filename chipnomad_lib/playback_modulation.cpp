@@ -418,12 +418,52 @@ void playbackModNoteOff(PlaybackModState* state) {
   }
 }
 
-void playbackModNextAudio(PlaybackModState* state, float sampleRate) {
+static float audioLFOFrequency(const PlaybackModState* state) {
+  return powf(8000.0f, GET_P3(state) / 255.0f);
+}
+
+int playbackModAudioControlFrames(const PlaybackModState* state, float sampleRate) {
+  if (!state || !state->modulation || GET_TYPE(state) != ModulationType::FLFO ||
+      state->modulation->destination == 0 || sampleRate <= 0.0f) return 8;
+  // Keep at least 128 control points per cycle, never holding a value for
+  // more than eight frames. Above sampleRate/128 the FLFO remains genuinely
+  // sample-rate. Smooth shapes use the segment midpoint below; discontinuous
+  // shapes are additionally stopped at their next edge.
+  const float frequency = audioLFOFrequency(state);
+  int frames = (int)(sampleRate / (frequency * 128.0f));
+  if (frames < 1) frames = 1;
+  if (frames > 8) frames = 8;
+
+  const float phaseStep = frequency / sampleRate;
+  float distance = 1.0f - state->phase;
+  const LFOShape shape = static_cast<LFOShape>(GET_P1(state));
+  if (shape == LFOShape::square && state->phase < 0.5f) distance = 0.5f - state->phase;
+  else if (shape == LFOShape::wavetable) {
+    const int cell = (int)(state->phase * 32.0f);
+    distance = (cell + 1) / 32.0f - state->phase;
+  }
+  const int untilEdge = (int)ceilf(distance / phaseStep);
+  if (untilEdge > 0 && frames > untilEdge) frames = untilEdge;
+  return frames;
+}
+
+void playbackModNextAudioFrames(PlaybackModState* state, float sampleRate, int frames) {
   if (!state->modulation || GET_TYPE(state) != ModulationType::FLFO || sampleRate <= 0.0f) return;
-  float frequency = powf(8000.0f, GET_P3(state) / 255.0f);
+  if (frames < 1) frames = 1;
+  const float frequency = audioLFOFrequency(state);
+  const float phaseStep = frequency / sampleRate;
+  // A scalar configure value represents this short control segment. Sampling
+  // its midpoint is the linear-interpolation average for ramps and removes
+  // the phase bias of a start-of-segment hold. Discontinuous shapes retain
+  // the segment start; playbackModAudioControlFrames prevents edge crossing.
+  const LFOShape shape = static_cast<LFOShape>(GET_P1(state));
   float phase = state->phase;
+  if (frames > 1 && shape != LFOShape::square && shape != LFOShape::wavetable) {
+    phase += phaseStep * (frames - 1) * 0.5f;
+    phase -= floorf(phase);
+  }
   float value;
-  switch (static_cast<LFOShape>(GET_P1(state))) {
+  switch (shape) {
     case LFOShape::sin: value = sinf(phase * 6.2831853f); break;
     case LFOShape::square: value = phase < 0.5f ? 1.0f : -1.0f; break;
     case LFOShape::rampDown: value = 1.0f - phase; break;
@@ -434,8 +474,12 @@ void playbackModNextAudio(PlaybackModState* state, float sampleRate) {
     default: value = phase < 0.25f ? phase * 4.0f : (phase < 0.75f ? 2.0f - phase * 4.0f : phase * 4.0f - 4.0f); break;
   }
   state->outValue = (int16_t)(value * MOD_MAX_RANGE_F * GET_AMOUNT(state) / 127.0f);
-  state->phase += frequency / sampleRate;
+  state->phase += phaseStep * frames;
   state->phase -= floorf(state->phase);
+}
+
+void playbackModNextAudio(PlaybackModState* state, float sampleRate) {
+  playbackModNextAudioFrames(state, sampleRate, 1);
 }
 
 int16_t playbackModScaleToRange(int16_t modValue, int16_t maxAmplitude) {

@@ -5,6 +5,12 @@
 
 #include <cmath>
 #include <new>
+
+#ifdef CCT_DISABLE_CONFIG_CACHE
+static constexpr bool kCacheConfigurations = false;
+#else
+static constexpr bool kCacheConfigurations = true;
+#endif
 #include <signalsmith-stretch.h>
 
 // Duck-typed buffer adapters for the Signalsmith API. The library only needs
@@ -69,6 +75,7 @@ void StretchProcessor::init(double outputSampleRate, bool cheap) {
     }
   }
   configured_ = false;
+  transposeConfigured_ = false;
   active_ = false;
   reset();
 }
@@ -168,7 +175,11 @@ void StretchProcessor::configure(const InstrumentSample* sample, uint8_t stretch
 
   // Pitch is applied by the stretcher (time stays stretched, pitch shifts).
   // Audio-safe to change mid-note: it only affects future spectra.
-  s->setTransposeSemitones((float)pitchSemitones, 8000.0f / (float)outputSampleRate_);
+  if (!kCacheConfigurations || !transposeConfigured_ || transposeSemitones_ != pitchSemitones) {
+    s->setTransposeSemitones((float)pitchSemitones, 8000.0f / (float)outputSampleRate_);
+    transposeSemitones_ = pitchSemitones;
+    transposeConfigured_ = true;
+  }
 
   sourceStep_ = sampleRate_ / outputSampleRate_;
 

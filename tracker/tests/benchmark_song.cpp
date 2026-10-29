@@ -13,13 +13,18 @@
 #include "project.h"
 #include "screens/screens.h"
 #include "output_safety_limiter.h"
+#include "audio_input_manager.h"
 
 void getSelectionBounds(ScreenData*, int*, int*, int*, int*) {}
 
 namespace {
 constexpr int kBlockFrames = 1024;
 constexpr int kWarmupSeconds = 3;
+#ifdef CCT_BENCHMARK_SECONDS
+constexpr int kMeasuredSeconds = CCT_BENCHMARK_SECONDS;
+#else
 constexpr int kMeasuredSeconds = 20;
+#endif
 constexpr int kRounds = 5;
 
 class LegacyOutputLimiter {
@@ -144,6 +149,23 @@ double render(Project* project, int sampleRate, int seconds, const char* variant
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc > 1 && !std::strcmp(argv[1], "--audio-ring")) {
+    AudioInputRing ring;
+    int16_t input[kBlockFrames * 2], output[kBlockFrames * 2];
+    for (int i = 0; i < kBlockFrames * 2; ++i) input[i] = (int16_t)(i * 31);
+    constexpr int rounds = 20000;
+    volatile int checksum = 0;
+    const auto started = std::chrono::steady_clock::now();
+    for (int i = 0; i < rounds; ++i) {
+      if (!ring.push(input, kBlockFrames) || ring.pop(output, kBlockFrames) != kBlockFrames) return 1;
+      checksum += output[i & (kBlockFrames * 2 - 1)];
+    }
+    const double elapsed = std::chrono::duration<double>(
+      std::chrono::steady_clock::now() - started).count();
+    std::printf("audio ring: %.6f s, %.2f ns/frame, checksum %d\n", elapsed,
+      elapsed * 1.0e9 / (rounds * kBlockFrames), (int)checksum);
+    return 0;
+  }
   const char* path = argc > 1 ? argv[1] : "packaging/common/projects/alf dance.cct";
   const int sampleRate = argc > 2 ? std::atoi(argv[2]) : 96000;
   const char* variant = argc > 3 ? argv[3] : "full";

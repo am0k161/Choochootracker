@@ -26,6 +26,10 @@ class AChChidVoice {
   rosic::LeakyIntegrator sidPitchSlew_;
   double sidPitchTarget_ = 440.0;
   uint8_t wave_ = 1;
+  int openWaveform_ = -1;
+  int model_ = -1, timbre_ = -1, color_ = -1;
+  int sidShape_ = -1, sidPulseWidth_ = -1;
+  int cutoff_ = -1, resonance_ = -1, envMod_ = -1, decay_ = -1, accent_ = -1;
   int16_t braidsBlock_[24] = {};
   uint8_t braidsSync_[24] = {};
   int braidsPosition_ = 24;

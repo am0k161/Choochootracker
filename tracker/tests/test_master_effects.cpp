@@ -71,6 +71,30 @@ TEST_CASE("Beads reverb has its own high-pass send filter") {
   CHECK(lowEnergy > highEnergy * 3.0f);
 }
 
+TEST_CASE("Beads reverb preserves a tail after a short send") {
+  Project project;
+  projectInit(&project);
+  project.reverbAlgorithm = 1;
+  project.reverbReturn = 100;
+  project.beadsReverbTime = 220;
+  project.beadsReverbTone = 200;
+  MasterEffects effects;
+  effects.init(8000.0f);
+  std::vector<float> bus(64 * 2, 0.0f), output(64 * 2, 0.0f);
+  bus[0] = 1.0f;
+  effects.process(bus.data(), nullptr, output.data(), 64, &project);
+  CHECK(effects.reverbTailActive());
+
+  double tailEnergy = 0.0;
+  std::fill(bus.begin(), bus.end(), 0.0f);
+  for (int block = 0; block < 128; ++block) {
+    std::fill(output.begin(), output.end(), 0.0f);
+    effects.process(bus.data(), nullptr, output.data(), 64, &project);
+    for (float sample : output) tailEnergy += sample * sample;
+  }
+  CHECK(tailEnergy > 0.000001);
+}
+
 TEST_CASE("Reset clears an existing delay tail") {
   MasterEffects effects;
   effects.init(1000.0f);

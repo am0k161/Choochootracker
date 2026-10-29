@@ -9,6 +9,12 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef CCT_DISABLE_CONFIG_CACHE
+static constexpr bool kCacheConfigurations = false;
+#else
+static constexpr bool kCacheConfigurations = true;
+#endif
+
 static void sampleStorePath(const char* path, InstrumentSample* sample) {
   char workingDirectory[1024];
   const char* storedPath = path;
@@ -37,6 +43,7 @@ void SampleVoice::init(float outputSampleRate) {
   outputSampleRate_ = outputSampleRate;
   position_ = 0.0;
   step_ = 1.0;
+  stepConfigured_ = false;
   direction_ = 1;
   reverse_ = false;
   loopMode_ = 0;
@@ -53,6 +60,8 @@ void SampleVoice::init(float outputSampleRate) {
   tailFrom_[0] = tailFrom_[1] = 0.0f;
   transitionFrames_ = 0;
   transitionPending_ = false;
+  grainSize_ = (uint32_t)(outputSampleRate_ * 0.040f);
+  grainHop_ = grainSize_ / 2;
   // 3 ms de-click tail, at least 2 frames so the linear weight never
   // divides by zero.
   transitionLength_ = outputSampleRate > 500.0f ? (uint32_t)(outputSampleRate * 0.003f) : 2;
@@ -391,9 +400,19 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
   }
   if (endFrame_ <= startFrame_) endFrame_ = startFrame_ + 1;
   if (endFrame_ > sample_->frameCount) endFrame_ = sample_->frameCount;
-  step_ = (sample_->sampleRate / outputSampleRate_) * pow(2.0, pitchCents / 1200.0);
+  if (!kCacheConfigurations || !stepConfigured_ || stepSampleRate_ != sample_->sampleRate ||
+      stepPitchCents_ != pitchCents) {
+    step_ = (sample_->sampleRate / outputSampleRate_) * pow(2.0, pitchCents / 1200.0);
+    stepSampleRate_ = sample_->sampleRate;
+    stepPitchCents_ = pitchCents;
+    stepConfigured_ = true;
+  }
   timeStretch_ = speedPercent / 100.0f;
   granular_ = fabsf(timeStretch_ - 1.0f) > 0.001f;
+  if (!kCacheConfigurations) {
+    grainSize_ = (uint32_t)(outputSampleRate_ * 0.040f);
+    grainHop_ = grainSize_ / 2;
+  }
   // Instrument loop modes: 0 off, 1 loop, 2 loop with X-fade, 3 ping-pong,
   // 4 ping-pong with X-fade. The X-fade flag comes from the mode itself;
   // the explicit xfade parameter stays for the SPL lane FX path, which can
@@ -413,8 +432,6 @@ void SampleVoice::configure(const InstrumentSample* sample, float pitchCents,
   } else {
     loopStartFrame_ = startFrame_;
   }
-  grainSize_ = (uint32_t)(outputSampleRate_ * 0.040f);
-  grainHop_ = grainSize_ / 2;
   // X-fade window: 25% of the loop window (the wrap span), in source
   // frames. SPL 04/05 turn the crossfade on; without them the engine stays
   // disabled and the plain path is bit-identical to the pre-X-fade build.
