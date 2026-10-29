@@ -701,6 +701,7 @@ void SampleVoice::render(float* output, size_t frames) {
   }
 
   size_t loopRendered = 0;
+  const bool monoSource = sample_->channels == 1;
   for (size_t i = 0; i < frames; i++) {
     loopRendered = i;
     if (!post_.envelopeActive()) { kill(); break; }
@@ -717,15 +718,21 @@ void SampleVoice::render(float* output, size_t frames) {
             : nextGrainPosition_ >= endFrame_)) grainExhausted_ = true;
         }
       }
-      for (int channel = 0; channel < 2; ++channel) {
+      float windows[2];
+      for (int grain = 0; grain < 2; ++grain) {
+        float phase = (float)grainAge_[grain] / (float)(grainSize_ - 1);
+        float window = sinf(3.14159265f * phase);
+        windows[grain] = window * window;
+      }
+      const int channels = monoSource ? 1 : 2;
+      for (int channel = 0; channel < channels; ++channel) {
         float value = 0.0f;
         for (int grain = 0; grain < 2; ++grain) {
-          float phase = (float)grainAge_[grain] / (float)(grainSize_ - 1);
-          float window = sinf(3.14159265f * phase);
-          value += grainSampleAt(grainPosition_[grain] + direction_ * step_ * grainAge_[grain], channel) * window * window;
+          value += grainSampleAt(grainPosition_[grain] + direction_ * step_ * grainAge_[grain], channel) * windows[grain];
         }
         output[i * 2 + channel] = value;
       }
+      if (monoSource) output[i * 2 + 1] = output[i * 2];
       post_.processStereo(output + i * 2);
       finishFrame(output + i * 2);
       grainAge_[0]++;
@@ -742,10 +749,17 @@ void SampleVoice::render(float* output, size_t frames) {
       // target. When the fade completes the incoming pointer becomes the
       // main playhead - the handover sample is the pure incoming read, so
       // the plain path resumes without a step.
-      for (int channel = 0; channel < 2; channel++) {
-        output[i * 2 + channel] = post_.process(
-          xfade_.sample([this](double pos, int ch) { return sampleAt(pos, ch); }, channel),
-          channel);
+      if (monoSource) {
+        const float sample = xfade_.sample(
+          [this](double pos, int ch) { return sampleAt(pos, ch); }, 0);
+        output[i * 2] = post_.process(sample, 0);
+        output[i * 2 + 1] = post_.process(sample, 1);
+      } else {
+        for (int channel = 0; channel < 2; channel++) {
+          output[i * 2 + channel] = post_.process(
+            xfade_.sample([this](double pos, int ch) { return sampleAt(pos, ch); }, channel),
+            channel);
+        }
       }
       finishFrame(output + i * 2);
       if (!xfade_.advance(step_)) {
@@ -794,10 +808,17 @@ void SampleVoice::render(float* output, size_t frames) {
         incomingDir = 1;
       }
       xfade_.arm(position_, incomingPos, direction_, incomingDir, phase);
-      for (int channel = 0; channel < 2; channel++) {
-        output[i * 2 + channel] = post_.process(
-          xfade_.sample([this](double pos, int ch) { return sampleAt(pos, ch); }, channel),
-          channel);
+      if (monoSource) {
+        const float sample = xfade_.sample(
+          [this](double pos, int ch) { return sampleAt(pos, ch); }, 0);
+        output[i * 2] = post_.process(sample, 0);
+        output[i * 2 + 1] = post_.process(sample, 1);
+      } else {
+        for (int channel = 0; channel < 2; channel++) {
+          output[i * 2 + channel] = post_.process(
+            xfade_.sample([this](double pos, int ch) { return sampleAt(pos, ch); }, channel),
+            channel);
+        }
       }
       finishFrame(output + i * 2);
       if (!xfade_.advance(step_)) {
@@ -805,7 +826,7 @@ void SampleVoice::render(float* output, size_t frames) {
       }
     } else {
       output[i * 2] = sampleAt(position_, 0);
-      output[i * 2 + 1] = sampleAt(position_, 1);
+      output[i * 2 + 1] = monoSource ? output[i * 2] : sampleAt(position_, 1);
       post_.processStereo(output + i * 2);
       finishFrame(output + i * 2);
       if (!advancePosition()) { kill(); break; }
