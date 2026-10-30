@@ -117,6 +117,7 @@ struct AppSettings {
   int quickHelpReleaseSeen;
   int ayWavetableLfoView;
   int waveformRefreshHz;
+  uint8_t batteryInfoMode; // 0 = off, 1 = remaining time, 2 = percent
   uint8_t playbackCounterMode; // 0 = bars, 1 = elapsed time, 2 = off
   uint8_t playbackBarRows;
   uint8_t playbackBarTicks;

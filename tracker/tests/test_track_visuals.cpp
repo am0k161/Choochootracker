@@ -5,6 +5,7 @@
 #include "app_ui_mock.h"
 #include "corelib_file.h"
 #include "corelib_gfx.h"
+#include "corelib_power.h"
 #include "waveform_display.h"
 #include "monitor_display.h"
 #include "audio_monitor.h"
@@ -16,6 +17,9 @@
 #include <iterator>
 #include <string>
 #include <vector>
+
+extern PowerInfo mockPowerInfo;
+extern uint64_t mockPowerNowSeconds;
 
 namespace {
 struct VisualFixture {
@@ -35,6 +39,9 @@ struct VisualFixture {
     existed = std::filesystem::exists(settingsPath);
     if (existed) { std::ifstream f(settingsPath); contents.assign(std::istreambuf_iterator<char>(f), {}); }
     initDefaultAppSettings();
+    appResetBatteryInfo();
+    mockPowerInfo = {PowerState::unknown, -1, -1};
+    mockPowerNowSeconds = 0;
     chipnomadState = chipnomadCreate();
     REQUIRE(chipnomadState != nullptr);
     projectInitAY(&chipnomadState->project);
@@ -158,7 +165,8 @@ TEST_CASE_FIXTURE(VisualFixture, "Cursor Graphics row switches between line and 
   CHECK(appSettings.cursorBrackets == 0);
 }
 
-TEST_CASE_FIXTURE(VisualFixture, "Playback counter Graphics controls persist and reject invalid values") {
+TEST_CASE_FIXTURE(VisualFixture, "Battery and playback Graphics controls persist and reject invalid values") {
+  CHECK(appSettings.batteryInfoMode == 0);
   CHECK(appSettings.playbackCounterMode == 0);
   CHECK(appSettings.playbackBarRows == 16);
   CHECK(appSettings.playbackBarTicks == 6);
@@ -167,35 +175,110 @@ TEST_CASE_FIXTURE(VisualFixture, "Playback counter Graphics controls persist and
   screenGraphicsSettings.fullRedraw();
   ScreenData* table = mockScreenData;
   REQUIRE(table != nullptr);
-  CHECK(table->rows == 11);
+  CHECK(table->rows == 12);
   gfxClear();
   for (int row = 0; row < table->rows; ++row) table->drawField(0, row, CellState::normal);
-  for (int y : {4, 9, 12}) CHECK(std::string(mockGfxCells[y], 31) == std::string(31, ' '));
+  for (int y : {4, 9}) CHECK(std::string(mockGfxCells[y], 31) == std::string(31, ' '));
+  CHECK(std::string(mockGfxCells[12], 12) == "Battery info");
   CHECK(std::string(mockGfxCells[14], 15) == " - Rows per bar");
   CHECK(std::string(mockGfxCells[15], 16) == " - Ticks per row");
-  table->drawCursor(0, 9);
+  table->drawCursor(0, 10);
   CHECK(mockCursorY == 14);
   REQUIRE(table->onEdit(0, 8, CellEditAction::tap) == 1);
-  REQUIRE(table->onEdit(0, 9, CellEditAction::decrease) == 1);
-  REQUIRE(table->onEdit(0, 10, CellEditAction::increase) == 1);
+  REQUIRE(table->onEdit(0, 9, CellEditAction::tap) == 1);
+  REQUIRE(table->onEdit(0, 10, CellEditAction::decrease) == 1);
+  REQUIRE(table->onEdit(0, 11, CellEditAction::increase) == 1);
+  CHECK(appSettings.batteryInfoMode == 1);
   CHECK(appSettings.playbackCounterMode == 1);
   CHECK(appSettings.playbackBarRows == 15);
   CHECK(appSettings.playbackBarTicks == 7);
   table->drawField(0, 8, CellState::focus);
+  CHECK(std::string(mockGfxCells[12] + 23, 7) == "Time   ");
+  table->drawField(0, 9, CellState::focus);
   CHECK(std::string(mockGfxCells[13] + 23, 4) == "Time");
   REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.batteryInfoMode == 1);
   CHECK(appSettings.playbackCounterMode == 1);
   CHECK(appSettings.playbackBarRows == 15);
   CHECK(appSettings.playbackBarTicks == 7);
   REQUIRE(table->onEdit(0, 8, CellEditAction::tap) == 1);
-  CHECK(appSettings.playbackCounterMode == 2);
+  CHECK(appSettings.batteryInfoMode == 2);
   table->drawField(0, 8, CellState::focus);
-  CHECK(std::string(mockGfxCells[13] + 23, 4) == "Off ");
-  { std::ofstream f(settingsPath); f << "playbackCounterMode: 3\nplaybackBarRows: 0\nplaybackBarTicks: 255\n"; }
+  CHECK(std::string(mockGfxCells[12] + 23, 7) == "Percent");
+  REQUIRE(table->onEdit(0, 8, CellEditAction::tap) == 1);
+  CHECK(appSettings.batteryInfoMode == 0);
+  { std::ofstream f(settingsPath); f << "batteryInfoMode: 3\nplaybackCounterMode: 3\nplaybackBarRows: 0\nplaybackBarTicks: 255\n"; }
   REQUIRE(settingsLoad() == 0);
+  CHECK(appSettings.batteryInfoMode == 0);
   CHECK(appSettings.playbackCounterMode == 0);
   CHECK(appSettings.playbackBarRows == 16);
   CHECK(appSettings.playbackBarTicks == 6);
+}
+
+TEST_CASE_FIXTURE(VisualFixture, "Battery overlay formats power state and aligns to the right") {
+  screensInitAll();
+  currentScreen = &screenSong;
+  gfxClear();
+  appSettings.batteryInfoMode = 2;
+  mockPowerInfo = {PowerState::onBattery, 87, -1};
+  appDraw();
+  CHECK(std::string(mockGfxCells[1] + 34, 6) == "   87%");
+
+  appResetBatteryInfo();
+  appSettings.batteryInfoMode = 1;
+  mockPowerInfo = {PowerState::onBattery, 87, 8040};
+  appDraw();
+  CHECK(std::string(mockGfxCells[1] + 34, 6) == "  2h14");
+  mockPowerNowSeconds = 60;
+  mockPowerInfo = {PowerState::charging, 88, -1};
+  appDraw();
+  CHECK(std::string(mockGfxCells[1] + 34, 6) == "CHARGE");
+  mockPowerNowSeconds = 120;
+  mockPowerInfo = {PowerState::charged, 100, -1};
+  appDraw();
+  CHECK(std::string(mockGfxCells[1] + 34, 6) == "  FULL");
+  mockPowerNowSeconds = 180;
+  mockPowerInfo = {PowerState::noBattery, -1, -1};
+  appDraw();
+  CHECK(std::string(mockGfxCells[1] + 34, 6) == "      ");
+}
+
+TEST_CASE_FIXTURE(VisualFixture, "Battery time learns actual discharge and resets stale estimates") {
+  screensInitAll();
+  currentScreen = &screenSong;
+  gfxClear();
+  appSettings.batteryInfoMode = 1;
+  mockPowerInfo = {PowerState::onBattery, 80, -1};
+  appDraw();
+  CHECK(std::string(mockGfxCells[1] + 34, 6) == "  4h48");
+  mockPowerNowSeconds = 60;
+  mockPowerInfo.percent = 79;
+  appDraw();
+  CHECK(std::string(mockGfxCells[1] + 34, 6) == "  1h19");
+  for (int minute = 2; minute <= 9; ++minute) {
+    mockPowerNowSeconds = minute * 60;
+    appDraw();
+  }
+  mockPowerNowSeconds = 600;
+  mockPowerInfo.percent = 78;
+  appDraw();
+  CHECK(std::string(mockGfxCells[1] + 34, 6) == "  2h37");
+
+  mockPowerNowSeconds = 660;
+  mockPowerInfo.percent = 76;
+  appDraw();
+  CHECK(std::string(mockGfxCells[1] + 34, 6) == "  3h01");
+  mockPowerNowSeconds = 720;
+  mockPowerInfo.percent = 77;
+  appDraw();
+  CHECK(std::string(mockGfxCells[1] + 34, 6) == "  4h38");
+  mockPowerNowSeconds = 900;
+  mockPowerInfo.percent = 76;
+  appDraw();
+  CHECK(std::string(mockGfxCells[1] + 34, 6) == "  4h34");
+  appSettings.batteryInfoMode = 0;
+  appDraw();
+  CHECK(std::string(mockGfxCells[1] + 34, 6) == "      ");
 }
 
 TEST_CASE_FIXTURE(VisualFixture, "Playback counter holds at stop and resets on the next start") {

@@ -74,6 +74,7 @@ void initDefaultAppSettings(void) {
 #else
   appSettings.waveformRefreshHz = 30;
 #endif
+  appSettings.batteryInfoMode = 0;
   appSettings.playbackCounterMode = 0;
   appSettings.playbackBarRows = 16;
   appSettings.playbackBarTicks = 6;
@@ -242,6 +243,7 @@ int settingsSave(void) {
   fprintf(file, "quickHelpReleaseSeen: %d\n", appSettings.quickHelpReleaseSeen);
   fprintf(file, "ayWavetableLfoView: %d\n", appSettings.ayWavetableLfoView);
   fprintf(file, "waveformRefreshHz: %d\n", appSettings.waveformRefreshHz);
+  fprintf(file, "batteryInfoMode: %d\n", appSettings.batteryInfoMode);
   fprintf(file, "playbackCounterMode: %d\n", appSettings.playbackCounterMode);
   fprintf(file, "playbackBarRows: %d\n", appSettings.playbackBarRows);
   fprintf(file, "playbackBarTicks: %d\n", appSettings.playbackBarTicks);
@@ -442,6 +444,10 @@ int settingsLoad(void) {
       sscanf(line + 20, "%d", &appSettings.ayWavetableLfoView);
     } else if (strncmp(line, "waveformRefreshHz: ", 19) == 0) {
       sscanf(line + 19, "%d", &appSettings.waveformRefreshHz);
+    } else if (strncmp(line, "batteryInfoMode: ", 17) == 0) {
+      int mode;
+      if (sscanf(line + 17, "%d", &mode) == 1 && mode >= 0 && mode <= 2)
+        appSettings.batteryInfoMode = (uint8_t)mode;
     } else if (strncmp(line, "playbackCounterMode: ", 21) == 0) {
       int mode;
       if (sscanf(line + 21, "%d", &mode) == 1 && mode >= 0 && mode <= 2)
