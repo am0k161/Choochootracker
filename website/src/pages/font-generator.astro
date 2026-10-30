@@ -1,0 +1,202 @@
+---
+import Page from '../layouts/Page.astro';
+import '../styles/font-generator.css';
+---
+
+<Page title="Font generator" description="Convert a TTF or OTF font into a ChooChooTracker .cnfont file in your browser.">
+  <section class="font-tool wrap">
+    <p class="eyebrow">CHOOCHOOTRACKER TOOL</p>
+    <h1>Font generator</h1>
+    <p class="lede">Turn a TTF or OTF font into a bitmap font for ChooChooTracker. Your font stays in this browser.</p>
+
+    <form id="font-form" class="font-form">
+      <label><span>Font file</span><input id="font-file" type="file" accept=".ttf,.otf,font/ttf,font/otf" required /></label>
+      <label><span>Font name <small>(max 15 characters)</small></span><input id="font-name" type="text" maxlength="15" placeholder="My Font" required /></label>
+      <button class="button primary" type="submit">Convert to .cnfont</button>
+    </form>
+
+    <p id="font-status" class="font-status" role="status" aria-live="polite">Choose a font to begin.</p>
+    <div id="font-error" class="font-error" role="alert" hidden></div>
+    <a id="font-download" class="button secondary" download="font.cnfont" hidden>Download .cnfont</a>
+
+    <section class="tracker-preview" aria-labelledby="tracker-preview-title">
+      <div class="preview-heading"><div><p class="eyebrow" id="tracker-preview-title">LIVE TRACKER PREVIEW</p><p class="preview-note">This is the tracker UI rendered with the converted bitmap font.</p></div><div class="preview-sizes" role="group" aria-label="Preview font size"><button type="button" data-size="0">12×16</button><button class="is-active" type="button" data-size="1">16×24</button></div></div>
+      <div class="tracker-screens">
+        <figure><button class="screen-zoom" type="button" data-title="Song" aria-label="Zoom Song preview"><canvas class="tracker-screen" data-screen="song" width="640" height="480"></canvas></button><figcaption>Song · click to zoom</figcaption></figure>
+        <figure><button class="screen-zoom" type="button" data-title="Mixer" aria-label="Zoom Mixer preview"><canvas class="tracker-screen" data-screen="mixer" width="640" height="480"></canvas></button><figcaption>Mixer · click to zoom</figcaption></figure>
+        <figure><canvas class="tracker-screen" data-screen="instrument" width="640" height="480"></canvas><figcaption>Instrument · Achchid</figcaption></figure>
+      </div>
+      <dialog id="screen-dialog" class="screen-dialog">
+        <div class="dialog-heading"><strong id="screen-dialog-title">Tracker preview</strong><button id="screen-dialog-close" type="button">Close</button></div>
+        <canvas id="screen-dialog-canvas" width="640" height="480"></canvas>
+      </dialog>
+    </section>
+  </section>
+</Page>
+
+<script>
+  import * as opentype from 'opentype.js';
+
+  const sizes = [{ width: 12, height: 16 }, { width: 16, height: 24 }, { width: 24, height: 36 }, { width: 32, height: 48 }, { width: 48, height: 54 }];
+  const previewSizes = sizes.slice(0, 2);
+  const form = document.querySelector('#font-form');
+  const fileInput = document.querySelector('#font-file');
+  const nameInput = document.querySelector('#font-name');
+  const status = document.querySelector('#font-status');
+  const error = document.querySelector('#font-error');
+  const download = document.querySelector('#font-download');
+  const screens = [...document.querySelectorAll('.tracker-screen')];
+  const screenDialog = document.querySelector('#screen-dialog');
+  const screenDialogCanvas = document.querySelector('#screen-dialog-canvas');
+  const screenDialogTitle = document.querySelector('#screen-dialog-title');
+  let downloadUrl;
+  let glyphSets = [];
+  let previewSizeIndex = 1;
+  let loadedPreviewFont;
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    if (file && !nameInput.value) nameInput.value = file.name.replace(/\.(ttf|otf)$/i, '').slice(0, 15);
+  });
+
+  document.querySelectorAll('.preview-sizes button').forEach((button) => button.addEventListener('click', () => {
+    previewSizeIndex = Number(button.dataset.size);
+    document.querySelectorAll('.preview-sizes button').forEach((item) => item.classList.toggle('is-active', item === button));
+    if (glyphSets.length) drawTrackerPreview();
+  }));
+
+  document.querySelectorAll('.screen-zoom, .tracker-screen').forEach((target) => target.addEventListener('click', () => {
+    const source = target.matches('canvas') ? target : target.querySelector('canvas');
+    screenDialogTitle.textContent = source.dataset.screen;
+    screenDialogCanvas.getContext('2d').drawImage(source, 0, 0);
+    screenDialog.showModal();
+  }));
+  document.querySelector('#screen-dialog-close').addEventListener('click', () => screenDialog.close());
+  screenDialog.addEventListener('click', (event) => { if (event.target === screenDialog) screenDialog.close(); });
+
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    error.hidden = true;
+    download.hidden = true;
+    status.textContent = 'Converting…';
+    try {
+      const fontData = await file.arrayBuffer();
+      const font = opentype.parse(fontData);
+      if (loadedPreviewFont) document.fonts.delete(loadedPreviewFont);
+      loadedPreviewFont = await new FontFace('cnfont-preview', fontData).load();
+      document.fonts.add(loadedPreviewFont);
+      const name = nameInput.value.trim().slice(0, 15);
+      const outputs = await Promise.all(sizes.map((size) => rasterizeFont(loadedPreviewFont, size)));
+      glyphSets = await Promise.all(previewSizes.map((size) => renderGlyphs(loadedPreviewFont, size)));
+      const output = `# Generated from ${file.name}\n\nname: ${name}\n\n${outputs.join('\n\n')}`;
+      if (downloadUrl) URL.revokeObjectURL(downloadUrl);
+      downloadUrl = URL.createObjectURL(new Blob([output], { type: 'text/plain;charset=utf-8' }));
+      download.href = downloadUrl;
+      download.download = `${name || 'font'}.cnfont`;
+      download.hidden = false;
+      drawTrackerPreview();
+      status.textContent = 'Font converted successfully. Preview updated with your font.';
+    } catch (conversionError) {
+      status.textContent = 'Conversion failed.';
+      error.textContent = conversionError instanceof Error ? conversionError.message : 'This file could not be read as a font.';
+      error.hidden = false;
+    }
+  });
+
+  async function rasterizeFont(font, size) {
+    const glyphs = await renderGlyphs(font, size);
+    const bytesPerRow = Math.ceil(size.width / 8);
+    const rows = [`resolution: ${size.width}x${size.height}`];
+    for (const pixels of glyphs) {
+      const bytes = [];
+      for (let y = 0; y < size.height; y += 1) {
+        for (let byteX = 0; byteX < bytesPerRow; byteX += 1) {
+          let value = 0;
+          for (let bit = 0; bit < 8; bit += 1) {
+            const pixelX = byteX * 8 + bit;
+            if (pixelX < size.width && pixels[y * size.width + pixelX]) value |= 1 << (7 - bit);
+          }
+          bytes.push(value.toString(16).padStart(2, '0').toUpperCase());
+        }
+      }
+      rows.push(bytes.join(' '));
+    }
+    return rows.join('\n');
+  }
+
+  async function renderGlyphs(font, size) {
+    const canvas = document.createElement('canvas');
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+    const glyphs = [];
+    const baseline = Math.floor(size.height * 4 / 5);
+    context.font = `${size.height}px cnfont-preview`;
+    context.textAlign = 'center';
+    context.textBaseline = 'alphabetic';
+    context.fillStyle = '#fff';
+    context.imageSmoothingEnabled = false;
+    for (let code = 32; code <= 126; code += 1) {
+      context.clearRect(0, 0, size.width, size.height);
+      const character = String.fromCharCode(code);
+      const metrics = context.measureText(character);
+      const glyphWidth = metrics.actualBoundingBoxLeft + metrics.actualBoundingBoxRight;
+      const horizontalScale = Math.min(1, (size.width - 1) / Math.max(1, glyphWidth));
+      context.save();
+      context.scale(horizontalScale, 1);
+      const x = size.width / (2 * horizontalScale) + (metrics.actualBoundingBoxLeft - metrics.actualBoundingBoxRight) / 2;
+      context.fillText(character, x, baseline);
+      context.restore();
+      const alpha = context.getImageData(0, 0, size.width, size.height).data;
+      // Keep light antialiased pixels: thin stems in small digits otherwise disappear.
+      glyphs.push(Array.from({ length: size.width * size.height }, (_, index) => alpha[index * 4 + 3] >= 32));
+    }
+    return glyphs;
+  }
+
+  function drawTrackerPreview() {
+    const set = glyphSets[previewSizeIndex];
+    screens.forEach((screen) => {
+      const context = screen.getContext('2d');
+      context.fillStyle = '#2d2f30';
+      context.fillRect(0, 0, screen.width, screen.height);
+      if (screen.dataset.screen === 'song') drawSong(context, set);
+      if (screen.dataset.screen === 'mixer') drawMixer(context, set);
+      if (screen.dataset.screen === 'instrument') drawInstrument(context, set);
+    });
+  }
+
+  function text(context, set, value, x, y, color = '#ff6a00') {
+    let cursor = x;
+    for (const character of value) {
+      const code = Math.max(32, Math.min(126, character.charCodeAt(0))) - 32;
+      const glyph = set[code];
+      context.fillStyle = color;
+      for (let py = 0; py < previewSizes[previewSizeIndex].height; py += 1) for (let px = 0; px < previewSizes[previewSizeIndex].width; px += 1) if (glyph[py * previewSizes[previewSizeIndex].width + px]) context.fillRect(cursor + px, y + py, 1, 1);
+      cursor += previewSizes[previewSizeIndex].width;
+    }
+  }
+
+  function drawSong(context, set) {
+    const gray = '#c7cbd0';
+    text(context, set, 'SONG', 0, 28); text(context, set, '000·0', 544, 28);
+    text(context, set, '1    2    3    4    5    6    7    8', 48, 76, gray);
+    for (let row = 0; row < 12; row += 1) text(context, set, `${String(row).padStart(2, '0')}  ${row % 3 ? '02  21  30  40  50  60  00  00' : '00  00  20  40  50  00  00  80'}`, 0, 112 + row * 24, row === 0 ? gray : '#ff6a00');
+    for (let row = 0; row < 8; row += 1) text(context, set, `${row + 1} C-${row}`, 560, 112 + row * 24, gray);
+    text(context, set, 'M  S  C  P  I  T', 544, 360);
+  }
+
+  function drawMixer(context, set) {
+    const gray = '#c7cbd0';
+    text(context, set, 'MIXER    CPU 000%', 0, 28); text(context, set, 'TRK  LVL  REVDLY  TLPAN  MS', 0, 78, gray);
+    for (let row = 0; row < 8; row += 1) text(context, set, `${row + 1}   ${['73', '8F', '80', 'CC', 'EB', '7A', '40', 'C7'][row]}    00  00    80  80    --`, 16, 112 + row * 24, gray);
+    text(context, set, 'MASTER FX  [ EDIT ]     LEVEL 100%', 0, 330); text(context, set, 'STEREO IMAGE       FFT SPECTRUM', 0, 390, gray);
+  }
+
+  function drawInstrument(context, set) {
+    const gray = '#c7cbd0';
+    text(context, set, 'INSTRUMENT 00', 0, 28); text(context, set, 'Type     Achchid       Load  Save', 0, 76, gray); text(context, set, 'Name     Acid Bass     PAN 80', 0, 100, gray); text(context, set, 'OSCILLATOR          303 FILTER', 0, 148); text(context, set, 'Wave     Braids       Cutoff 98', 0, 196, gray); text(context, set, 'Model    10 TRIPLER   Reso   EB', 0, 220, gray); text(context, set, 'Timbre   95           Env Mod C2', 0, 244, gray); text(context, set, 'Color    AE           Decay  00', 0, 268, gray); text(context, set, 'Shaper   58           Accent FF', 0, 292, gray); text(context, set, 'ACHCHID', 0, 390);
+  }
+</script>

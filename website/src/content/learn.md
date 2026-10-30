@@ -1,7 +1,7 @@
 ---
 title: Documentation.
-description: Learn ChooChooTracker with the visual field guide and the complete user manual.
-eyebrow: Learn
+description: Resources for learning ChooChooTracker, using the manuals, and creating custom fonts.
+eyebrow: Resources
 ---
 The **field guide** walks you through the interface with screenshots and animated examples. Start there if you're meeting ChooChooTracker for the first time.
 

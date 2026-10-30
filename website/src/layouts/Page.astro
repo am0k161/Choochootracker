@@ -56,7 +56,7 @@ const applicationSchema = {
       <a class="wordmark" href={home} aria-label="ChooChooTracker home"><img src={siteLogo.src} width="48" height="48" alt="" /></a>
       <nav aria-label="Main navigation">
         <a href={`${home}#explore`}>Explore</a>
-        <a href={`${base}/learn/`} aria-current={path.endsWith('/learn/') ? 'page' : undefined}>Learn</a>
+        <a href={`${base}/learn/`} aria-current={path.endsWith('/learn/') ? 'page' : undefined}>Resources</a>
         <a href={`${base}/downloads/`} aria-current={path.endsWith('/downloads/') ? 'page' : undefined}>Downloads</a>
         {!path.endsWith('/play/') && (<a class="nav-play" href={`${base}/play/`}>Launch web app <span aria-hidden="true">↗</span></a>)}
       </nav>
