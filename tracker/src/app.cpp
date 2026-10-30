@@ -87,6 +87,11 @@ static void drawPlaybackCounter(const PlaybackStatus* status) {
   playbackCounterWasPlaying = status->isPlaying != 0;
   playbackCounterPreviousTicks = status->linkPhaseTicks;
 
+  if (appSettings.playbackCounterMode == 2) {
+    gfxClearRect(34, 2, 6, 1);
+    return;
+  }
+
   char label[7];
   if (appSettings.playbackCounterMode == 0) {
     const uint64_t ticksPerBar = (uint64_t)appSettings.playbackBarRows * appSettings.playbackBarTicks;

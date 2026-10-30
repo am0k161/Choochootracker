@@ -512,6 +512,7 @@ void gfxToggleFullscreen(void) {
     ? 0 : SDL_WINDOW_FULLSCREEN_DESKTOP) == 0) {
     // Windows can invalidate render targets during this transition without
     // delivering a usable resize event until after the next present.
+    gfxHandleRenderReset();
     int width = 0, height = 0;
     SDL_GetWindowSize(window, &width, &height);
     gfxHandleResize(width, height);
@@ -1312,7 +1313,9 @@ void gfxHandleResize(int width, int height) {
   resizePresentDelay = 2;
   screenW = 640;
   screenH = 480;
-#elif defined(MIYOOPORTS_BUILD)
+#elif defined(DESKTOP_BUILD) || defined(MIYOOPORTS_BUILD)
+  // Desktop windows resize the presentation only. The tracker itself remains
+  // a 640x480 canvas, avoiding font/layout changes during a live resize.
   screenW = 640;
   screenH = 480;
 #else
@@ -1325,9 +1328,8 @@ void gfxHandleResize(int width, int height) {
   SDL_RenderSetLogicalSize(renderer, logicalW, logicalH);
 #endif
 #ifndef WEB_BUILD
-  // A fullscreen transition can invalidate SDL render targets even when its
-  // reported client size is unchanged.  Recreate our cached frame for every
-  // desktop resize event rather than presenting the old target.
+  // Windows invalidates target contents during ordinary live resizes too.
+  // Recreate the fixed canvas, then let the resize event's full redraw fill it.
   destroyCompositionTexture();
   if (!createCompositionTexture()) return;
 #endif

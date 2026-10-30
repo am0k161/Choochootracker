@@ -213,6 +213,7 @@ void projectInit(Project* p) {
     p->trackTilt[i] = 0x80;
   }
   p->tiltPivotHz = 1000;
+  instrumentEQDefaults(&p->masterEQ);
   for (auto& eq : p->eqBanks) instrumentEQDefaults(&eq);
   p->reverbReturn = 100;
   p->reverbTime = 180;

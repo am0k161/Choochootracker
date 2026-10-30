@@ -96,6 +96,8 @@ struct ChipNomadState {
   // The EQ of the instrument each track is playing, run on the track's insert buffer.
   InstrumentEQFilter trackEQ[PROJECT_MAX_TRACKS];
   uint8_t trackEQActive[PROJECT_MAX_TRACKS];
+  InstrumentEQFilter masterEQ;
+  uint8_t masterEQActive;
   InsertChain* insertChains[PROJECT_MAX_TRACKS];
   InsertChain* masterInsertChain;
   InsertAutomation masterInsertAutomation;

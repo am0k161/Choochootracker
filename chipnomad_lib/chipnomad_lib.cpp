@@ -1223,6 +1223,8 @@ void chipnomadInitChips(ChipNomadState* state, int sampleRate, ChipFactory facto
   memset(state->chips, 0, sizeof(state->chips));
   state->sampleRate = sampleRate;
   state->masterEffects->init((float)sampleRate);
+  state->masterEQ.init((float)sampleRate);
+  state->masterEQActive = 0;
   delete state->masterInsertChain;
   state->masterInsertChain = nullptr;
   for (auto*& chain : state->insertChains) {
@@ -1788,6 +1790,13 @@ static void processMasterMix(ChipNomadState* state, float* output, int frames,
       const float* source = state->insertBuffer + (size_t)t * state->mixBufferSize;
       for (int i = 0; i < frames * 2; ++i) output[i] += source[i];
     }
+  const bool eq = instrumentEQAudible(state->audioProject.masterEQ);
+  if (eq) {
+    if (!state->masterEQActive) state->masterEQ.reset();
+    state->masterEQ.configure(state->audioProject.masterEQ);
+    state->masterEQ.process(output, frames);
+  }
+  state->masterEQActive = eq;
   for (int i = 0; i < frames * 2; ++i) {
     output[i] *= state->mixVolume;
     if (output[i] > 1.0f || output[i] < -1.0f) state->audioOverload = AUDIO_OVERLOAD_COOLDOWN_FRAMES;

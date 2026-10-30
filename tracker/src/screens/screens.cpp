@@ -337,7 +337,7 @@ static int screenTouchEnvelopeAt(int col, int row, int* targetCol) {
 static int screenTouchCellAt(int col, int row, int* targetCol, int* targetRow) {
   if (!touchScreenData || touchScreenData->selectMode == 1) return 0;
   if (currentScreen == &screenMixer && screenMixerGetPage() == 0 && row == 12) {
-    int column = col >= 10 && col <= 17 ? 0 : col >= 22 && col <= 31 ? 1 : -1;
+    int column = col <= 8 ? 0 : col >= 12 && col <= 13 ? 1 : col >= 20 && col <= 29 ? 2 : -1;
     if (column < 0) return 0;
     if (targetCol) *targetCol = column;
     if (targetRow) *targetRow = PROJECT_MAX_TRACKS;

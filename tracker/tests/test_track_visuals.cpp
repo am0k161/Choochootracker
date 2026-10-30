@@ -187,7 +187,11 @@ TEST_CASE_FIXTURE(VisualFixture, "Playback counter Graphics controls persist and
   CHECK(appSettings.playbackCounterMode == 1);
   CHECK(appSettings.playbackBarRows == 15);
   CHECK(appSettings.playbackBarTicks == 7);
-  { std::ofstream f(settingsPath); f << "playbackCounterMode: 2\nplaybackBarRows: 0\nplaybackBarTicks: 255\n"; }
+  REQUIRE(table->onEdit(0, 8, CellEditAction::tap) == 1);
+  CHECK(appSettings.playbackCounterMode == 2);
+  table->drawField(0, 8, CellState::focus);
+  CHECK(std::string(mockGfxCells[13] + 23, 4) == "Off ");
+  { std::ofstream f(settingsPath); f << "playbackCounterMode: 3\nplaybackBarRows: 0\nplaybackBarTicks: 255\n"; }
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.playbackCounterMode == 0);
   CHECK(appSettings.playbackBarRows == 16);
@@ -262,6 +266,9 @@ TEST_CASE_FIXTURE(VisualFixture, "Playback counter holds at stop and resets on t
   status.linkPhaseTickMicros = 70000000000ull;
   appDraw();
   CHECK(std::string(mockGfxCells[2] + 34, 6) == "999:59");
+  appSettings.playbackCounterMode = 2;
+  appDraw();
+  CHECK(std::string(mockGfxCells[2] + 34, 6) == "      ");
 }
 
 TEST_CASE_FIXTURE(VisualFixture, "One display choice switches each track and saves bulk choices") {

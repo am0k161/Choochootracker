@@ -38,7 +38,9 @@ InstrumentEQ bell(int8_t gain) {
 }
 
 // Bank 5 holds eq; the Braids instrument uses it unless bank is EMPTY_VALUE_8.
-double previewEnergy(const InstrumentEQ& eq, std::vector<float>* capture = nullptr, uint8_t bank = 5) {
+double previewEnergy(const InstrumentEQ& eq, std::vector<float>* capture = nullptr, uint8_t bank = 5,
+                     const InstrumentEQ* master = nullptr, uint8_t* trackActive = nullptr,
+                     uint8_t* masterActive = nullptr) {
   auto* s = chipnomadCreate();
   auto& p = s->project;
   p.chipsCount = 1; p.tracksCount = 1; p.tickRate = 50; p.linearPitch = 1;
@@ -46,6 +48,7 @@ double previewEnergy(const InstrumentEQ& eq, std::vector<float>* capture = nullp
   getInstrumentFunctions(InstrumentType::Braids).init(&p.instruments[0]);
   p.eqBanks[5] = eq;
   p.instruments[0].eq = bank;
+  if (master) p.masterEQ = *master;
   chipnomadInitChips(s, 48000, nullptr);
   REQUIRE(chipnomadQueueProjectRefresh(s));
   chipnomadQueuePlaybackPreviewNote(s, 0, 69, 0);
@@ -61,6 +64,8 @@ double previewEnergy(const InstrumentEQ& eq, std::vector<float>* capture = nullp
     }
     if (capture) capture->insert(capture->end(), audio, audio + 1920);
   }
+  if (trackActive) *trackActive = s->trackEQActive[0];
+  if (masterActive) *masterActive = s->masterEQActive;
   chipnomadDestroy(s);
   return energy;
 }
@@ -137,12 +142,14 @@ TEST_CASE("EQ banks and instrument EQ numbers are saved only when used or change
   eq.bands[0] = {EQShape::lowCut, 85, 0, 60};
   eq.bands[1].gain = -17;
   eq.bands[2] = {EQShape::highCut, 12500, 4, 30};
+  a->masterEQ.bands[1] = {EQShape::bell, 2500, 8, 54};
   REQUIRE(projectSave(a.get(), "test_instrument_eq.cct") == 0);
   REQUIRE(projectLoad(b.get(), "test_instrument_eq.cct") == 0);
   CHECK(b->instruments[3].eq == 0x12);
   CHECK(b->instruments[6].eq == 0x12);
   CHECK(b->instruments[4].eq == EMPTY_VALUE_8);
   CHECK(instrumentEQSame(b->eqBanks[0x12], eq));
+  CHECK(instrumentEQSame(b->masterEQ, a->masterEQ));
   for (int bank = 0; bank < PROJECT_EQ_BANKS; ++bank)
     if (bank != 0x12) CHECK(instrumentEQIsDefault(b->eqBanks[bank]));
   FILE* file = fopen("test_instrument_eq.cct", "rb");
@@ -156,6 +163,7 @@ TEST_CASE("EQ banks and instrument EQ numbers are saved only when used or change
   for (size_t at = 0; (at = text.find("- EQ: ", at)) != std::string::npos; ++at) ++lines;
   CHECK(lines == 2);
   CHECK(text.find("## EQ banks\n\n12 1,85,0,60,3,1000,-17,48,5,12500,4,30\n") != std::string::npos);
+  CHECK(text.find("FE 2,100,0,42,3,2500,8,54,4,8000,0,42\n") != std::string::npos);
   std::remove("test_instrument_eq.cct");
   projectFree(a.get());
   projectFree(b.get());
@@ -245,6 +253,19 @@ TEST_CASE("Instrument EQ filters the track the instrument plays on") {
   CHECK(previewEnergy(dark, nullptr, EMPTY_VALUE_8) == doctest::Approx(reference));
 }
 
+TEST_CASE("Master EQ filters the complete mix") {
+  InstrumentEQ flat, dark;
+  instrumentEQDefaults(&flat);
+  dark = flat;
+  dark.bands[2] = {EQShape::highCut, 40, 0, 42};
+  uint8_t trackActive = 1, masterActive = 1;
+  const double reference = previewEnergy(flat, nullptr, 5, nullptr, &trackActive, &masterActive);
+  CHECK(trackActive == 0);
+  CHECK(masterActive == 0);
+  CHECK(previewEnergy(flat, nullptr, EMPTY_VALUE_8, &flat) == doctest::Approx(reference));
+  CHECK(previewEnergy(flat, nullptr, EMPTY_VALUE_8, &dark) < reference * 0.01);
+}
+
 namespace {
 
 struct EQPage {
@@ -301,4 +322,17 @@ TEST_CASE("EQ screen edits move the band and OPT returns to the instrument") {
   CHECK(low.gain == 0);
   screenInstrumentEQ.onInput(1, keyOpt, 1);
   CHECK(currentScreen == &screenInstrument);
+}
+
+TEST_CASE("Master EQ FE screen returns to the mixer") {
+  EQPage e(InstrumentType::Sample);
+  currentScreen = &screenInstrumentEQ;
+  screenInstrumentEQ.setup(PROJECT_MASTER_EQ_BANK);
+  screenInstrumentEQ.fullRedraw();
+  REQUIRE(mockScreenData);
+  mockScreenData->drawStatic();
+  CHECK(std::string(mockGfxCells[0], 5) == "EQ FE");
+  CHECK(std::string(mockGfxCells[1], 13) == "Master output");
+  screenInstrumentEQ.onInput(1, keyOpt, 1);
+  CHECK(currentScreen == &screenMixer);
 }

@@ -567,6 +567,7 @@ union InstrumentChipData {
 // insert effects. Several instruments can share an EQ.
 #define INSTRUMENT_EQ_BANDS 3
 #define PROJECT_EQ_BANKS 128
+#define PROJECT_MASTER_EQ_BANK 0xFE
 enum class EQShape : uint8_t { off, lowCut, lowShelf, bell, highShelf, highCut, totalCount };
 
 struct InstrumentEQBand {

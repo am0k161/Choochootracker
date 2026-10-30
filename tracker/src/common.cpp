@@ -444,7 +444,7 @@ int settingsLoad(void) {
       sscanf(line + 19, "%d", &appSettings.waveformRefreshHz);
     } else if (strncmp(line, "playbackCounterMode: ", 21) == 0) {
       int mode;
-      if (sscanf(line + 21, "%d", &mode) == 1 && mode >= 0 && mode <= 1)
+      if (sscanf(line + 21, "%d", &mode) == 1 && mode >= 0 && mode <= 2)
         appSettings.playbackCounterMode = (uint8_t)mode;
     } else if (strncmp(line, "playbackBarRows: ", 17) == 0) {
       int rows;

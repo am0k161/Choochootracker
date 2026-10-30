@@ -47,6 +47,7 @@ static void audioCursor(int, int row) {
   else if (row == 1) gfxCursor(23, 3, appSettings.audioBufferSize >= 1024 ? 4 : 3);
   else if (row == 2) gfxCursor(15, 7, 16);
   else if (row == 4) gfxCursor(23, 8, 3); // "OFF"/"ON" value width
+  else if (row == 5) gfxCursor(3, 9, 13);
 }
 static void audioField(int, int row, CellState state) {
   const ColorScheme cs = appSettings.colorScheme;
@@ -72,6 +73,9 @@ static void audioField(int, int row, CellState state) {
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     gfxClearRect(23, 8, 3, 1);
     gfxPrint(23, 8, appSettings.audioInputEnabled ? "ON" : "OFF");
+  } else if (row == 5) {
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textLabel);
+    gfxPrint(0, 9, " - Input devices");
   } else {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, 4, "CPU load");
     drawAudioCpuLoad();
@@ -152,6 +156,10 @@ static int audioSelectOutput(CellEditAction action) {
 }
 static int audioEdit(int, int row, CellEditAction action) {
   if (row == 4) {
+    if (action == CellEditAction::tap) {
+      audioInputSetEnabled(!appSettings.audioInputEnabled);
+      return 1;
+    }
     if (action == CellEditAction::clear || action == CellEditAction::decrease ||
         action == CellEditAction::decreaseBig || action == CellEditAction::multiDecrease ||
         action == CellEditAction::multiDecreaseBig) {
@@ -163,6 +171,9 @@ static int audioEdit(int, int row, CellEditAction action) {
       audioInputSetEnabled(1);
       return 1;
     }
+    return 0;
+  }
+  if (row == 5) {
     if (action != CellEditAction::tap) return 0;
     if (audioInputSetEnabled(1)) return 1;
     screenSetup(&screenAudioInput, 0);
@@ -200,8 +211,8 @@ static int audioEdit(int, int row, CellEditAction action) {
   if (settingsSave() != 0) screenMessage(MESSAGE_TIME_ERROR, "Could not save audio setting");
   return 1;
 }
-static int audioCellValid(int, int row) { return row == 0 || row == 1 || row == 2 || row == 4; }
-static ScreenData audioData = {5, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, audioStatic, audioCursor, NULL, noHeader, noHeader, audioField, audioEdit, NULL, NULL, audioCellValid, NULL};
+static int audioCellValid(int, int row) { return row == 0 || row == 1 || row == 2 || row == 4 || row == 5; }
+static ScreenData audioData = {6, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, audioStatic, audioCursor, NULL, noHeader, noHeader, audioField, audioEdit, NULL, NULL, audioCellValid, NULL};
 
 static void controlsStatic(void) { gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "CONTROLS"); gfxPrint(0, 2, "Keys repeat"); }
 #ifdef TOUCH_INPUT
@@ -340,7 +351,8 @@ static void graphicsField(int, int row, CellState state) {
   } else if (row == 8) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, "Playback counter");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
-    gfxPrint(23, y, appSettings.playbackCounterMode ? "Time" : "Bars");
+    static const char* const modes[] = {"Bars", "Time", "Off "};
+    gfxPrint(23, y, modes[appSettings.playbackCounterMode]);
   } else if (row == 9) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, " - Rows per bar");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
@@ -366,9 +378,9 @@ static int graphicsEdit(int, int row, CellEditAction action) {
   if (row >= 8 && row <= 10) {
     uint8_t value = row == 8 ? appSettings.playbackCounterMode :
       row == 9 ? appSettings.playbackBarRows : appSettings.playbackBarTicks;
-    if (row == 8 && (action == CellEditAction::tap || action == CellEditAction::doubleTap)) value ^= 1;
+    if (row == 8 && (action == CellEditAction::tap || action == CellEditAction::doubleTap)) value = (value + 1) % 3;
     else if (!edit8noLast(action, &value, 1, row == 8 ? 0 : 1,
-                          row == 8 ? 1 : row == 9 ? 16 : 254)) return 0;
+                          row == 8 ? 2 : row == 9 ? 16 : 254)) return 0;
     if (row == 8) appSettings.playbackCounterMode = value;
     else if (row == 9) appSettings.playbackBarRows = value;
     else appSettings.playbackBarTicks = value;

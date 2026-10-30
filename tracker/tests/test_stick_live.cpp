@@ -418,7 +418,7 @@ TEST_CASE_FIXTURE(StickLiveFixture, "Settings menus and audio controls align") {
   mockAudioCpuLoad = 37;
   screenAudioSettings.fullRedraw();
   screen = mockScreenData;
-  CHECK(screen->rows == 5);
+  CHECK(screen->rows == 6);
   gfxClear();
   screen->drawStatic();
   screen->drawField(0, 0, CellState::focus);
@@ -465,6 +465,14 @@ TEST_CASE_FIXTURE(StickLiveFixture, "Settings menus and audio controls align") {
   CHECK(std::string(mockGfxCells[8] + 23, 3) == "OFF");
   CHECK(screen->isCellValid(0, 4));
   REQUIRE(screen->onEdit(0, 4, CellEditAction::tap) == 1);
+  CHECK(appSettings.audioInputEnabled == 1);
+  REQUIRE(screen->onEdit(0, 4, CellEditAction::tap) == 1);
+  CHECK(appSettings.audioInputEnabled == 0);
+  screen->drawField(0, 5, CellState::focus);
+  CHECK(std::string(mockGfxCells[9], 16) == " - Input devices");
+  CHECK(screen->isCellValid(0, 5));
+  REQUIRE(screen->onEdit(0, 5, CellEditAction::tap) == 1);
+  CHECK(currentScreen == &screenAudioInput);
   REQUIRE(screen->onEdit(0, 1, CellEditAction::increase) == 1);
   CHECK(mockAudioReconfigureSize == 512);
   CHECK(appSettings.audioBufferSize == 512);

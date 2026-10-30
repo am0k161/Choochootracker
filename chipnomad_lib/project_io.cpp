@@ -745,7 +745,7 @@ static bool loadEQSettings(const char* text, InstrumentEQ* eq) {
 // EQ banks come after the AY wavetables, where older versions stop reading.
 // Only banks that differ from a new one are written.
 static void projectSaveEQBanks(FILE* file, Project* project) {
-  bool any = false;
+  bool any = !instrumentEQIsDefault(project->masterEQ);
   for (const auto& eq : project->eqBanks) any |= !instrumentEQIsDefault(eq);
   if (!any) return;
   fprintf(file, "\n## EQ banks\n\n");
@@ -753,6 +753,10 @@ static void projectSaveEQBanks(FILE* file, Project* project) {
     if (instrumentEQIsDefault(project->eqBanks[bank])) continue;
     fprintf(file, "%02X ", bank);
     saveEQSettings(file, project->eqBanks[bank]);
+  }
+  if (!instrumentEQIsDefault(project->masterEQ)) {
+    fprintf(file, "%02X ", PROJECT_MASTER_EQ_BANK);
+    saveEQSettings(file, project->masterEQ);
   }
 }
 
@@ -764,8 +768,14 @@ static int projectLoadEQBanks(FILE* file, Project* p) {
     if (!strcmp(line, "EOF") || !strncmp(line, "##", 2)) return 0;
     unsigned bank;
     int offset = 0;
-    if (sscanf(line, "%2X %n", &bank, &offset) != 1 || !offset || bank >= PROJECT_EQ_BANKS ||
-        !loadEQSettings(line + offset, &p->eqBanks[bank])) {
+    if (sscanf(line, "%2X %n", &bank, &offset) != 1 || !offset) {
+      snprintf(projectFileError, 40, "Invalid EQ bank");
+      return 1;
+    }
+    InstrumentEQ* eq = bank == PROJECT_MASTER_EQ_BANK ? &p->masterEQ :
+      bank < PROJECT_EQ_BANKS ? &p->eqBanks[bank] : NULL;
+    if (!eq ||
+        !loadEQSettings(line + offset, eq)) {
       snprintf(projectFileError, 40, "Invalid EQ bank");
       return 1;
     }

@@ -33,7 +33,8 @@ char hintOwnedText[48];
 
 ScreenData data;
 
-InstrumentEQ& eq() { return chipnomadState->project.eqBanks[bank]; }
+bool master() { return bank == PROJECT_MASTER_EQ_BANK; }
+InstrumentEQ& eq() { return master() ? chipnomadState->project.masterEQ : chipnomadState->project.eqBanks[bank]; }
 int selectedBand() { return data.cursorCol; }
 bool hasGain(EQShape shape) {
   return shape == EQShape::lowShelf || shape == EQShape::bell || shape == EQShape::highShelf;
@@ -197,14 +198,14 @@ void drawStatic() {
   // Which instruments an edit here changes.
   char users[40] = "Used by";
   int count = 0;
-  for (int i = 0; i < PROJECT_MAX_INSTRUMENTS; ++i) {
+  for (int i = 0; !master() && i < PROJECT_MAX_INSTRUMENTS; ++i) {
     const Instrument& instrument = chipnomadState->project.instruments[i];
     if (instrument.type == InstrumentType::none || instrument.eq != bank) continue;
     if (++count <= 8) snprintf(users + strlen(users), sizeof(users) - strlen(users), " %02X", i);
   }
   if (count > 8) snprintf(users + strlen(users), sizeof(users) - strlen(users), " +%d", count - 8);
   gfxSetFgColor(cs.textInfo);
-  gfxPrint(0, 1, count ? users : "Not used by any instrument");
+  gfxPrint(0, 1, master() ? "Master output" : count ? users : "Not used by any instrument");
   static const struct { int db; const char* text; } dbLabels[] = {
     {12, "+12"}, {6, " +6"}, {0, "  0"}, {-6, " -6"}, {-12, "-12"}};
   for (const auto& label : dbLabels)
@@ -343,7 +344,7 @@ const char* hint() {
 }
 
 void setup(int input) {
-  if (input >= 0 && input < PROJECT_EQ_BANKS) bank = (uint8_t)input;
+  if ((input >= 0 && input < PROJECT_EQ_BANKS) || input == PROJECT_MASTER_EQ_BANK) bank = (uint8_t)input;
   data.cursorRow = rowBand;
   data.cursorCol = 0;
   data.topRow = 0;
@@ -367,10 +368,10 @@ int onInput(int isKeyDown, int keys, int tapCount) {
   if (keys == keyOpt || keys == (keyLeft | keyShift)) {
     chipnomadQueuePlaybackStopPreview(chipnomadState, *pSongTrack);
     screenMessage(0, "");
-    screenSetup(&screenInstrument, cInstrument);
+    screenSetup(master() ? &screenMixer : &screenInstrument, master() ? 0 : cInstrument);
     return 1;
   }
-  if (keys == (keyEdit | keyPlay)) {
+  if (!master() && keys == (keyEdit | keyPlay)) {
     if (isKeyDown && !chipnomadGetPlaybackStatus(chipnomadState)->isPlaying)
       chipnomadQueuePlaybackPreviewNote(chipnomadState, *pSongTrack,
         instrumentFirstNote(&chipnomadState->project, cInstrument), cInstrument);
@@ -379,7 +380,7 @@ int onInput(int isKeyDown, int keys, int tapCount) {
   return screenInput(&data, isKeyDown, keys, tapCount);
 }
 
-ScreenPlaybackLevel getPlaybackLevel() { return ScreenPlaybackLevel::phrase; }
+ScreenPlaybackLevel getPlaybackLevel() { return master() ? ScreenPlaybackLevel::song : ScreenPlaybackLevel::phrase; }
 
 struct Initializer {
   Initializer() {

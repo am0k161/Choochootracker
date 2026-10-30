@@ -117,7 +117,7 @@ struct AppSettings {
   int quickHelpReleaseSeen;
   int ayWavetableLfoView;
   int waveformRefreshHz;
-  uint8_t playbackCounterMode; // 0 = bars, 1 = elapsed time
+  uint8_t playbackCounterMode; // 0 = bars, 1 = elapsed time, 2 = off
   uint8_t playbackBarRows;
   uint8_t playbackBarTicks;
   // Port indices are runtime-only (not saved): enumeration order isn't
