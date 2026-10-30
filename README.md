@@ -1,5 +1,3 @@
-> ** ALPHA VERSION. Software is not finished. CHOO CHOO.**
-
 ```*        .         *               .            *
    ______ __ __  ____   ____   ______ __ __  ____   ____
   / ____// // / / __ \ / __ \ / ____// // / / __ \ / __ \
@@ -24,158 +22,183 @@
      CAHORS                                       MONTAUBAN
           >>>  8 TRACKS  / CHIPNOMAD-BASED  >>>
 
-.oO[ AY / BRAIDS / PLAITS / SAMPLES / SYNTHS / DRUMSYNTHS / 303 ]Oo.
+.oO[ SYNTHS - DRUMS - SAMPLING - CHIPS - EFFECTS - SF2 - FM ]Oo.
 ````
+# ChooChooTracker 🚂
 
-## Screenshots
-
-<p align="center">
-  <img src="screenshots/song.png" alt="Song editor" width="31%">
-  <img src="screenshots/phrase.png" alt="Phrase editor" width="31%">
-  <img src="screenshots/mixer.png" alt="Mixer" width="31%">
-</p>
-<p align="center">
-  <img src="screenshots/enginemenu.png" alt="Instrument engine menu" width="31%">
-  <img src="screenshots/plaitsalt.png" alt="Plaits-Alt instrument" width="31%">
-  <img src="screenshots/braids.png" alt="Braids instrument" width="31%">
-</p>
-<p align="center">
-  <img src="screenshots/sample.png" alt="Sample instrument" width="31%">
-  <img src="screenshots/byowtbl.png" alt="Wavetable instrument" width="31%">
-  <img src="screenshots/cloud.png" alt="Cloud effect" width="31%">
-</p>
-<p align="center">
-  <img src="screenshots/modsources.png" alt="Modulation sources" width="31%">
-  <img src="screenshots/moddest.png" alt="Modulation destinations" width="31%">
-  <img src="screenshots/settings.png" alt="Settings" width="31%">
+<p align="center">   
+  <b>A multiengine music tracker for handheld consoles, Android, Linux and desktop computers.</b><br>
+  <i>Don't miss your stop.</i>
 </p>
 
-ChooChooTracker is a music tracker for handheld consoles, PC and Android.
+<p align="center">
+  <a href="https://choochootracker.pages.dev/">🌐 Website</a> &nbsp;·&nbsp;
+  <a href="https://choochootracker.pages.dev/play/">🚀 Try online</a> &nbsp;·&nbsp;
+  <a href="https://github.com/paiheulevrai/Choochootracker/releases">📦 Downloads</a> &nbsp;·&nbsp;
+  <a href="https://discord.gg/Ut9vM6zgKU">💬 Discord</a> &nbsp;·&nbsp;
+  <a href="https://www.instagram.com/choochootracker/">📸 Instagram</a>
+</p>
 
-Write a beat on the train, sequence, jam with joysticks, automate a synth line, send it through reverb, then keep going until you miss your stop.
+---
 
-This is a fork of [ChipNomad](https://github.com/Megus/chipnomad-tracker), with A LOT of extra synth engines, high quality PCM samples / SCWF / Serum wavetables playback, global reverb/delay, and many other small changes. It keeps ChipNomad's supafast LSDJ-inspired tracker workflow but departs from the chiptune vision of Megus to offer a wide range of modern sound design options. The name comes from the first proof of concept, written on a train between Cahors and Montauban.
+## 🎧 What is ChooChooTracker?
 
-The main target is the Anbernic RG353V through PortMaster. It should work on any Portmaster system. So far tested and working on Arkos and TrimUI.
+A music tracker for Portmaster consoles, Android, Linux and computers, with advanced sampling, soundfonts, wavetables, chips, synths, effects, joysticks and more.
 
-A native Windows build is available for development and desktop testing. It works on Steamdeck if you feel adventurous.
+Originally forked from [ChipNomad](https://github.com/Megus/chipnomad-tracker), it has evolved into a multiengine tracker combining classic tracking with modern synthesis, sampling, modulation, effects and MIDI.
 
-You can also test it in your browser on https://choochootracker.vercel.app/ (use the keyboard or gamepad on a computer, use the on-screen gamepad on a mobile device). 
+The project started with a simple idea: build a portable groovebox to make techno in the train, then contributions started and now its like a small music studio in your pocket.
 
-Android on Play Store is available in "closed beta", contact me on Discord https://discord.gg/Ut9vM6zgKU to get access.
+Make music on the move. Sequence, experiment, perform, and don't miss your stop.
 
-Other platforms: the app is SDL2 based, it should compile anywhere.
+---
 
-## What it can do
+## 🚧 Project status
 
-Synthesis
-- Eight fixed monophonic tracks (with independent instruments)
-- AY Classic, AY Plus, and crunchy AY Sample playback (from Chipnomad)
-- All 47 Braids engines, 24 stock Plaits engines, and 24 additional Plaits-Alt engines
-- Clean mono or stereo PCM8/PCM16 sample playback (one-shot samples with autoslice mode)
-- Stretch mode, autoslicing, chromatic sample playback
-- Dual single cycle waveform oscillator: with mix & detune
-- Dual wavetable oscillator: bring your own Serum wavetables !
-- Achchid: acid engine (open303 based) that can take Braids as VCO
-- Bogie: In-house drum synth with 12 VA/FM models (including cowbells).
-- MME: Multi Modulation Engine. An aggressive voice inspired by the Loquelic Iteritas, but with Mutable Warps algos
-- Sintered: experimental synthetic percussions. MME for drums. Very wild.
+**Alpha — actively developed**
 
-Sound design
-- Multimode LP/HP/BP 12/24dB filters on each track (except special engines)
-- Several filter flavours inspired by analog synths
-- Per-track volume, mute, solo, tiltEQ, Reverb send, and Delay send
-- Send reverb: Mutable Instruments Clouds meme lush reverb
-- Send delay: Tick-synchronized filtered ping-pong delay
-- Insert effects: 2x effect slots per track (in-house & Airwindows effects)
-- Capable sample editor
-- Resampling support
-- Timesretch: in-house dirty mode or Signalsmith Stretch 
+ChooChooTracker is functional and capable of producing complete musical projects, but development is ongoing.
 
-Articulations
-- Three tracker FX columns per row
-- Added tracker FX inspired by Elektron and Nerdseq: Probability, modulo conditions, and per-track invididual playback speed
-- Synth engines parameters can be set by TrackFX, kinda like P-locks.
-- 4x mod sources per track: ADSR, AHD, LFO and joysticks. Modulations can target modulations.
-- 3 LFO types: normal, slow tempo sync'd (can be very slow) and fast LFO for audio rate modulations
-- AY Wavetables as LFO shapes
-- LFO can retrig on phrase & chains start (in addition to standard lfo trigs)
-- Joystick modulation , that can be live recorded as trackFX 
-- Tracker tables (4 FX slots per table row), grooves, chains, and songs
-- Decoupled tables: tracker tables can be free running, or reset on phrase/chain.
-- Jazz mode: play with your computer keyboard (PC only)
-- Chord mode on every engine
+- Occasional bugs and crashes may occur.
+- Features and workflows are still evolving.
+- Sound engines and effects may receive further improvements.
+- Look may change.
 
-We have MIDI in/out: sequence or be sequenced. 
+Save regularly and keep backups of your projects.
 
-## One tracker, many engines
+Bug reports, feedback, testing and contributions are welcome!
 
-Instruments in Choochootracker work like "Machines" in the Elektron world.
+---
 
-Each instrument has its sound engine, and can be mixed/matched at will: you can have an AY bass on one track, a Braids drum model on another, a Plaits chord engine or a Plaits-Alt texture on the next, and some repitched heehaa samples beside them.
+## 🚀 Quick start
 
+Get the latest packages from the **[GitHub Releases page](https://github.com/paiheulevrai/Choochootracker/releases)**.
 
-## Try the alpha
+### 🌐 Web app
 
-Download the PortMaster/Android/Windows packages from the [GitHub Releases page](https://github.com/paiheulevrai/Choochootracker/releases).
+Try ChooChooTracker directly in your browser:
 
-The current package targets ARM64 PortMaster devices and has been developed primarily for ArkOS on RG353V. Install `choochootracker.zip` through PortMaster, or extract it into the console's `ports` directory.
+**[Launch the web app](https://choochootracker.pages.dev/play/)**
 
-This is an early build. Save often and don't get too attached to your projects.
+Use a keyboard or gamepad on desktop, or the on-screen controls on mobile devices.
 
-Find bugs or anything? Come discuss on Discord: https://discord.gg/Ut9vM6zgKU
+### 🕹️ Handheld consoles — PortMaster
 
-## Documentation
+ChooChooTracker supports PortMaster-compatible Linux handhelds.
 
-- [Visual field guide](https://choochootracker.vercel.app/user-guide/) · [Offline version and sources](docs/user-guide/README.md)
-- [User manual](docs/USER_MANUAL.md)
-- [User manual PDF](docs/ChooChooTracker-User-Manual.pdf)
+1. Download the latest PortMaster package.
+2. Extract the package into your device's `ports` directory.
+3. Launch ChooChooTracker from your console's Ports menu.
 
-## Current limits
+Tested on ArkOS, DarkOs, Knulli, amberElec, Anbernic and TrimUI devices, among others.
 
-- Everything is mostly working, you can make music. You can even make tracks.
-- there can still be some crashes and bugs
-- Visual identity is not final
-- Feature set isn't frozen
-- Engines and stuff may still require tweaking to sound as good as they should
+### 🕹️ Miyoo Mini / Mini Plus
 
-## Why the train name?
+1. Download the MiyooPorts package 
+2. Extract the archive at the root of your SD card, merging the `Roms` and `PORTS` folders with your existing Onion OS installation.
+3. Refresh your game collection and launch ChooChooTracker from the Ports menu.
 
-I wanted a mobile groovebox to make techno... but none of the available option ticked all the boxes, so I decided to make one. The first proof of concept was written during an Intercité train ride between Cahors and Montauban, so the name stuck. Choo choo, don't miss your stop.
+### 💻 Desktop
 
-## Credits and license
+Native Windows builds and appImage are available for desktop use, development and testing.
 
-ChooChooTracker is a fork of [ChipNomad](https://github.com/Megus/chipnomad-tracker). Its Braids, Plaits, Clouds, and stmlib code comes from Mutable Instruments' open-source releases. See the included license files for exact attribution.
+### 📱 Android
 
-Thanks to [luginf](https://github.com/luginf) for project-loading, VT2 import fix,
-desktop MIDI, and AppImage fixes; to [aiaaaa](https://github.com/aiaaaa) for
-Stick live mode and track-display improvements; to [am0k161](https://github.com/am0k161)
-for the sample editor and sampler improvements; and to Ian (hifi) for the
-instrument-navigation improvements.
+Android builds are available through Google Play beta testing.
 
-The time-stretching processor is based on [Signalsmith Stretch](https://github.com/Signalsmith-Audio/stretch)
-by Signalsmith Audio. Several insert effects are adapted from
-[Airwindows](https://github.com/airwindows/airwindows); see the included
-license files for the individual attributions.
+Check the [website](https://choochootracker.pages.dev/downloads/) or join [Discord](https://discord.gg/Ut9vM6zgKU) for current availability and access information.
 
-Official ChooChooTracker releases may include [Ableton Link](https://github.com/Ableton/link) under a separate
-authorisation. The project's MIT license does not grant rights to Ableton Link;
-forks, derivative works and third-party distributors must obtain their own
-authorisation before they build or distribute a product that includes it. See
+---
+
+## 🎛️ Key features
+
+Its the tracker we wanted. 
+
+For detailed descriptions, screenshots and examples, visit the **[ChooChooTracker website](https://choochootracker.pages.dev/)**.
+
+---
+
+## 📚 Documentation
+
+- [Visual field guide](https://choochootracker.pages.dev/user-guide/) — Learn the interface through screenshots and examples.
+- [User manual](https://choochootracker.pages.dev/manual/) — Instruments, effects, commands and technical reference.
+- [Downloads](https://choochootracker.pages.dev/downloads/) — Packages and installation information.
+
+---
+
+## 🛠️ Building 
+
+ChooChooTracker is an SDL2-based application. The project is developed with portability in mind, targeting handheld Linux devices, desktop environments and Android.
+
+Your agent should know what to do.
+
+---
+
+## 🤝 Contributing
+
+ChooChooTracker is a collaborative FOSS project. It is shaped by musicians, developers and tracker enthusiasts who share an interest in portable music-making.
+
+There are many ways to help the project:
+- use the app, report bugs or things that hurt the workflow
+- make social media content, share your tracks 
+- contribute to the code: we accept PRs, read contrib.md
+
+Wanna chat? we're on [Discord](https://discord.gg/Ut9vM6zgKU)
+
+---
+## 🚄Origin story
+
+I wanted a mobile groovebox to make techno... but none of the available option ticked all the boxes, so I decided to make one myself by stitching a few open source projects together. 
+
+The first proof of concept was written during an Intercité train ride between Cahors and Montauban, so the name stuck. Choo choo, don't miss your stop.
+
+---
+## 🙏 Credits & licenses
+
+ChooChooTracker is a fork of [ChipNomad](https://github.com/Megus/chipnomad-tracker), created by Megus.
+
+It incorporates code and ideas from several generous open-source projects and contributors.
+
+Special thanks to:
+
+- **Megus** — Creator of ChipNomad and the original tracker foundation.
+- **Pichenettes / Mutable Instruments** — Braids, Plaits, Clouds and stmlib.
+- **Lylepmills** — Additional Plaits engines.
+- **Robin Schmidt** — Open303 engine.
+- **Signalsmith Audio** — Signalsmith Stretch time-stretching processor.
+- **Airwindows** — Audio effects processing.
+- **JonET** — Monk Synth.
+- **CureAudio** — Roar filter.
+- **Filliformes** — Aggro filter.
+
+Thanks also to our contributors:
+
+- **luginf** — Project import exports in many formats, jazz mode, desktop mode improvements, manual translations, etc..
+- **aiaaaa** — Chips and FM engines, Monk synth, SlowLFO, Beads, field guide, UI improvement, etc.
+- **am0k161** — Sampler engine and sample editor, MIDI, bugfixes, etc.
+- **WillyIcon** — UI improvement, bugfixes, etc.
+- **Myldy20** — bugfixes
+
+Thanks to the people who shared their misery on the Discord: your reports helped us fix and make future users less miserable!
+
+### Licensing
+
+ChooChooTracker is released under the **[MIT License](LICENSE)**.
+
+Individual components may be subject to their own licenses. See the included license files and attribution notices for details.
+
+**Ableton Link notice:** Official ChooChooTracker releases may include [Ableton Link](https://github.com/Ableton/link) under a separate authorisation. The project's MIT license does not grant rights to Ableton Link; forks, derivative works and third-party distributors must obtain their own authorisation before they build or distribute a product that includes it. See
 [Link's license](https://github.com/Ableton/link/blob/master/LICENSE.md).
 
-The project is released under the [MIT License](LICENSE).
+---
 
-Mad respects to the people I stole code from:
-- Megus, the insanely smart creator of Chipnomad.
-- Pichenettes, the genius behind Mutable Instruments
-- Lylepmills for the additional Plaits engines
-- RobinSchmidt for the Open303 engine
+<p align="center">
+  <b>Choo Choo! 🚂</b><br>
+</p>
 
-Mad respects to the people I stole ideas from:
-- Thomas, the absolute beast behind Nedseq
-- The people at Elektron who boldly put user workflow and speed first, and also whoever invented P-locks and trig conditions.
-- Whoever invented the menu navigation style of vintage RPGs
-- the Noise Engineering team, who inspired the MME engine
-- All musicians who I saw playing live sets on gameboys and other constrained hardware rigs.
-
+<p align="center">
+  <a href="https://choochootracker.pages.dev/">Website</a> ·
+  <a href="https://choochootracker.pages.dev/play/">Play online</a> ·
+  <a href="https://github.com/paiheulevrai/Choochootracker/releases">Downloads</a> ·
+  <a href="https://discord.gg/Ut9vM6zgKU">Discord</a>
+</p>
