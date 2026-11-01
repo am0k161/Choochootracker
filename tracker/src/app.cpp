@@ -17,6 +17,8 @@
 #include "waveform_display.h"
 #include "piano_display.h"
 #include "monitor_display.h"
+#include "background.h"
+#include "audio_monitor.h"
 #include "corelib_input.h"
 #include "corelib_keymap.h"
 #include "corelib_power.h"
@@ -577,7 +579,7 @@ static bool inputBranchNavigation(int keys) {
   int column = -1;
   if (currentScreen == &screenProject || currentScreen == &screenSettings ||
       currentScreen == &screenControlsSettings || currentScreen == &screenAudioSettings || currentScreen == &screenSynthSettings || currentScreen == &screenMixerSettings ||
-      currentScreen == &screenGraphicsSettings || currentScreen == &screenTrackVisuals ||
+      currentScreen == &screenGraphicsSettings || currentScreen == &screenBackgroundSettings || currentScreen == &screenTrackVisuals ||
       currentScreen == &screenMidi || currentScreen == &screenMidiChannelMap ||
       currentScreen == &screenMidiCC) column = 1;
   else if (currentScreen == &screenGroove) column = 3;
@@ -734,6 +736,7 @@ void appSetup(void) {
   updateMotionRecordMode();
 
   // Clear screen
+  backgroundInit();
   gfxSetBgColor(appSettings.colorScheme.background);
   gfxClear();
 
@@ -873,6 +876,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int webSaveBrowserState() {
 */
 void appCleanup(void) {
   projectActive = false;
+  backgroundCleanup();
   audioManager.stop();
   soundbankShutdown();
   // Explicitly flush and close MIDI I/O rather than relying on process exit:
@@ -893,9 +897,15 @@ void appCleanup(void) {
 void appDraw(void) {
   const ColorScheme cs = appSettings.colorScheme;
 
-  monitorDisplaySetActive(monitorNeeded());
+  const bool trackerBackground = currentScreen && currentScreen != &screenTitle;
+  monitorDisplaySetActive(monitorNeeded() || (trackerBackground && backgroundNeedsAudio()));
   mainLoopSetTargetFps(monitorDisplayActive() ? appSettings.waveformRefreshHz : 30);
   monitorDisplayUpdate();
+  if (trackerBackground && backgroundTick(monitorDisplayMixSamples(), AUDIO_MONITOR_SAMPLES)) {
+    gfxSetBgColor(appSettings.colorScheme.background);
+    if (charEditIsOpen()) charEditRedraw();
+    else currentScreen->fullRedraw();
+  }
   screenDraw();
 
   if (charEditIsOpen()) return;

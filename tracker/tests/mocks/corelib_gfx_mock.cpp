@@ -23,6 +23,10 @@ void gfxClear(void) {
   mockTextRight = mockTextBottom = -1;
 }
 void gfxUpdateScreen(void) {}
+void gfxBackgroundSetBaseColor(int rgb) {}
+void gfxBackgroundSetSolid(void) {}
+int gfxBackgroundLoadBMP(const char*, int, int, int) { return 1; }
+void gfxBackgroundSetPixels(const uint32_t*, int, int) {}
 void gfxClearRect(int x, int y, int w, int h) {
   for (int row = y; row < y + h && row < 20; ++row)
     for (int col = x; col < x + w && col < 40; ++col)

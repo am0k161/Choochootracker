@@ -11,6 +11,7 @@
 #include "file_browser.h"
 #include "screens.h"
 #include "waveform_display.h"
+#include "background.h"
 #include <string.h>
 
 static int columnCount(int) { return 1; }
@@ -320,8 +321,11 @@ static int mixerEdit(int, int row, CellEditAction action) {
 static ScreenData mixerData = {2, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, mixerStatic, mixerCursor, NULL, noHeader, noHeader, mixerField, mixerEdit, NULL, NULL, NULL, NULL};
 
 static void graphicsStatic(void) { gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "GRAPHICS"); }
-static int graphicsRowY(int row) { return 2 + row + (row >= 2) + (row >= 6); }
-static void graphicsCursor(int, int row) { gfxCursor(row == 2 || row >= 4 ? 23 : 0, graphicsRowY(row), row == 0 ? 16 : row == 1 ? 9 : row == 2 ? 3 : row == 3 ? 13 : row == 4 ? 6 : row == 7 ? 8 : row == 8 ? 7 : row == 9 ? 4 : row == 10 ? 2 : 3); }
+static int graphicsRowY(int row) { return 2 + row + (row >= 3) + (row >= 7); }
+static void graphicsCursor(int, int row) {
+  static const int widths[] = {16, 9, 10, 3, 13, 6, 8, 8, 8, 7, 4, 2, 3};
+  gfxCursor(row == 3 || row >= 5 ? 23 : 0, graphicsRowY(row), widths[row]);
+}
 static void graphicsField(int, int row, CellState state) {
   const ColorScheme cs = appSettings.colorScheme;
   const int y = graphicsRowY(row);
@@ -330,39 +334,41 @@ static void graphicsField(int, int row, CellState state) {
   } else if (row == 1) {
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, y, "Load font");
   } else if (row == 2) {
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, y, "Background");
+  } else if (row == 3) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, "Song waveform");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(23, y, appSettings.persistentWaveform ? "ON " : "OFF");
-  } else if (row == 3) {
-    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, y, "Track visuals");
   } else if (row == 4) {
+    gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrint(0, y, "Track visuals");
+  } else if (row == 5) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, "Waveform FPS");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault); gfxPrintf(23, y, "%02d FPS", appSettings.waveformRefreshHz);
-  } else if (row == 5) {
+  } else if (row == 6) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, "Renderer");
     gfxSetFgColor(cs.textInfo); gfxPrint(23, y, gfxGetRendererType());
-  } else if (row == 6) {
+  } else if (row == 7) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, "Boot screen");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     gfxPrint(23, y, appSettings.bootScreenNight ? "Night   " : "Original");
-  } else if (row == 7) {
+  } else if (row == 8) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, "Cursor");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     gfxPrint(23, y, appSettings.cursorBrackets ? "Brackets" : "Line    ");
-  } else if (row == 8) {
+  } else if (row == 9) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, "Battery info");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     static const char* const modes[] = {"Off    ", "Time   ", "Percent"};
     gfxPrint(23, y, modes[appSettings.batteryInfoMode]);
-  } else if (row == 9) {
+  } else if (row == 10) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, "Playback counter");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     static const char* const modes[] = {"Bars", "Time", "Off "};
     gfxPrint(23, y, modes[appSettings.playbackCounterMode]);
-  } else if (row == 10) {
+  } else if (row == 11) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, " - Rows per bar");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     gfxPrintf(23, y, "%02u", appSettings.playbackBarRows);
-  } else if (row == 11) {
+  } else if (row == 12) {
     gfxSetFgColor(cs.textLabel); gfxPrint(0, y, " - Ticks per row");
     gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
     gfxPrintf(23, y, "%03u", appSettings.playbackBarTicks);
@@ -380,20 +386,20 @@ static void fontLoaded(const char* path) {
 }
 static void fontCancelled(void) { screenSetup(&screenGraphicsSettings, 0); }
 static int graphicsEdit(int, int row, CellEditAction action) {
-  if (row >= 8 && row <= 11) {
-    uint8_t value = row == 8 ? appSettings.batteryInfoMode : row == 9 ? appSettings.playbackCounterMode :
-      row == 10 ? appSettings.playbackBarRows : appSettings.playbackBarTicks;
-    if (row <= 9 && (action == CellEditAction::tap || action == CellEditAction::doubleTap)) value = (value + 1) % 3;
-    else if (!edit8noLast(action, &value, 1, row <= 9 ? 0 : 1,
-                          row <= 9 ? 2 : row == 10 ? 16 : 254)) return 0;
-    if (row == 8) appSettings.batteryInfoMode = value;
-    else if (row == 9) appSettings.playbackCounterMode = value;
-    else if (row == 10) appSettings.playbackBarRows = value;
+  if (row >= 9 && row <= 12) {
+    uint8_t value = row == 9 ? appSettings.batteryInfoMode : row == 10 ? appSettings.playbackCounterMode :
+      row == 11 ? appSettings.playbackBarRows : appSettings.playbackBarTicks;
+    if (row <= 10 && (action == CellEditAction::tap || action == CellEditAction::doubleTap)) value = (value + 1) % 3;
+    else if (!edit8noLast(action, &value, 1, row <= 10 ? 0 : 1,
+                          row <= 10 ? 2 : row == 11 ? 16 : 254)) return 0;
+    if (row == 9) appSettings.batteryInfoMode = value;
+    else if (row == 10) appSettings.playbackCounterMode = value;
+    else if (row == 11) appSettings.playbackBarRows = value;
     else appSettings.playbackBarTicks = value;
     if (settingsSave() != 0) screenMessage(MESSAGE_TIME, "Could not save counter setting");
     return 1;
   }
-  if (row == 7) {
+  if (row == 8) {
     uint8_t value = appSettings.cursorBrackets;
     if (action == CellEditAction::tap || action == CellEditAction::doubleTap) value ^= 1;
     else if (!edit8noLast(action, &value, 1, 0, 1)) return 0;
@@ -403,7 +409,7 @@ static int graphicsEdit(int, int row, CellEditAction action) {
     currentScreen->fullRedraw();  // shows the new cursor straight away
     return 1;
   }
-  if (row == 6) {
+  if (row == 7) {
     uint8_t value = appSettings.bootScreenNight;
     if (action == CellEditAction::tap || action == CellEditAction::doubleTap) value ^= 1;
     else if (!edit8noLast(action, &value, 1, 0, 1)) return 0;
@@ -411,7 +417,7 @@ static int graphicsEdit(int, int row, CellEditAction action) {
     if (settingsSave() != 0) screenMessage(MESSAGE_TIME, "Could not save boot screen");
     return 1;
   }
-  if (row == 2) {
+  if (row == 3) {
     uint8_t value = appSettings.persistentWaveform;
     if (action == CellEditAction::tap || action == CellEditAction::doubleTap) value ^= 1;
     else if (!edit8noLast(action, &value, 1, 0, 1)) return 0;
@@ -419,21 +425,118 @@ static int graphicsEdit(int, int row, CellEditAction action) {
     if (settingsSave() != 0) screenMessage(MESSAGE_TIME, "Could not save waveform setting");
     return 1;
   }
-  if (row == 4) {
+  if (row == 5) {
     uint8_t value = (uint8_t)appSettings.waveformRefreshHz;
     if (!edit8noLast(action, &value, 5, 1, 60)) return 0;
     appSettings.waveformRefreshHz = value;
     if (settingsSave() != 0) screenMessage(MESSAGE_TIME, "Could not save waveform setting");
     return 1;
   }
-  if (row == 5 || action != CellEditAction::tap) return 0;
+  if (row == 6 || action != CellEditAction::tap) return 0;
   if (row == 0) screenSetup(&screenColorTheme, 0);
   else if (row == 1) { fileBrowserSetup("LOAD FONT", ".cnfont", appSettings.fontFolderPath, fontLoaded, fontCancelled); screenSetup(&screenFileBrowser, 0); }
-  else if (row == 3) screenSetup(&screenTrackVisuals, 0);
+  else if (row == 2) screenSetup(&screenBackgroundSettings, 0);
+  else if (row == 4) screenSetup(&screenTrackVisuals, 0);
   return 0;
 }
 static int graphicsCellValid(int, int) { return 1; }
-static ScreenData graphicsData = {12, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, graphicsStatic, graphicsCursor, NULL, noHeader, noHeader, graphicsField, graphicsEdit, NULL, NULL, graphicsCellValid, NULL};
+static ScreenData graphicsData = {13, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, graphicsStatic, graphicsCursor, NULL, noHeader, noHeader, graphicsField, graphicsEdit, NULL, NULL, graphicsCellValid, NULL};
+
+static int backgroundRowY(int row) { return 2 + row + (row >= 2) + (row >= 4) + (row >= 8); }
+static void backgroundStatic(void) { gfxSetFgColor(appSettings.colorScheme.textTitles); gfxPrint(0, 0, "BACKGROUND"); }
+static void backgroundCursor(int, int row) {
+  static const int widths[] = {8, 8, 7, 8, 4, 4, 4, 6, 5};
+  gfxCursor(row == 1 || row == 8 ? 0 : 23, backgroundRowY(row), widths[row]);
+}
+static void backgroundField(int, int row, CellState state) {
+  const ColorScheme cs = appSettings.colorScheme;
+  const int y = backgroundRowY(row);
+  gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
+  if (row == 1) {
+    gfxPrint(0, y, "Load BMP");
+    if (backgroundImageLoadFailed()) { gfxSetFgColor(cs.warning); gfxPrint(12, y, "Missing"); }
+    return;
+  }
+  if (row == 8) { gfxPrint(0, y, "Reset"); return; }
+  gfxSetFgColor(cs.textLabel);
+  static const char* labels[] = {"Type", "", "Layout", "Tint", "Intensity", "Speed", "Reaction", "Resolution"};
+  gfxPrint(0, y, labels[row]);
+  gfxSetFgColor(state == CellState::focus ? cs.textValue : cs.textDefault);
+  if (row == 0) {
+    static const char* modes[] = {"Solid   ", "Image   ", "Plasma  ", "Stars   ", "Waves   ",
+      "Tunnel  ", "Metaball", "Spectrum", "Rain    ", "Moire   "};
+    gfxPrint(23, y, modes[(int)appSettings.backgroundMode]);
+  } else if (row == 2) gfxPrint(23, y, appSettings.backgroundLayout == BackgroundLayout::tile ? "Tile   " : "Stretch");
+  else if (row == 3) {
+    static const char* tints[] = {"Auto    ", "Original", "Tinted  "};
+    gfxPrint(23, y, tints[(int)appSettings.backgroundTint]);
+  } else if (row == 7) {
+    static const char* resolutions[] = {"Low   ", "Medium", "High  ", "Ultra "};
+    gfxPrint(23, y, resolutions[(int)appSettings.backgroundResolution]);
+  } else {
+    uint8_t value = row == 4 ? appSettings.backgroundIntensity : row == 5 ? appSettings.backgroundSpeed : appSettings.backgroundReaction;
+    gfxPrintf(23, y, "%03u%%", value);
+  }
+}
+static void backgroundChanged(void) {
+  bool applied = backgroundApplySettings();
+  if (!applied) screenMessage(MESSAGE_TIME_ERROR, "BMP load failed");
+  if (settingsSave() != 0) screenMessage(MESSAGE_TIME_ERROR, "Could not save background");
+  if (currentScreen) currentScreen->fullRedraw();
+}
+static void backgroundLoaded(const char* path) {
+  strncpy(appSettings.backgroundImagePath, path, PATH_LENGTH);
+  appSettings.backgroundImagePath[PATH_LENGTH] = 0;
+  const char* separator = strrchr(path, PATH_SEPARATOR);
+  if (separator) {
+    size_t length = (size_t)(separator - path);
+    if (length <= PATH_LENGTH) { memcpy(appSettings.backgroundFolderPath, path, length); appSettings.backgroundFolderPath[length] = 0; }
+  }
+  appSettings.backgroundMode = BackgroundMode::image;
+  bool loaded = backgroundApplySettings();
+  settingsSave();
+  screenSetup(&screenBackgroundSettings, 0);
+  screenMessage(loaded ? MESSAGE_TIME : MESSAGE_TIME_ERROR, loaded ? "Background loaded" : "BMP load failed");
+}
+static void backgroundCancelled(void) { screenSetup(&screenBackgroundSettings, 0); }
+static int backgroundEdit(int, int row, CellEditAction action) {
+  if (row == 1) {
+    if (action != CellEditAction::tap) return 0;
+    fileBrowserSetup("LOAD BACKGROUND", ".bmp", appSettings.backgroundFolderPath, backgroundLoaded, backgroundCancelled);
+    screenSetup(&screenFileBrowser, 0);
+    return 1;
+  }
+  if (row == 8) {
+    if (action != CellEditAction::tap && action != CellEditAction::clear) return 0;
+    appSettings.backgroundMode = BackgroundMode::solid;
+    appSettings.backgroundLayout = BackgroundLayout::stretch;
+    appSettings.backgroundTint = BackgroundTint::automatic;
+    appSettings.backgroundIntensity = 25; appSettings.backgroundSpeed = 50; appSettings.backgroundReaction = 50;
+    appSettings.backgroundResolution = BackgroundResolution::low;
+    backgroundChanged(); return 1;
+  }
+  uint8_t value, maximum;
+  if (row == 0) { value = (uint8_t)appSettings.backgroundMode; maximum = 9; }
+  else if (row == 2) { value = (uint8_t)appSettings.backgroundLayout; maximum = 1; }
+  else if (row == 3) { value = (uint8_t)appSettings.backgroundTint; maximum = 2; }
+  else if (row >= 4 && row <= 6) {
+    value = row == 4 ? appSettings.backgroundIntensity : row == 5 ? appSettings.backgroundSpeed : appSettings.backgroundReaction;
+    maximum = 100;
+  } else if (row == 7) { value = (uint8_t)appSettings.backgroundResolution; maximum = 3; }
+  else return 0;
+  if (!edit8noLast(action, &value, row >= 4 && row <= 6 ? 5 : 1, 0, maximum)) return 0;
+  if (row == 0) appSettings.backgroundMode = (BackgroundMode)value;
+  else if (row == 2) appSettings.backgroundLayout = (BackgroundLayout)value;
+  else if (row == 3) appSettings.backgroundTint = (BackgroundTint)value;
+  else if (row == 4) appSettings.backgroundIntensity = value;
+  else if (row == 5) appSettings.backgroundSpeed = value;
+  else if (row == 6) appSettings.backgroundReaction = value;
+  else appSettings.backgroundResolution = (BackgroundResolution)value;
+  backgroundChanged(); return 1;
+}
+static ScreenData backgroundData = {9, 0, 0, 0, -1, 0, 0, 0, 0, ScreenPlaybackLevel::none, columnCount, backgroundStatic, backgroundCursor, NULL, noHeader, noHeader, backgroundField, backgroundEdit, NULL, NULL, NULL, NULL};
+static void backgroundRedraw(void) { screenFullRedraw(&backgroundData); }
+static int backgroundInput(int down, int keys, int taps) { if (keys == keyOpt) { screenSetup(&screenGraphicsSettings, 0); return 1; } return screenInput(&backgroundData, down, keys, taps); }
 
 static int menuInput(ScreenData* data, int isKeyDown, int keys, int taps) { if (keys == keyOpt) { screenSetup(&screenSettings, 0); return 1; } return screenInput(data, isKeyDown, keys, taps); }
 static void audioRedraw(void) { displayedCpuLoad = -1; screenFullRedraw(&audioData); }
@@ -452,3 +555,4 @@ const AppScreen screenAudioSettings = {NULL, setup, audioRedraw, drawAudioCpuLoa
 const AppScreen screenSynthSettings = {NULL, setup, synthRedraw, draw, synthInput, playbackLevel};
 const AppScreen screenMixerSettings = {NULL, setup, mixerRedraw, draw, mixerInput, playbackLevel};
 const AppScreen screenGraphicsSettings = {NULL, setup, graphicsRedraw, draw, graphicsInput, playbackLevel};
+const AppScreen screenBackgroundSettings = {NULL, setup, backgroundRedraw, draw, backgroundInput, playbackLevel};

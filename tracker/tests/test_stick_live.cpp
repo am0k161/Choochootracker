@@ -115,6 +115,7 @@ TEST_CASE_FIXTURE(StickLiveFixture, "Shift horizontal navigation exits branch sc
     {&screenSynthSettings,&screenMixer,&screenChain},
     {&screenMixerSettings,&screenMixer,&screenChain},
     {&screenGraphicsSettings,&screenMixer,&screenChain},
+    {&screenBackgroundSettings,&screenMixer,&screenChain},
     {&screenTrackVisuals,&screenMixer,&screenChain},
     {&screenMidi,&screenMixer,&screenChain},
     {&screenMidiChannelMap,&screenMixer,&screenChain},
@@ -879,14 +880,14 @@ TEST_CASE_FIXTURE(StickLiveFixture, "Persistent waveform is opt-in and its Setti
   REQUIRE(mockScreenData != nullptr);
   auto* screen = mockScreenData;
   int modified = projectModified;
-  CHECK(screen->rows == 12);
-  screen->drawField(0, 2, CellState::focus);
-  CHECK(std::string(mockGfxCells[5] + 23, 3) == "OFF");
-  REQUIRE(screen->onEdit(0, 2, CellEditAction::tap) == 1);
+  CHECK(screen->rows == 13);
+  screen->drawField(0, 3, CellState::focus);
+  CHECK(std::string(mockGfxCells[6] + 23, 3) == "OFF");
+  REQUIRE(screen->onEdit(0, 3, CellEditAction::tap) == 1);
   CHECK(appSettings.persistentWaveform == 1);
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.persistentWaveform == 1);
-  REQUIRE(screen->onEdit(0, 2, CellEditAction::tap) == 1);
+  REQUIRE(screen->onEdit(0, 3, CellEditAction::tap) == 1);
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.persistentWaveform == 0);
   CHECK(projectModified == modified);
@@ -898,11 +899,11 @@ TEST_CASE_FIXTURE(StickLiveFixture, "Personal visual settings coexist and surviv
   screenGraphicsSettings.fullRedraw();
   REQUIRE(mockScreenData != nullptr);
   auto* settings = mockScreenData;
-  REQUIRE(settings->onEdit(0, 2, CellEditAction::tap) == 1);
+  REQUIRE(settings->onEdit(0, 3, CellEditAction::tap) == 1);
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.persistentWaveform == 1);
   CHECK(appSettings.trackVisuals[0].mode == TrackVisualMode::audio);
-  settings->onEdit(0, 3, CellEditAction::tap);
+  settings->onEdit(0, 4, CellEditAction::tap);
   CHECK(currentScreen == &screenTrackVisuals);
   CHECK_FALSE(mockQuitTriggered);
   appSettings.trackVisuals[1].mode = TrackVisualMode::audio;

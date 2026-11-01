@@ -101,6 +101,13 @@ void initDefaultAppSettings(void) {
 #endif
   appSettings.bootScreenNight = 0;
   appSettings.cursorBrackets = 0;
+  appSettings.backgroundMode = BackgroundMode::solid;
+  appSettings.backgroundLayout = BackgroundLayout::stretch;
+  appSettings.backgroundTint = BackgroundTint::automatic;
+  appSettings.backgroundIntensity = 25;
+  appSettings.backgroundSpeed = 50;
+  appSettings.backgroundReaction = 50;
+  appSettings.backgroundResolution = BackgroundResolution::low;
 
   // Audio input recording defaults: nothing enumerated, nothing armed,
   // monitoring off, no recording folder override.
@@ -201,6 +208,8 @@ void initDefaultAppSettings(void) {
   appSettings.themePath[PATH_LENGTH] = '\0';
   appSettings.fontFolderPath[PATH_LENGTH] = '\0';
   appSettings.fontPath[0] = '\0';
+  appSettings.backgroundImagePath[0] = '\0';
+  strcpy(appSettings.backgroundFolderPath, ".");
 }
 
 int* pSongRow;
@@ -256,6 +265,13 @@ int settingsSave(void) {
   fprintf(file, "touchHaptics: %d\n", appSettings.touchHaptics);
   fprintf(file, "bootScreenNight: %d\n", appSettings.bootScreenNight);
   fprintf(file, "cursorBrackets: %d\n", appSettings.cursorBrackets);
+  fprintf(file, "backgroundMode: %d\n", (int)appSettings.backgroundMode);
+  fprintf(file, "backgroundLayout: %d\n", (int)appSettings.backgroundLayout);
+  fprintf(file, "backgroundTint: %d\n", (int)appSettings.backgroundTint);
+  fprintf(file, "backgroundIntensity: %u\n", appSettings.backgroundIntensity);
+  fprintf(file, "backgroundSpeed: %u\n", appSettings.backgroundSpeed);
+  fprintf(file, "backgroundReaction: %u\n", appSettings.backgroundReaction);
+  fprintf(file, "backgroundResolution: %d\n", (int)appSettings.backgroundResolution);
   for (int track = 0; track < PROJECT_MAX_TRACKS; ++track)
     fprintf(file, "trackVisuals%d: %d\n", track + 1, (int)appSettings.trackVisuals[track].mode);
 
@@ -337,6 +353,8 @@ int settingsSave(void) {
   fprintf(file, "themePath: %s\n", appSettings.themePath);
   fprintf(file, "fontPath: %s\n", appSettings.fontPath);
   fprintf(file, "fontFolderPath: %s\n", appSettings.fontFolderPath);
+  fprintf(file, "backgroundImagePath: %s\n", appSettings.backgroundImagePath);
+  fprintf(file, "backgroundFolderPath: %s\n", appSettings.backgroundFolderPath);
   fprintf(file, "samplePath: %s\n", appSettings.samplePath);
   fprintf(file, "exportPath: %s\n", appSettings.exportPath);
   fprintf(file, "exportLastFolder: %s\n", appSettings.exportLastFolder);
@@ -392,6 +410,34 @@ int settingsLoad(void) {
       int enabled;
       if (sscanf(line + 20, "%d", &enabled) == 1 && (enabled == 0 || enabled == 1))
         appSettings.persistentWaveform = (uint8_t)enabled;
+    } else if (strncmp(line, "backgroundMode: ", 16) == 0) {
+      int value;
+      if (sscanf(line + 16, "%d", &value) == 1 && value >= 0 && value <= 9)
+        appSettings.backgroundMode = (BackgroundMode)value;
+    } else if (strncmp(line, "backgroundLayout: ", 18) == 0) {
+      int value;
+      if (sscanf(line + 18, "%d", &value) == 1 && value >= 0 && value <= 1)
+        appSettings.backgroundLayout = (BackgroundLayout)value;
+    } else if (strncmp(line, "backgroundTint: ", 16) == 0) {
+      int value;
+      if (sscanf(line + 16, "%d", &value) == 1 && value >= 0 && value <= 2)
+        appSettings.backgroundTint = (BackgroundTint)value;
+    } else if (strncmp(line, "backgroundIntensity: ", 21) == 0) {
+      int value;
+      if (sscanf(line + 21, "%d", &value) == 1 && value >= 0 && value <= 100)
+        appSettings.backgroundIntensity = (uint8_t)value;
+    } else if (strncmp(line, "backgroundSpeed: ", 17) == 0) {
+      int value;
+      if (sscanf(line + 17, "%d", &value) == 1 && value >= 0 && value <= 100)
+        appSettings.backgroundSpeed = (uint8_t)value;
+    } else if (strncmp(line, "backgroundReaction: ", 20) == 0) {
+      int value;
+      if (sscanf(line + 20, "%d", &value) == 1 && value >= 0 && value <= 100)
+        appSettings.backgroundReaction = (uint8_t)value;
+    } else if (strncmp(line, "backgroundResolution: ", 22) == 0) {
+      int value;
+      if (sscanf(line + 22, "%d", &value) == 1 && value >= 0 && value <= 3)
+        appSettings.backgroundResolution = (BackgroundResolution)value;
     } else if (strncmp(line, "hideTouchPadWithGamepad: ", 25) == 0) {
       int enabled;
       if (sscanf(line + 25, "%d", &enabled) == 1 && (enabled == 0 || enabled == 1))
@@ -652,6 +698,12 @@ int settingsLoad(void) {
     } else if (strncmp(line, "fontFolderPath: ", 16) == 0) {
       strncpy(appSettings.fontFolderPath, line + 16, PATH_LENGTH);
       appSettings.fontFolderPath[PATH_LENGTH] = 0;
+    } else if (strncmp(line, "backgroundImagePath: ", 21) == 0) {
+      strncpy(appSettings.backgroundImagePath, line + 21, PATH_LENGTH);
+      appSettings.backgroundImagePath[PATH_LENGTH] = 0;
+    } else if (strncmp(line, "backgroundFolderPath: ", 22) == 0) {
+      strncpy(appSettings.backgroundFolderPath, line + 22, PATH_LENGTH);
+      appSettings.backgroundFolderPath[PATH_LENGTH] = 0;
     } else if (strncmp(line, "samplePath: ", 12) == 0) {
       strncpy(appSettings.samplePath, line + 12, PATH_LENGTH);
       appSettings.samplePath[PATH_LENGTH] = 0;

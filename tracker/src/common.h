@@ -57,6 +57,12 @@ struct KeyMapping {
 enum class StickLiveMode { hold, toggle, free };
 enum class TrackVisualMode : uint8_t { detailed, audio };
 struct TrackVisualSettings { TrackVisualMode mode = TrackVisualMode::detailed; };
+enum class BackgroundMode : uint8_t {
+  solid, image, plasma, stars, waves, tunnel, metaballs, spectrum, rain, moire
+};
+enum class BackgroundLayout : uint8_t { stretch, tile };
+enum class BackgroundTint : uint8_t { automatic, original, tinted };
+enum class BackgroundResolution : uint8_t { low, medium, high, ultra };
 
 // Clock source for engine tempo. Generalized from the old 0/1
 // midiClockMode int to an enum: internal (project.tickRate),
@@ -152,6 +158,13 @@ struct AppSettings {
   uint8_t touchHaptics; // Android touch controls: request the system haptic feedback
   uint8_t bootScreenNight; // 0 = original art; 1 = mellow night title
   uint8_t cursorBrackets; // 0 = line under the field; 1 = corner brackets
+  BackgroundMode backgroundMode;
+  BackgroundLayout backgroundLayout;
+  BackgroundTint backgroundTint;
+  uint8_t backgroundIntensity;
+  uint8_t backgroundSpeed;
+  uint8_t backgroundReaction;
+  BackgroundResolution backgroundResolution;
   KeyMapping keyMapping;
   ColorScheme colorScheme;
   char themeName[THEME_NAME_LENGTH + 1];
@@ -162,6 +175,8 @@ struct AppSettings {
   char themePath[PATH_LENGTH + 1];
   char fontPath[PATH_LENGTH + 1];
   char fontFolderPath[PATH_LENGTH + 1];
+  char backgroundImagePath[PATH_LENGTH + 1];
+  char backgroundFolderPath[PATH_LENGTH + 1];
   char samplePath[PATH_LENGTH + 1];
   char exportPath[PATH_LENGTH + 1]; // Custom export folder; empty = default
   char exportLastFolder[FILENAME_LENGTH + 1]; // Last default-scheme export folder (for rename on save)

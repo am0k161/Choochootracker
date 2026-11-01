@@ -6,6 +6,7 @@
 #include "version.h"
 #include "corelib_gfx.h"
 #include "corelib_font.h"
+#include "../../src/background.h"
 
 #define WINDOW_WIDTH (640)
 #define WINDOW_HEIGHT (480)
@@ -71,6 +72,38 @@ struct GfxImage {
 };
 
 static SDL_Surface* titleSurface = NULL;
+static SDL_Surface* backgroundCanvas = NULL;
+static int backgroundBaseColor = 0;
+
+static SDL_Surface* trackerSurface(void) {
+#ifdef MIYOOPORTS_BUILD
+  return offscreenSurface;
+#else
+  return sdlScreen;
+#endif
+}
+
+static void freeBackground(void) {
+  if (backgroundCanvas) SDL_FreeSurface(backgroundCanvas);
+  backgroundCanvas = NULL;
+}
+
+static int ensureBackground(void) {
+  SDL_Surface* target = trackerSurface();
+  if (!target) return 0;
+  if (backgroundCanvas && backgroundCanvas->w == target->w && backgroundCanvas->h == target->h) return 1;
+  freeBackground();
+  backgroundCanvas = SDL_CreateRGBSurface(SDL_SWSURFACE, target->w, target->h, 32,
+    target->format->Rmask, target->format->Gmask, target->format->Bmask, target->format->Amask);
+  return backgroundCanvas != NULL;
+}
+
+static void drawBackgroundRect(SDL_Rect rect) {
+  SDL_Surface* target = trackerSurface();
+  if (backgroundCanvas) SDL_BlitSurface(backgroundCanvas, &rect, target, &rect);
+  else SDL_FillRect(target, &rect, SDL_MapRGB(target->format,
+    backgroundBaseColor >> 16 & 255, backgroundBaseColor >> 8 & 255, backgroundBaseColor & 255));
+}
 
 int gfxSetup(int *screenWidth, int *screenHeight) {
   if (SDL_Init(SDL_INIT_EVERYTHING) != 0) {
@@ -116,6 +149,7 @@ int gfxSetup(int *screenWidth, int *screenHeight) {
 }
 
 void gfxCleanup(void) {
+  freeBackground();
   for (int i = 0; i < 95; i++) {
     if (charSurfaces[i]) SDL_FreeSurface(charSurfaces[i]);
   }
@@ -146,6 +180,79 @@ void gfxSetBgColor(int rgb) {
   bgColor = SDL_MapRGB(sdlScreen->format, bgR, bgG, bgB);
 }
 
+void gfxBackgroundSetBaseColor(int rgb) { backgroundBaseColor = rgb; }
+
+void gfxBackgroundSetSolid(void) {
+  freeBackground();
+  isDirty = 1;
+}
+
+static uint32_t blendBackgroundPixel(uint32_t pixel, int base, int intensity) {
+  int r = pixel >> 16 & 255, g = pixel >> 8 & 255, b = pixel & 255;
+  intensity = intensity < 0 ? 0 : intensity > 100 ? 100 : intensity;
+  r = ((base >> 16 & 255) * (100 - intensity) + r * intensity) / 100;
+  g = ((base >> 8 & 255) * (100 - intensity) + g * intensity) / 100;
+  b = ((base & 255) * (100 - intensity) + b * intensity) / 100;
+  return 0xff000000u | (uint32_t)(r << 16 | g << 8 | b);
+}
+
+int gfxBackgroundLoadBMP(const char* path, int layout, int tint, int intensity) {
+  SDL_Surface* loaded = path && path[0] ? SDL_LoadBMP(path) : NULL;
+  if (!loaded || !ensureBackground()) { if (loaded) SDL_FreeSurface(loaded); return 0; }
+  const int count = loaded->w * loaded->h;
+  uint32_t* source = (uint32_t*)malloc((size_t)count * sizeof(uint32_t));
+  if (!source) { SDL_FreeSurface(loaded); return 0; }
+  if (SDL_LockSurface(loaded) != 0) { free(source); SDL_FreeSurface(loaded); return 0; }
+  for (int y = 0; y < loaded->h; ++y) for (int x = 0; x < loaded->w; ++x) {
+    Uint8 r, g, b;
+    Uint8* address = (Uint8*)loaded->pixels + y * loaded->pitch + x * loaded->format->BytesPerPixel;
+    Uint32 raw;
+    if (loaded->format->BytesPerPixel == 4) raw = *(Uint32*)address;
+    else if (loaded->format->BytesPerPixel == 3) {
+#if SDL_BYTEORDER == SDL_BIG_ENDIAN
+      raw = address[0] << 16 | address[1] << 8 | address[2];
+#else
+      raw = address[0] | address[1] << 8 | address[2] << 16;
+#endif
+    } else if (loaded->format->BytesPerPixel == 2) raw = *(Uint16*)address;
+    else raw = *address;
+    SDL_GetRGB(raw, loaded->format, &r, &g, &b);
+    source[y * loaded->w + x] = 0xff000000u | r << 16 | g << 8 | b;
+  }
+  SDL_UnlockSurface(loaded);
+  const bool colorize = tint == (int)BackgroundTint::tinted ||
+    (tint == (int)BackgroundTint::automatic && backgroundPixelsAreMonochrome(source, count));
+  for (int i = 0; i < count; ++i)
+    source[i] = colorize ? backgroundTintPixel(source[i], backgroundBaseColor, intensity)
+                         : blendBackgroundPixel(source[i], backgroundBaseColor, intensity);
+  if (SDL_LockSurface(backgroundCanvas) == 0) {
+    for (int y = 0; y < backgroundCanvas->h; ++y) for (int x = 0; x < backgroundCanvas->w; ++x) {
+      int sx = layout == (int)BackgroundLayout::tile ? x % loaded->w : x * loaded->w / backgroundCanvas->w;
+      int sy = layout == (int)BackgroundLayout::tile ? y % loaded->h : y * loaded->h / backgroundCanvas->h;
+      uint32_t pixel = source[sy * loaded->w + sx];
+      Uint32 mapped = SDL_MapRGB(backgroundCanvas->format, pixel >> 16 & 255, pixel >> 8 & 255, pixel & 255);
+      *(Uint32*)((Uint8*)backgroundCanvas->pixels + y * backgroundCanvas->pitch + x * 4) = mapped;
+    }
+    SDL_UnlockSurface(backgroundCanvas);
+  }
+  free(source);
+  SDL_FreeSurface(loaded);
+  isDirty = 1;
+  return 1;
+}
+
+void gfxBackgroundSetPixels(const uint32_t* source, int width, int height) {
+  if (!source || width <= 0 || height <= 0 || !ensureBackground()) return;
+  if (SDL_LockSurface(backgroundCanvas) != 0) return;
+  for (int y = 0; y < backgroundCanvas->h; ++y) for (int x = 0; x < backgroundCanvas->w; ++x) {
+    uint32_t pixel = source[(y * height / backgroundCanvas->h) * width + x * width / backgroundCanvas->w];
+    *(Uint32*)((Uint8*)backgroundCanvas->pixels + y * backgroundCanvas->pitch + x * 4) =
+      SDL_MapRGB(backgroundCanvas->format, pixel >> 16 & 255, pixel >> 8 & 255, pixel & 255);
+  }
+  SDL_UnlockSurface(backgroundCanvas);
+  isDirty = 1;
+}
+
 void gfxSetCursorColor(int rgb) {
   cursorR = (rgb & 0xff0000) >> 16;
   cursorG = (rgb & 0xff00) >> 8;
@@ -159,11 +266,12 @@ void gfxSetCursorBrackets(int brackets) {
 }
 
 void gfxClear(void) {
-#ifdef MIYOOPORTS_BUILD
-  SDL_FillRect(offscreenSurface, NULL, bgColor);
-#else
-  SDL_FillRect(sdlScreen, NULL, bgColor);
-#endif
+  SDL_Surface* target = trackerSurface();
+  if (bgR == (backgroundBaseColor >> 16 & 255) &&
+      bgG == (backgroundBaseColor >> 8 & 255) && bgB == (backgroundBaseColor & 255)) {
+    SDL_Rect rect = {0, 0, (Uint16)target->w, (Uint16)target->h};
+    drawBackgroundRect(rect);
+  } else SDL_FillRect(target, NULL, bgColor);
   isDirty = 1;
 }
 
@@ -178,11 +286,10 @@ void gfxPoint(int x, int y, uint32_t color) {
 
 void gfxClearRect(int x, int y, int w, int h) {
   SDL_Rect rect = { CHAR_X(x), CHAR_Y(y), CHAR_X(w), h * fontH };
-#ifdef MIYOOPORTS_BUILD
-  SDL_FillRect(offscreenSurface, &rect, bgColor);
-#else
-  SDL_FillRect(sdlScreen, &rect, bgColor);
-#endif
+  if (bgR == (backgroundBaseColor >> 16 & 255) &&
+      bgG == (backgroundBaseColor >> 8 & 255) && bgB == (backgroundBaseColor & 255))
+    drawBackgroundRect(rect);
+  else SDL_FillRect(trackerSurface(), &rect, bgColor);
   isDirty = 1;
 }
 
@@ -202,11 +309,10 @@ void gfxPrint(int x, int y, const char* text) {
       continue;
     }
     SDL_Rect bgRect = {cx, cy, fontW * 8, fontH};
-#ifdef MIYOOPORTS_BUILD
-    SDL_FillRect(offscreenSurface, &bgRect, bgColor);
-#else
-    SDL_FillRect(sdlScreen, &bgRect, bgColor);
-#endif
+    if (bgR == (backgroundBaseColor >> 16 & 255) &&
+        bgG == (backgroundBaseColor >> 8 & 255) && bgB == (backgroundBaseColor & 255))
+      drawBackgroundRect(bgRect);
+    else SDL_FillRect(trackerSurface(), &bgRect, bgColor);
     cx += fontW * 8;
     if (cx > WINDOW_WIDTH) {
       cx = CHAR_X(x);
@@ -335,33 +441,29 @@ void gfxUpdateScreen(void) {
 #endif
 }
 
+static void drawAlphaBitmap(const uint8_t* data, int width, int height, int cx, int cy) {
+  SDL_Surface* target = trackerSurface();
+  const bool backdrop = bgR == (backgroundBaseColor >> 16 & 255) &&
+    bgG == (backgroundBaseColor >> 8 & 255) && bgB == (backgroundBaseColor & 255);
+  if (SDL_MUSTLOCK(target) && SDL_LockSurface(target) != 0) return;
+  for (int y = 0; y < height; ++y) for (int x = 0; x < width; ++x) {
+    int px = cx + x, py = cy + y;
+    if (px < 0 || px >= target->w || py < 0 || py >= target->h) continue;
+    uint8_t alpha = data[y * width + x];
+    if (backdrop && !alpha) continue;
+    Uint32* destination = (Uint32*)((Uint8*)target->pixels + py * target->pitch + px * 4);
+    Uint8 underR = bgR, underG = bgG, underB = bgB;
+    if (backdrop) SDL_GetRGB(*destination, target->format, &underR, &underG, &underB);
+    Uint8 r = underR + ((fgR - underR) * alpha) / 255;
+    Uint8 g = underG + ((fgG - underG) * alpha) / 255;
+    Uint8 b = underB + ((fgB - underB) * alpha) / 255;
+    *destination = SDL_MapRGB(target->format, r, g, b);
+  }
+  if (SDL_MUSTLOCK(target)) SDL_UnlockSurface(target);
+}
+
 void gfxDrawCharBitmap(uint8_t* bitmap, int col, int row) {
-  int cx = CHAR_X(col);
-  int cy = CHAR_Y(row);
-  int charW = fontW * 8;
-#ifdef MIYOOPORTS_BUILD
-  for (int y = 0; y < fontH; y++) {
-    for (int x = 0; x < charW; x++) {
-      uint8_t alpha = bitmap[y * charW + x];
-      uint8_t r = bgR + ((fgR - bgR) * alpha) / 255;
-      uint8_t g = bgG + ((fgG - bgG) * alpha) / 255;
-      uint8_t b = bgB + ((fgB - bgB) * alpha) / 255;
-      uint32_t color = SDL_MapRGB(offscreenSurface->format, r, g, b);
-      ((Uint32 *)offscreenSurface->pixels)[(cy + y) * offscreenSurface->w + (cx + x)] = color;
-    }
-  }
-#else
-  for (int y = 0; y < fontH; y++) {
-    for (int x = 0; x < charW; x++) {
-      uint8_t alpha = bitmap[y * charW + x];
-      uint8_t r = bgR + ((fgR - bgR) * alpha) / 255;
-      uint8_t g = bgG + ((fgG - bgG) * alpha) / 255;
-      uint8_t b = bgB + ((fgB - bgB) * alpha) / 255;
-      uint32_t color = SDL_MapRGB(sdlScreen->format, r, g, b);
-      ((Uint32 *)sdlScreen->pixels)[(cy + y) * sdlScreen->w + (cx + x)] = color;
-    }
-  }
-#endif
+  drawAlphaBitmap(bitmap, fontW * 8, fontH, CHAR_X(col), CHAR_Y(row));
   isDirty = 1;
 }
 
@@ -401,43 +503,8 @@ void gfxBitmapFree(Bitmap* bitmap) {
 
 void gfxDrawBitmap(Bitmap* bitmap, int col, int row) {
   if (!bitmap || !bitmap->data) return;
-
-  int cx = CHAR_X(col);
-  int cy = CHAR_Y(row);
-
-#ifdef MIYOOPORTS_BUILD
-  for (int y = 0; y < bitmap->heightPixels; y++) {
-    for (int x = 0; x < bitmap->widthPixels; x++) {
-      uint8_t alpha = bitmap->data[y * bitmap->widthPixels + x];
-      if (!alpha) continue;
-      uint8_t r = bgR + ((fgR - bgR) * alpha) / 255;
-      uint8_t g = bgG + ((fgG - bgG) * alpha) / 255;
-      uint8_t b = bgB + ((fgB - bgB) * alpha) / 255;
-      uint32_t color = SDL_MapRGB(offscreenSurface->format, r, g, b);
-      int px = cx + x;
-      int py = cy + y;
-      if (px >= 0 && px < offscreenSurface->w && py >= 0 && py < offscreenSurface->h) {
-        ((Uint32 *)offscreenSurface->pixels)[py * offscreenSurface->w + px] = color;
-      }
-    }
-  }
-#else
-  for (int y = 0; y < bitmap->heightPixels; y++) {
-    for (int x = 0; x < bitmap->widthPixels; x++) {
-      uint8_t alpha = bitmap->data[y * bitmap->widthPixels + x];
-      if (!alpha) continue;
-      uint8_t r = bgR + ((fgR - bgR) * alpha) / 255;
-      uint8_t g = bgG + ((fgG - bgG) * alpha) / 255;
-      uint8_t b = bgB + ((fgB - bgB) * alpha) / 255;
-      uint32_t color = SDL_MapRGB(sdlScreen->format, r, g, b);
-      int px = cx + x;
-      int py = cy + y;
-      if (px >= 0 && px < sdlScreen->w && py >= 0 && py < sdlScreen->h) {
-        ((Uint32 *)sdlScreen->pixels)[py * sdlScreen->w + px] = color;
-      }
-    }
-  }
-#endif
+  drawAlphaBitmap(bitmap->data, bitmap->widthPixels, bitmap->heightPixels,
+    CHAR_X(col), CHAR_Y(row));
   isDirty = 1;
 }
 

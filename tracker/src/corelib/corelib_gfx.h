@@ -74,6 +74,13 @@ void gfxClear(void);
  */
 void gfxUpdateScreen(void);
 
+// Tracker backdrop. The regular grid API restores this backdrop whenever it
+// clears with the theme's base background colour.
+void gfxBackgroundSetBaseColor(int rgb);
+void gfxBackgroundSetSolid(void);
+int gfxBackgroundLoadBMP(const char* path, int layout, int tint, int intensity);
+void gfxBackgroundSetPixels(const uint32_t* pixels, int width, int height);
+
 // Offset page content below persistent UI. Overlays explicitly use zero.
 void gfxSetContentRowOffset(int rows);
 int gfxGetContentRowOffset(void);

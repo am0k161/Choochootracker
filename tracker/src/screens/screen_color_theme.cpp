@@ -5,6 +5,7 @@
 #include "screens.h"
 #include "file_browser.h"
 #include "corelib/corelib_file.h"
+#include "background.h"
 #include <string.h>
 
 static int colorThemeColumnCount(int row);
@@ -51,6 +52,7 @@ static void onThemeLoaded(const char* path) {
   if (result == 0) {
     // On Android this also clears the physical bands behind the virtual pad.
     gfxSetBgColor(appSettings.colorScheme.background);
+    backgroundApplySettings();
     gfxClear();
     screenMessage(MESSAGE_TIME, "Theme loaded");
     extractFilenameWithoutExtension(path, appSettings.themeName, THEME_NAME_LENGTH + 1);
@@ -257,6 +259,7 @@ int colorThemeOnEdit(int col, int row, CellEditAction action) {
 
     if (handled) {
       *colorPtr = (r << 16) | (g << 8) | b;
+      if (row == 0) backgroundApplySettings();
       // Redraw the row header to update color preview
       colorThemeDrawRowHeader(row, CellState::normal);
       // Redraw whole screen to preview color changes
@@ -291,6 +294,7 @@ int colorThemeOnEdit(int col, int row, CellEditAction action) {
     } else if (col == 2) {
       // Reset
       resetToDefaultColors();
+      backgroundApplySettings();
       screenMessage(MESSAGE_TIME, "Reset to default");
       fullRedraw();
       return 1;

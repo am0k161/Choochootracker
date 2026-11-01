@@ -5,6 +5,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <vector>
+#include <string>
 #include <memory>
 #include <algorithm>
 #include <cmath>
@@ -18,6 +19,7 @@
 #include "selection_popup.h"
 #include "waveform_display.h"
 #include "monitor_display.h"
+#include "background.h"
 #include "audio_input_manager.h"
 #include "screen_audio_input.h"
 #include "dx7_patch.h"
@@ -296,6 +298,24 @@ int main(int argc,char** argv){
     return 0;
   }
   chipnomadState=chipnomadCreate();require(chipnomadState,"state");require(!projectLoad(&chipnomadState->project,"projects/gm-midi-demo.cct"),"fixture");
+  if(argc==3 && !strcmp(argv[2],"--background-only")) {
+    screensInitAll(); waveformDisplayInit(); monitorDisplayInit(); backgroundInit();
+    appSettings.backgroundIntensity=70; appSettings.backgroundReaction=0;
+    screenSetup(&screenSong,0);appDraw();
+    const BackgroundMode modes[]={BackgroundMode::plasma,BackgroundMode::stars,BackgroundMode::waves,
+      BackgroundMode::tunnel,BackgroundMode::metaballs,BackgroundMode::spectrum,
+      BackgroundMode::rain,BackgroundMode::moire};
+    const char* names[]={"plasma","stars","waves","tunnel","metaballs","spectrum","rain","moire"};
+    for(int i=0;i<8;++i){appSettings.backgroundMode=modes[i];backgroundApplySettings();currentScreen->fullRedraw();appDraw();capture((std::string("background-")+names[i]).c_str());}
+    appSettings.colorScheme.background=0;appSettings.backgroundMode=BackgroundMode::plasma;
+    backgroundApplySettings();currentScreen->fullRedraw();appDraw();capture("background-plasma-black");
+    appSettings.backgroundMode=BackgroundMode::image; appSettings.backgroundLayout=BackgroundLayout::tile;
+    appSettings.backgroundTint=BackgroundTint::original; appSettings.backgroundIntensity=60;
+    strcpy(appSettings.backgroundImagePath,"title/night_sky.bmp");
+    require(backgroundApplySettings(),"background BMP");
+    currentScreen->fullRedraw();appDraw();capture("background-bmp-tile");
+    backgroundCleanup(); chipnomadDestroy(chipnomadState); gfxCleanup(); SDL_Quit(); return 0;
+  }
   if(argc==3 && !strcmp(argv[2],"--gfx-benchmark")) {
     screensInitAll();waveformDisplayInit();monitorDisplayInit();
     appSettings.persistentWaveform=0;
@@ -593,7 +613,7 @@ int main(int argc,char** argv){
     const Route routes[]={
       {&screenProject,&screenMixer,&screenChain},{&screenSettings,&screenMixer,&screenChain},
       {&screenSynthSettings,&screenMixer,&screenChain},{&screenMixerSettings,&screenMixer,&screenChain},
-      {&screenGraphicsSettings,&screenMixer,&screenChain},{&screenTrackVisuals,&screenMixer,&screenChain},
+      {&screenGraphicsSettings,&screenMixer,&screenChain},{&screenBackgroundSettings,&screenMixer,&screenChain},{&screenTrackVisuals,&screenMixer,&screenChain},
       {&screenMidi,&screenMixer,&screenChain},{&screenMidiChannelMap,&screenMixer,&screenChain},
       {&screenMidiCC,&screenMixer,&screenChain},{&screenGroove,&screenChain,&screenInstrument},
       {&screenModulation,&screenPhrase,&screenTable},{&screenInsertFX,&screenPhrase,&screenTable},

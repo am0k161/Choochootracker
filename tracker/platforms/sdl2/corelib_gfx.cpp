@@ -4,6 +4,7 @@
 #include "corelib_gfx.h"
 #include "corelib_font.h"
 #include "../../src/common.h"
+#include "../../src/background.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -150,6 +151,10 @@ struct GfxImage {
 
 static int titleLogicalSizeActive = 0;
 static SDL_Texture* titleTexture = NULL;
+static SDL_Texture* backgroundTexture = NULL;
+static int backgroundTextureW = 0, backgroundTextureH = 0;
+static uint32_t backgroundBaseColor = 0;
+static int backgroundTile = 0;
 static void drawTrackerLabel(const char* text, int centerX, int y, int color);
 
 static Uint32 nativeTexturePixelFormat(void) {
@@ -792,6 +797,7 @@ int gfxSetup(int *screenWidth, int *screenHeight) {
 
 void gfxCleanup(void) {
   destroyRenderTarget(titleTexture);
+  destroyRenderTarget(backgroundTexture);
   destroyRenderTarget(fontTexture);
 #ifndef WEB_BUILD
   destroyCompositionTexture();
@@ -808,6 +814,73 @@ void gfxSetBgColor(int rgb) {
   bgColor = rgb;
 }
 
+static uint32_t blendBackgroundPixel(uint32_t pixel, int base, int intensity) {
+  int r = pixel >> 16 & 255, g = pixel >> 8 & 255, b = pixel & 255;
+  intensity = intensity < 0 ? 0 : intensity > 100 ? 100 : intensity;
+  r = ((base >> 16 & 255) * (100 - intensity) + r * intensity) / 100;
+  g = ((base >> 8 & 255) * (100 - intensity) + g * intensity) / 100;
+  b = ((base & 255) * (100 - intensity) + b * intensity) / 100;
+  return 0xff000000u | (uint32_t)(r << 16 | g << 8 | b);
+}
+
+static int uploadBackground(const uint32_t* pixels, int width, int height, int tile) {
+  if (!pixels || width <= 0 || height <= 0) return 0;
+  if (!backgroundTexture || width != backgroundTextureW || height != backgroundTextureH) {
+    destroyRenderTarget(backgroundTexture);
+    backgroundTexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888,
+      SDL_TEXTUREACCESS_STREAMING, width, height);
+    if (!backgroundTexture) return 0;
+    setTextureNearest(backgroundTexture);
+    backgroundTextureW = width; backgroundTextureH = height;
+  }
+  if (SDL_UpdateTexture(backgroundTexture, NULL, pixels, width * (int)sizeof(uint32_t)) != 0) {
+    destroyRenderTarget(backgroundTexture);
+    backgroundTextureW = backgroundTextureH = 0;
+    return 0;
+  }
+  backgroundTile = tile;
+  isDirty = 1;
+  return 1;
+}
+
+void gfxBackgroundSetBaseColor(int rgb) { backgroundBaseColor = rgb; }
+
+void gfxBackgroundSetSolid(void) {
+  destroyRenderTarget(backgroundTexture);
+  backgroundTextureW = backgroundTextureH = backgroundTile = 0;
+  isDirty = 1;
+}
+
+int gfxBackgroundLoadBMP(const char* path, int layout, int tint, int intensity) {
+  SDL_Surface* loaded = path && path[0] ? SDL_LoadBMP(path) : NULL;
+  if (!loaded) return 0;
+  SDL_Surface* converted = SDL_ConvertSurfaceFormat(loaded, SDL_PIXELFORMAT_ARGB8888, 0);
+  SDL_FreeSurface(loaded);
+  if (!converted) return 0;
+  const int count = converted->w * converted->h;
+  uint32_t* source = (uint32_t*)malloc((size_t)count * sizeof(uint32_t));
+  if (!source) { SDL_FreeSurface(converted); return 0; }
+  if (SDL_LockSurface(converted) != 0) { free(source); SDL_FreeSurface(converted); return 0; }
+  for (int y = 0; y < converted->h; ++y)
+    memcpy(source + y * converted->w, (uint8_t*)converted->pixels + y * converted->pitch,
+      converted->w * sizeof(uint32_t));
+  SDL_UnlockSurface(converted);
+  const bool colorize = tint == (int)BackgroundTint::tinted ||
+    (tint == (int)BackgroundTint::automatic && backgroundPixelsAreMonochrome(source, count));
+  for (int i = 0; i < count; ++i)
+    source[i] = colorize ? backgroundTintPixel(source[i], backgroundBaseColor, intensity)
+                         : blendBackgroundPixel(source[i], backgroundBaseColor, intensity);
+  int result = uploadBackground(source, converted->w, converted->h,
+    layout == (int)BackgroundLayout::tile);
+  free(source);
+  SDL_FreeSurface(converted);
+  return result;
+}
+
+void gfxBackgroundSetPixels(const uint32_t* pixels, int width, int height) {
+  uploadBackground(pixels, width, height, 0);
+}
+
 void gfxSetCursorColor(int rgb) {
   cursorColor = rgb;
 }
@@ -816,6 +889,26 @@ static bool cursorBrackets = false;
 
 static void setColor(int rgb) {
   SDL_SetRenderDrawColor(renderer, (rgb & 0xff0000) >> 16, (rgb & 0xff00) >> 8, rgb & 0xff, 255);
+}
+
+static void drawBackgroundRect(const SDL_Rect& area) {
+  if (!backgroundTexture) {
+    setColor(backgroundBaseColor);
+    SDL_RenderFillRect(renderer, &area);
+    return;
+  }
+  SDL_RenderSetClipRect(renderer, &area);
+  if (!backgroundTile) {
+    SDL_Rect destination = {0, 0, logicalW, logicalH};
+    SDL_RenderCopy(renderer, backgroundTexture, NULL, &destination);
+  } else {
+    for (int y = 0; y < logicalH; y += backgroundTextureH)
+      for (int x = 0; x < logicalW; x += backgroundTextureW) {
+        SDL_Rect destination = {x, y, backgroundTextureW, backgroundTextureH};
+        SDL_RenderCopy(renderer, backgroundTexture, NULL, &destination);
+      }
+  }
+  SDL_RenderSetClipRect(renderer, NULL);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -927,8 +1020,9 @@ static void drawCursorOverlay(void) {
 #endif
 
 void gfxClear(void) {
-  setColor(bgColor);
-  SDL_RenderClear(renderer);
+  SDL_Rect area = {0, 0, logicalW, logicalH};
+  if (bgColor == backgroundBaseColor) drawBackgroundRect(area);
+  else { setColor(bgColor); SDL_RenderClear(renderer); }
   cursorState.shown = false;
   cursorState.pageCleared = true;
   invalidateCellCache();
@@ -944,8 +1038,8 @@ void gfxPoint(int x, int y, uint32_t color) {
 
 void gfxClearRect(int x, int y, int w, int h) {
   SDL_Rect rect = { CHAR_X(x), CHAR_Y(y), w * charW, h * charH };
-  setColor(bgColor);
-  SDL_RenderFillRect(renderer, &rect);
+  if (bgColor == backgroundBaseColor) drawBackgroundRect(rect);
+  else { setColor(bgColor); SDL_RenderFillRect(renderer, &rect); }
   cursorAreaPainted(rect);
   invalidateCellRect(x, y, w, h);
   isDirty = 1;
@@ -983,8 +1077,8 @@ void gfxPrint(int x, int y, const char* text) {
     const bool same = false;
     if (!same) {
       SDL_Rect bgRect = {cx, cy, charW, charH};
-      setColor(bgColor);
-      SDL_RenderFillRect(renderer, &bgRect);
+      if (bgColor == backgroundBaseColor) drawBackgroundRect(bgRect);
+      else { setColor(bgColor); SDL_RenderFillRect(renderer, &bgRect); }
       cursorAreaPainted(bgRect);
 
       if (C >= 32 && C <= 126) {
@@ -1141,6 +1235,20 @@ void gfxDrawCharBitmap(uint8_t* bitmap, int col, int row) {
   int cy = CHAR_Y(row);
   SDL_Rect area = {cx, cy, charW, charH};
   cursorAreaPainted(area);
+
+  if (bgColor == backgroundBaseColor) {
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
+    for (int y = 0; y < charH; y++) for (int x = 0; x < charW; x++) {
+      uint8_t alpha = bitmap[y * charW + x];
+      if (!alpha) continue;
+      SDL_SetRenderDrawColor(renderer, (fgColor >> 16) & 255, (fgColor >> 8) & 255,
+        fgColor & 255, alpha);
+      SDL_RenderDrawPoint(renderer, cx + x, cy + y);
+    }
+    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
+    isDirty = 1;
+    return;
+  }
 
   uint8_t fgR = (fgColor >> 16) & 0xFF;
   uint8_t fgG = (fgColor >> 8) & 0xFF;
@@ -1357,10 +1465,15 @@ void gfxHandleRenderReset(void) {
 #ifndef WEB_BUILD
   if (!renderer) return;
   destroyRenderTarget(titleTexture);
+  destroyRenderTarget(backgroundTexture);
+  backgroundTextureW = backgroundTextureH = 0;
   titleLogicalSizeActive = 0;
   destroyRenderTarget(fontTexture);
   destroyCompositionTexture();
-  if (createCompositionTexture()) gfxReloadFont();
+  if (createCompositionTexture()) {
+    gfxReloadFont();
+    backgroundApplySettings();
+  }
 #endif
   isDirty = 1;
 }

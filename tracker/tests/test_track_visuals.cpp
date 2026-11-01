@@ -125,19 +125,39 @@ TEST_CASE_FIXTURE(VisualFixture, "Boot screen defaults to original and persists 
   }
 }
 
+TEST_CASE_FIXTURE(VisualFixture, "Background screen edits native effect controls") {
+  currentScreen = &screenBackgroundSettings;
+  screenBackgroundSettings.setup(0);
+  screenBackgroundSettings.fullRedraw();
+  ScreenData* table = mockScreenData;
+  REQUIRE(table != nullptr);
+  CHECK(table->rows == 9);
+  REQUIRE(table->onEdit(0, 0, CellEditAction::tap) == 1);
+  CHECK(appSettings.backgroundMode == BackgroundMode::solid);
+  REQUIRE(table->onEdit(0, 0, CellEditAction::increase) == 1);
+  CHECK(appSettings.backgroundMode == BackgroundMode::image);
+  REQUIRE(table->onEdit(0, 4, CellEditAction::increaseBig) == 1);
+  CHECK(appSettings.backgroundIntensity == 30);
+  REQUIRE(table->onEdit(0, 7, CellEditAction::increase) == 1);
+  CHECK(appSettings.backgroundResolution == BackgroundResolution::medium);
+  REQUIRE(table->onEdit(0, 8, CellEditAction::tap) == 1);
+  CHECK(appSettings.backgroundMode == BackgroundMode::solid);
+  CHECK(appSettings.backgroundIntensity == 25);
+}
+
 TEST_CASE_FIXTURE(VisualFixture, "Boot screen Graphics row toggles and saves without changing the theme") {
   currentScreen = &screenGraphicsSettings;
   screenGraphicsSettings.setup(0);
   screenGraphicsSettings.fullRedraw();
   ScreenData* table = mockScreenData;
   REQUIRE(table != nullptr);
-  REQUIRE(table->onEdit(0, 6, CellEditAction::tap) == 1);
-  table->drawField(0, 6, CellState::focus);
-  CHECK(std::string(mockGfxCells[10], 11) == "Boot screen");
-  CHECK(std::string(mockGfxCells[10] + 23, 8) == "Night   ");
+  REQUIRE(table->onEdit(0, 7, CellEditAction::tap) == 1);
+  table->drawField(0, 7, CellState::focus);
+  CHECK(std::string(mockGfxCells[11], 11) == "Boot screen");
+  CHECK(std::string(mockGfxCells[11] + 23, 8) == "Night   ");
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.bootScreenNight == 1);
-  REQUIRE(table->onEdit(0, 6, CellEditAction::tap) == 1);
+  REQUIRE(table->onEdit(0, 7, CellEditAction::tap) == 1);
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.bootScreenNight == 0);
 }
@@ -149,15 +169,15 @@ TEST_CASE_FIXTURE(VisualFixture, "Cursor Graphics row switches between line and 
   screenGraphicsSettings.fullRedraw();
   ScreenData* table = mockScreenData;
   REQUIRE(table != nullptr);
-  table->drawField(0, 7, CellState::normal);
-  CHECK(std::string(mockGfxCells[11], 6) == "Cursor");
-  CHECK(std::string(mockGfxCells[11] + 23, 8) == "Line    ");
-  REQUIRE(table->onEdit(0, 7, CellEditAction::tap) == 1);
-  table->drawField(0, 7, CellState::focus);
-  CHECK(std::string(mockGfxCells[11] + 23, 8) == "Brackets");
+  table->drawField(0, 8, CellState::normal);
+  CHECK(std::string(mockGfxCells[12], 6) == "Cursor");
+  CHECK(std::string(mockGfxCells[12] + 23, 8) == "Line    ");
+  REQUIRE(table->onEdit(0, 8, CellEditAction::tap) == 1);
+  table->drawField(0, 8, CellState::focus);
+  CHECK(std::string(mockGfxCells[12] + 23, 8) == "Brackets");
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.cursorBrackets == 1);
-  REQUIRE(table->onEdit(0, 7, CellEditAction::tap) == 1);
+  REQUIRE(table->onEdit(0, 8, CellEditAction::tap) == 1);
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.cursorBrackets == 0);
   { std::ofstream f(settingsPath); f << "cursorBrackets: 2\n"; }
@@ -175,37 +195,37 @@ TEST_CASE_FIXTURE(VisualFixture, "Battery and playback Graphics controls persist
   screenGraphicsSettings.fullRedraw();
   ScreenData* table = mockScreenData;
   REQUIRE(table != nullptr);
-  CHECK(table->rows == 12);
+  CHECK(table->rows == 13);
   gfxClear();
   for (int row = 0; row < table->rows; ++row) table->drawField(0, row, CellState::normal);
-  for (int y : {4, 9}) CHECK(std::string(mockGfxCells[y], 31) == std::string(31, ' '));
-  CHECK(std::string(mockGfxCells[12], 12) == "Battery info");
-  CHECK(std::string(mockGfxCells[14], 15) == " - Rows per bar");
-  CHECK(std::string(mockGfxCells[15], 16) == " - Ticks per row");
-  table->drawCursor(0, 10);
-  CHECK(mockCursorY == 14);
-  REQUIRE(table->onEdit(0, 8, CellEditAction::tap) == 1);
+  for (int y : {5, 10}) CHECK(std::string(mockGfxCells[y], 31) == std::string(31, ' '));
+  CHECK(std::string(mockGfxCells[13], 12) == "Battery info");
+  CHECK(std::string(mockGfxCells[15], 15) == " - Rows per bar");
+  CHECK(std::string(mockGfxCells[16], 16) == " - Ticks per row");
+  table->drawCursor(0, 11);
+  CHECK(mockCursorY == 15);
   REQUIRE(table->onEdit(0, 9, CellEditAction::tap) == 1);
-  REQUIRE(table->onEdit(0, 10, CellEditAction::decrease) == 1);
-  REQUIRE(table->onEdit(0, 11, CellEditAction::increase) == 1);
+  REQUIRE(table->onEdit(0, 10, CellEditAction::tap) == 1);
+  REQUIRE(table->onEdit(0, 11, CellEditAction::decrease) == 1);
+  REQUIRE(table->onEdit(0, 12, CellEditAction::increase) == 1);
   CHECK(appSettings.batteryInfoMode == 1);
   CHECK(appSettings.playbackCounterMode == 1);
   CHECK(appSettings.playbackBarRows == 15);
   CHECK(appSettings.playbackBarTicks == 7);
-  table->drawField(0, 8, CellState::focus);
-  CHECK(std::string(mockGfxCells[12] + 23, 7) == "Time   ");
   table->drawField(0, 9, CellState::focus);
-  CHECK(std::string(mockGfxCells[13] + 23, 4) == "Time");
+  CHECK(std::string(mockGfxCells[13] + 23, 7) == "Time   ");
+  table->drawField(0, 10, CellState::focus);
+  CHECK(std::string(mockGfxCells[14] + 23, 4) == "Time");
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.batteryInfoMode == 1);
   CHECK(appSettings.playbackCounterMode == 1);
   CHECK(appSettings.playbackBarRows == 15);
   CHECK(appSettings.playbackBarTicks == 7);
-  REQUIRE(table->onEdit(0, 8, CellEditAction::tap) == 1);
+  REQUIRE(table->onEdit(0, 9, CellEditAction::tap) == 1);
   CHECK(appSettings.batteryInfoMode == 2);
-  table->drawField(0, 8, CellState::focus);
-  CHECK(std::string(mockGfxCells[12] + 23, 7) == "Percent");
-  REQUIRE(table->onEdit(0, 8, CellEditAction::tap) == 1);
+  table->drawField(0, 9, CellState::focus);
+  CHECK(std::string(mockGfxCells[13] + 23, 7) == "Percent");
+  REQUIRE(table->onEdit(0, 9, CellEditAction::tap) == 1);
   CHECK(appSettings.batteryInfoMode == 0);
   { std::ofstream f(settingsPath); f << "batteryInfoMode: 3\nplaybackCounterMode: 3\nplaybackBarRows: 0\nplaybackBarTicks: 255\n"; }
   REQUIRE(settingsLoad() == 0);
