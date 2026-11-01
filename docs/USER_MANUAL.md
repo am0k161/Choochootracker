@@ -60,7 +60,9 @@ preserved. Input polling and app timers keep their usual cadence.
 | `title` | Title screen assets |
 | `waveforms` | `.wav` single-cycle waveforms for the 2xSCWF engine |
 
-The current project is autosaved every minute and on exit as `autosave.cct` next to the app. If the autosave cannot be loaded at startup, the title screen says so and the demo project opens instead. The unreadable file is kept as `autosave.cct.unreadable` (then `-2`, `-3`, ...) so later autosaves never overwrite it, and the work in it can still be recovered.
+The title menu offers **CONTINUE**, **OPEN**, and **NEW**. **CONTINUE** restores the autosave; **OPEN** lets you choose a project; **NEW** creates an empty project. No project is loaded or autosaved while you are at the title menu or browsing before your first successful choice. Cancelling OPEN returns to the title without changing your autosave.
+
+Once a project is open or created, it is autosaved every minute and on exit as `autosave.cct` next to the app. Choosing OPEN or NEW without restoring the previous autosave keeps that old file as `autosave.cct.previous` before the first new autosave. If CONTINUE cannot read the autosave, it returns to the title with an error so you can open another project or create one. The unreadable file is kept as `autosave.cct.unreadable`. Backups get numbered suffixes (`-2`, `-3`, ...) rather than replacing existing copies. If the file cannot be set aside, autosaving stays paused to protect it. In the Web version, CONTINUE opens the bundled demo when there is no autosave yet.
 
 Project saves and autosaves include loaded or recorded sample audio.
 

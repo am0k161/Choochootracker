@@ -3,6 +3,7 @@
 #include "four_op_patch.h"
 #include "simple_chip_presets.h"
 #include "user_preset_browser.h"
+#include "corelib_audio.h"
 #include "screen_instrument.h"
 #include "selection_popup.h"
 #include "user_presets.h"
@@ -92,6 +93,7 @@ void preview(int value, bool held) {
   if (!(userColumns ? library->load(userReferences[value], audition.get(), 0, error) :
                       library->load(value, audition.get(), 0, error))) { screenMessage(MESSAGE_TIME_ERROR, "%s", error.c_str()); return; }
   const auto& i = audition->instruments[0];
+  audioLock();
   if (type == InstrumentType::Monk) chipnomadQueueMonkPreview(chipnomadState, *pSongTrack, &i.chip.monk);
   else if (type == InstrumentType::DX7) chipnomadQueueDX7Preview(chipnomadState, *pSongTrack, &i.chip.dx7);
   else if (type == InstrumentType::SID) chipnomadQueueSIDPreview(chipnomadState, *pSongTrack, &i.chip.sid);
@@ -99,6 +101,7 @@ void preview(int value, bool held) {
   else if (isOPL(type)) chipnomadQueueOPLPreview(chipnomadState, *pSongTrack, type, &i.chip.opl);
   else if (isFourOp(type)) chipnomadQueueFourOpPreview(chipnomadState, *pSongTrack, type, &i.chip.fourOp);
   else chipnomadQueueSimpleChipPreview(chipnomadState, *pSongTrack, type, &i.chip.simpleChip);
+  audioUnlock();
 }
 void back() {
   stop();

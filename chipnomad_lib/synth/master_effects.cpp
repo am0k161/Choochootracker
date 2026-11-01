@@ -20,9 +20,10 @@ static float mixerGain(uint8_t value) {
 void MasterEffects::init(float sampleRate) {
   sampleRate_ = sampleRate > 0.0f ? sampleRate : 48000.0f;
   reverbFrames_.clear();
-  delayLine_.assign((size_t)(sampleRate_ * 8.0f) * 2, 0.0f);
-  springLine_.assign((size_t)(sampleRate_ * 0.12f) * 2, 0.0f);
+  // Clear retained storage once; resize value-initializes only new samples.
   reset();
+  delayLine_.resize((size_t)(sampleRate_ * 8.0f) * 2);
+  springLine_.resize((size_t)(sampleRate_ * 0.12f) * 2);
 }
 
 void MasterEffects::resetDelay() {

@@ -7,9 +7,10 @@
 #include "corelib_mainloop.h"
 #include "app.h"
 #include "common.h"
+#include "startup_timing.h"
 
 int main(int argv, char** args) {
-  settingsLoad();
+  { StartupTiming timing("settings"); settingsLoad(); }
 
   // Load custom font before gfxSetup so it uses the correct font
   if (appSettings.fontPath[0] != '\0') {
@@ -22,7 +23,9 @@ int main(int argv, char** args) {
     }
   }
 
-  if (gfxSetup(&appSettings.screenWidth, &appSettings.screenHeight) != 0) return 1;
+  { StartupTiming timing("SDL/window/renderer/font atlas");
+    if (gfxSetup(&appSettings.screenWidth, &appSettings.screenHeight) != 0) return 1;
+  }
 
   appSetup();
   mainLoopRun(appDraw, appOnEvent);

@@ -10,6 +10,7 @@
 #include <cmath>
 #include "chipnomad_lib.h"
 #include "app.h"
+#include "screen_project.h"
 #include "corelib_font.h"
 #include "corelib_gfx.h"
 #include "screens.h"
@@ -270,6 +271,28 @@ static void captureHomepage() {
 int main(int argc,char** argv){
   if(argc!=2&&argc!=3) return 1;
   output=argv[1];initDefaultAppSettings();appSettings.screenWidth=640;appSettings.screenHeight=480;fontSetCurrent(fontGetDefault());require(!gfxSetup(&appSettings.screenWidth,&appSettings.screenHeight),"SDL dummy setup");
+  if(argc==3 && !strcmp(argv[2],"--startup-smoke")) {
+    require(!std::filesystem::exists(getAutosavePath()), "run startup smoke in an isolated package without autosave");
+    appSetup(); appDraw();
+    require(currentScreen == &screenTitle && !appHasProject() && chipnomadState->sampleRate == 0, "title has no active engine");
+    key(1, keyEdit);
+    require(currentScreen == &screenFileBrowser && !appHasProject(), "OPEN does not activate a project");
+    key(1, keyOpt); key(0, 0);
+    require(currentScreen == &screenTitle && !appHasProject(), "OPEN cancel returns to unloaded title");
+    require(projectLoadFromPath("projects/does-not-exist.cct") != 0 && !appHasProject(), "invalid OPEN leaves project unloaded");
+    MainLoopEventData event{}; event.type=MainLoopEvent::exit; appOnEvent(event);
+    require(!std::filesystem::exists(getAutosavePath()), "exit before choice does not create autosave");
+    key(1,keyDown); key(1,keyEdit);
+    require(currentScreen == &screenSong && appHasProject() && chipnomadState->sampleRate > 0, "NEW activates blank project");
+    appCleanup(); appSetup(); appDraw();
+    require(projectLoadFromPath("projects/grieg-mountain-king-fm.cct") == 0 && appHasProject(), "OPEN activates chosen project");
+    require(!projectSave(&chipnomadState->project,getAutosavePath()), "continue fixture saved");
+    appCleanup(); appSetup(); appDraw(); key(1,keyEdit);
+    require(currentScreen == &screenSong && appHasProject(), "CONTINUE loads autosave at confirmation");
+    appCleanup(); gfxCleanup();
+    printf("Startup paths passed: title, OPEN cancel/error/success, NEW, CONTINUE, exit protection\n");
+    return 0;
+  }
   chipnomadState=chipnomadCreate();require(chipnomadState,"state");require(!projectLoad(&chipnomadState->project,"projects/gm-midi-demo.cct"),"fixture");
   if(argc==3 && !strcmp(argv[2],"--gfx-benchmark")) {
     screensInitAll();waveformDisplayInit();monitorDisplayInit();

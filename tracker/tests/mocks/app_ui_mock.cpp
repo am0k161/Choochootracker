@@ -3,6 +3,7 @@
 // UI/audio boundaries for exercising the real app and Settings event handlers.
 #include "app_ui_mock.h"
 #include "audio_manager.h"
+#include "app.h"
 #include "file_browser.h"
 #include "screen_quick_help.h"
 
@@ -31,7 +32,13 @@ static int restartAudio(void) {
 static int refreshAudio(void) { ++mockAudioRefreshCalls; return mockAudioRefreshResult; }
 static int cpuLoad() { return mockAudioCpuLoad; }
 static int mutateProject(ProjectMutation* mutation, void* userdata) { return mutation ? mutation(userdata) : 1; }
-AudioManager audioManager = {startAudio, reconfigureAudio, restartAudio, refreshAudio, noOp, noOp, nullptr, nullptr, nullptr, mutateProject, noOp,
+static void replaceProject(Project* replacement) {
+  projectFree(&chipnomadState->project);
+  chipnomadState->project = *replacement;
+  *replacement = {};
+  appActivateProject();
+}
+AudioManager audioManager = {startAudio, reconfigureAudio, restartAudio, refreshAudio, noOp, noOp, replaceProject, nullptr, nullptr, mutateProject, noOp,
                              nullptr, nullptr, cpuLoad};
 const AppScreen screenSong = {nullptr, nullptr, noOp, noOp, ignoreInput};
 const AppScreen screenTitle = {nullptr, nullptr, noOp, noOp, ignoreInput};

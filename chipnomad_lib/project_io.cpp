@@ -1425,7 +1425,13 @@ int projectLoad(Project* p, const char* path) {
   resetPeekConsume();  // Ensure clean state
 
   std::vector<uint8_t> archive;
-  if (cctReadFile(path, &archive) == 0 && cctLooksLikeZip(archive)) {
+  // Detect archives without reading every text project twice.
+  FILE* probe = fopen(path, "rb");
+  uint8_t signature[4] = {};
+  const size_t signatureSize = probe ? fread(signature, 1, sizeof(signature), probe) : 0;
+  if (probe) fclose(probe);
+  const bool isArchive = signatureSize == 4 && signature[0] == 'P' && signature[1] == 'K';
+  if (isArchive && cctReadFile(path, &archive) == 0 && cctLooksLikeZip(archive)) {
     std::vector<uint8_t> projectData;
     if (cctReadZip(archive, "project.cct", &projectData)) {
       snprintf(projectFileError, 40, "Invalid project archive");

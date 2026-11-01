@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <string.h>
 #include "audio_manager.h"
+#include "app.h"
 #include "audio_input_manager.h"
 #include "output_safety_limiter.h"
 #include "corelib_audio.h"
@@ -326,7 +327,11 @@ static void replaceProject(Project* replacement) {
   projectFree(&chipnomadState->project);
   chipnomadState->project = *replacement;
   memset(replacement, 0, sizeof(*replacement));
-  chipnomadInitChips(chipnomadState, aSampleRate, NULL);
+  if (!appHasProject()) {
+    appActivateProject();
+  } else {
+    chipnomadInitChips(chipnomadState, aSampleRate, NULL);
+  }
   playbackStop(&chipnomadState->playbackState);
   resume();
 }

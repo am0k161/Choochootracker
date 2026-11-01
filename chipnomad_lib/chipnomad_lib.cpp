@@ -1025,7 +1025,6 @@ ChipNomadState* chipnomadCreate(void) {
 
   state->audioMonitor = new AudioMonitor();
   state->masterEffects = new MasterEffects();
-  state->masterEffects->init(96000.0f);
 
   state->monkPreview = new MonkSynthVoice();
   state->sidPreview = new SIDVoice();
@@ -1365,12 +1364,15 @@ void chipnomadInitChips(ChipNomadState* state, int sampleRate, ChipFactory facto
     state->masterInsertChain->sync(state->audioProject.masterInserts, &state->masterInsertAutomation);
   if (hasMonk) state->monkPreview->init((float)sampleRate);
   else state->monkPreview->unload();
-  state->sidPreview->init((float)sampleRate);
-  state->simpleChipPreview->init((float)sampleRate);
-  state->fourOpPreview->init((float)sampleRate);
-  state->oplPreview->init((float)sampleRate);
-  state->dx7Preview->init((float)sampleRate);
-  state->opllPreview->init((float)sampleRate); state->opllPreviewTrack = -1;
+  // Only reconfigure previews already used; first use initializes the others
+  // on the producer thread while the host holds its audio lock.
+  if (state->nativePreviewReady & 1) state->sidPreview->init((float)sampleRate);
+  if (state->nativePreviewReady & 2) state->simpleChipPreview->init((float)sampleRate);
+  if (state->nativePreviewReady & 4) state->fourOpPreview->init((float)sampleRate);
+  if (state->nativePreviewReady & 8) state->oplPreview->init((float)sampleRate);
+  if (state->nativePreviewReady & 16) state->dx7Preview->init((float)sampleRate);
+  if (state->nativePreviewReady & 32) state->opllPreview->init((float)sampleRate);
+  state->opllPreviewTrack = -1;
   const float rate = (float)sampleRate;
   syncVoicePool(state->braidsVoices, has(InstrumentType::Braids), inLayer(InstrumentType::Braids), rate);
   if (state->braidsVoices[0][0]) chipnomadSetBraidsSettings(state, state->braidsBits,
@@ -3409,8 +3411,17 @@ static void updateOPLLVoices(ChipNomadState* state) {
   }
 }
 
+template<typename Voice>
+static void prepareNativePreview(ChipNomadState* state, Voice* voice, uint8_t bit) {
+  if (!(state->nativePreviewReady & bit)) {
+    voice->init((float)state->sampleRate);
+    state->nativePreviewReady |= bit;
+  }
+}
+
 int chipnomadQueueOPLLPreview(ChipNomadState* state, int track, const InstrumentOPLL* patch) {
   if (!state || !state->audioCommands || track < 0 || track >= PROJECT_MAX_TRACKS) return 0;
+  if (patch) prepareNativePreview(state, state->opllPreview, 32);
   return state->audioCommands->pushCommand(11, track, patch ? 1 : 0, 0, 0, nullptr, patch);
 }
 static void updateOPLVoices(ChipNomadState* state) {
@@ -3449,6 +3460,7 @@ static void updateOPLVoices(ChipNomadState* state) {
 
 int chipnomadQueueOPLPreview(ChipNomadState* state,int track,InstrumentType type,const InstrumentOPL* patch){
   if(!state||!state->audioCommands||track<0||track>=PROJECT_MAX_TRACKS||!isOPL(type))return 0;
+  if (patch) prepareNativePreview(state, state->oplPreview, 8);
   return state->audioCommands->pushCommand(12,track,patch?1:0,int(type),0,nullptr,nullptr,patch);
 }
 static void updateFourOpVoices(ChipNomadState* state) {
@@ -3487,6 +3499,7 @@ static void updateFourOpVoices(ChipNomadState* state) {
 
 int chipnomadQueueFourOpPreview(ChipNomadState* state,int track,InstrumentType type,const InstrumentFourOp* patch){
   if(!state||!state->audioCommands||track<0||track>=PROJECT_MAX_TRACKS||!isFourOp(type))return 0;
+  if (patch) prepareNativePreview(state, state->fourOpPreview, 4);
   return state->audioCommands->pushCommand(15,track,patch?1:0,int(type),0,nullptr,nullptr,nullptr,nullptr,nullptr,patch);
 }
 static void updateSimpleChipVoices(ChipNomadState* state) {
@@ -3536,6 +3549,7 @@ static void updateSimpleChipVoices(ChipNomadState* state) {
 
 int chipnomadQueueSimpleChipPreview(ChipNomadState* state,int track,InstrumentType type,const InstrumentSimpleChip* patch){
   if(!state||!state->audioCommands||track<0||track>=PROJECT_MAX_TRACKS||!isSimpleChip(type))return 0;
+  if (patch) prepareNativePreview(state, state->simpleChipPreview, 2);
   return state->audioCommands->pushCommand(13,track,patch?1:0,int(type),0,nullptr,nullptr,nullptr,patch);
 }
 
@@ -3575,6 +3589,7 @@ static void updateDX7Voices(ChipNomadState* state) {
 
 int chipnomadQueueDX7Preview(ChipNomadState* state,int track,const InstrumentDX7* patch) {
   if(!state||!state->audioCommands||track<0||track>=PROJECT_MAX_TRACKS||(patch&&!validDX7(*patch)))return 0;
+  if (patch) prepareNativePreview(state, state->dx7Preview, 16);
   return state->audioCommands->pushCommand(14,track,patch?1:0,0,0,nullptr,nullptr,nullptr,nullptr,patch);
 }
 
@@ -3638,5 +3653,6 @@ int chipnomadQueueMonkPreview(ChipNomadState* state, int track, const Instrument
 
 int chipnomadQueueSIDPreview(ChipNomadState* state,int track,const InstrumentSID* patch){
  if(!state||!state->audioCommands||track<0||track>=PROJECT_MAX_TRACKS||(patch&&!validSID(*patch)))return 0;
+ if (patch) prepareNativePreview(state, state->sidPreview, 1);
  return state->audioCommands->pushCommand(16,track,patch?1:0,0,0,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,patch);
 }

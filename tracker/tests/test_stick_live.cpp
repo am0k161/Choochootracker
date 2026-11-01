@@ -83,6 +83,7 @@ struct StickLiveFixture {
     appSettings.keyMapping.keyMotionLive[1] = gamepadLive;
     inputRawCallback = nullptr;
     appSetup();
+    appActivateProject();
     currentScreen = &screenSong;
   }
   ~StickLiveFixture() {
@@ -335,6 +336,7 @@ TEST_CASE_FIXTURE(StickLiveFixture, "normal exit saves mode but restart clears t
   REQUIRE(settingsLoad() == 0);
   CHECK(appSettings.stickLiveMode == StickLiveMode::toggle);
   appSetup();
+  appActivateProject();
   currentScreen = &screenSong;
   CHECK_FALSE(chipnomadLiveStickIsEnabled());
   CHECK(indicator() == ' ');

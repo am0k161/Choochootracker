@@ -2,6 +2,7 @@
 #include "screen_instrument.h"
 #include "selection_popup.h"
 #include "corelib_gfx.h"
+#include "corelib_audio.h"
 #include "corelib_file.h"
 #include "chipnomad_lib.h"
 #include "opl_patch.h"
@@ -114,8 +115,11 @@ bool candidate(int index,Instrument& result){
 void stopPreview(){if(isSimpleChip(current()->type)&&!importing){chipnomadQueueSimpleChipPreview(chipnomadState,*pSongTrack,current()->type,nullptr);return;}if(sid()){chipnomadQueueSIDPreview(chipnomadState,*pSongTrack,nullptr);return;}if(isOPLL(current()->type)&&!importing){chipnomadQueueOPLLPreview(chipnomadState,*pSongTrack,nullptr);return;}if(fourOp()&&!importing){chipnomadQueueFourOpPreview(chipnomadState,*pSongTrack,current()->type,nullptr);return;}if(dx7()||importing){chipnomadQueueDX7Preview(chipnomadState,*pSongTrack,nullptr);return;}chipnomadQueueOPLPreview(chipnomadState,*pSongTrack,current()->type,nullptr);}
 void preview(int index,bool held){
   Instrument patch{};
-  if(held&&candidate(index,patch)){if(isSimpleChip(patch.type))chipnomadQueueSimpleChipPreview(chipnomadState,*pSongTrack,patch.type,&patch.chip.simpleChip);else if(patch.type==InstrumentType::SID)chipnomadQueueSIDPreview(chipnomadState,*pSongTrack,&patch.chip.sid);else if(isOPLL(patch.type))chipnomadQueueOPLLPreview(chipnomadState,*pSongTrack,&patch.chip.opll);else if(isFourOp(patch.type))chipnomadQueueFourOpPreview(chipnomadState,*pSongTrack,patch.type,&patch.chip.fourOp);else if(patch.type==InstrumentType::DX7)chipnomadQueueDX7Preview(chipnomadState,*pSongTrack,&patch.chip.dx7);else chipnomadQueueOPLPreview(chipnomadState,*pSongTrack,patch.type,&patch.chip.opl);}
+  const bool available = held && candidate(index, patch);
+  audioLock();
+  if(available){if(isSimpleChip(patch.type))chipnomadQueueSimpleChipPreview(chipnomadState,*pSongTrack,patch.type,&patch.chip.simpleChip);else if(patch.type==InstrumentType::SID)chipnomadQueueSIDPreview(chipnomadState,*pSongTrack,&patch.chip.sid);else if(isOPLL(patch.type))chipnomadQueueOPLLPreview(chipnomadState,*pSongTrack,&patch.chip.opll);else if(isFourOp(patch.type))chipnomadQueueFourOpPreview(chipnomadState,*pSongTrack,patch.type,&patch.chip.fourOp);else if(patch.type==InstrumentType::DX7)chipnomadQueueDX7Preview(chipnomadState,*pSongTrack,&patch.chip.dx7);else chipnomadQueueOPLPreview(chipnomadState,*pSongTrack,patch.type,&patch.chip.opl);}
   else stopPreview();
+  audioUnlock();
 }
 void cancel(){stopPreview();if(importing)bankFilter=bankBeforeImport;importing=false;screenSetup(&screenInstrument,cInstrument);}
 void cancelSounds(){cancel();}

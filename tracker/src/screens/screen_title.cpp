@@ -5,6 +5,8 @@
 #include <chrono>
 #include "title_night_sky.h"
 #include "common.h"
+#include "app.h"
+#include "startup_timing.h"
 #include "screens.h"
 #include "screen_project.h"
 #include "corelib_gfx.h"
@@ -57,11 +59,19 @@ static GfxImage* load(const char* name) {
 }
 
 static void init(void) {
+  StartupTiming timing("title assets");
   unload();
   nightMode = appSettings.bootScreenNight != 0;
   if (nightMode) {
     nightSky = new (std::nothrow) TitleNightSky();
-    sky = gfxImageCreateARGB(TitleNightSky::width, TitleNightSky::height);
+    sky = load("night_sky.bmp");
+    if (!sky) {
+      sky = gfxImageCreateARGB(TitleNightSky::width, TitleNightSky::height);
+      if (sky && nightSky) {
+        std::fill_n(nightSky->pixels, TitleNightSky::width * TitleNightSky::height, 0xff060a17u);
+        gfxImageUpdateARGB(sky, nightSky->pixels);
+      }
+    }
     mountains = load("night_mountains.bmp");
     scene = load("night_scene.bmp");
     foreground = load("night_foreground.bmp");
@@ -70,8 +80,8 @@ static void init(void) {
     logo = load("night_logo.bmp");
     meteor = load("night_meteor.bmp");
     if (nightSky && sky && mountains && scene && foreground && viaduct && train && logo && meteor) {
-      nightSky->render(0);
-      if (gfxImageUpdateARGB(sky, nightSky->pixels)) return;
+      // The first frame is baked; animate procedurally in slices after present.
+      return;
     }
     // Older/incomplete packages must still offer a usable title screen.
     unload();
@@ -131,7 +141,7 @@ static void drawNightSky(void) {
     std::chrono::steady_clock::now() - skyStartedAt).count() * 60 / 1000;
   const int slices = std::max(1, mainLoopGetTargetFps() / 10);
   const int rows = (TitleNightSky::height + slices - 1) / slices;
-  if (nightSky->render(skyFrame, rows)) gfxImageUpdateARGB(sky, nightSky->pixels);
+  if (frame && nightSky->render(skyFrame, rows)) gfxImageUpdateARGB(sky, nightSky->pixels);
   gfxImageDrawCrop(sky, 0, 0, 256, 224, 0, 0);
   const int cycleFrame = (int)(skyFrame % 14400);
   struct ShootingStar { int start, x, y, dx, dy; };
@@ -173,12 +183,11 @@ static void drawMenu(void) {
 // error set via screenMessage() - e.g. picking an invalid file through OPEN,
 // which returns here - would otherwise vanish silently. Show it here too.
 // The autosave-specific case takes priority: it existed but could not be
-// parsed, CONTINUE was disabled above (see canContinue()), and the fallback
-// demo project is loaded instead of the user's real work - too important to
+// parsed after CONTINUE, which is then disabled (see canContinue()) - too important to
 // let a later, shorter-lived message push off screen.
 static void drawTitleMessage(void) {
   if (autosaveLoadFailed) {
-    const char* lines[] = {"AUTOSAVE FAILED TO LOAD", "DEMO PROJECT OPENED INSTEAD",
+    const char* lines[] = {"AUTOSAVE FAILED TO LOAD", "PLEASE OPEN OR CREATE A PROJECT",
       autosaveKept > 0 ? "KEPT AS AUTOSAVE.CCT.UNREADABLE" : "AUTOSAVE PAUSED TO PROTECT IT"};
     gfxSetFgColor(appSettings.colorScheme.warning);
     for (int i = 0; i < (autosaveKept ? 3 : 2); i++) {
@@ -214,8 +223,11 @@ static void draw(void) {
   if (logo) gfxImageDrawCrop(logo, 0, 0, gfxImageWidth(logo), gfxImageHeight(logo), 52, 24);
   drawMenu();
   drawTitleMessage();
-  if (frame < 30) gfxTitleFadeBlack((uint8_t)(255 - frame * 255 / 30));
+  const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+    std::chrono::steady_clock::now() - skyStartedAt).count();
+  if (elapsed < 150) gfxTitleFadeBlack((uint8_t)(160 * (150 - elapsed) / 150));
   gfxTitlePresent();
+  if (!frame) startupFirstTitlePresent();
   frame++;
 }
 
@@ -225,9 +237,13 @@ static int onInput(int isKeyDown, int keys, int tapCount) {
   if (keys == keyDown && selected < 2) { selected++; return 1; }
   // Start is a second confirm key on the title screen only.
   if (keys != keyEdit && keys != keyPlay) return 1;
+  if (selected == 0 && !continueAvailable) return 1;
   gfxTitleEnd();
   unload();
-  if (selected == 0 && continueAvailable) { screenSetup(&screenSong, 0); }
+  if (selected == 0) {
+    if (!appContinueProject()) screenSetup(&screenSong, 0);
+    else screenSetup(&screenTitle, 0);
+  }
   else if (selected == 1) {
 #ifdef WEB_BUILD
     projectOpenFromScreenAtPath(&screenTitle, "/projects");

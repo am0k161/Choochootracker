@@ -25,7 +25,7 @@ int audioSetup(AudioCallback* audioCallback, int sampleRate, int bufferSize) {
     return 1;
   }
 
-  SDL_PauseAudio(0);
+  // Match SDL2: the owner resumes only after project replacement is complete.
 
   return 0;
 }

@@ -6,11 +6,32 @@
 #include "synth/dx7_voice.h"
 #include "chipnomad_lib.h"
 #include "pitch_table_utils.h"
+#include "project_utils.h"
 #include <vector>
 #include <memory>
 #include <cstring>
 #include <cmath>
 #include <cstdio>
+
+TEST_CASE("Native previews are prepared on demand and survive sample-rate changes") {
+  auto* state = chipnomadCreate();
+  REQUIRE(state);
+  CHECK(state->sampleRate == 0);
+  projectInitAY(&state->project);
+  chipnomadInitChips(state, 48000, nullptr);
+  CHECK(state->nativePreviewReady == 0);
+  InstrumentDX7 patch{};
+  initDX7Patch(&patch);
+  REQUIRE(chipnomadQueueDX7Preview(state, 0, &patch));
+  CHECK(state->nativePreviewReady == 16);
+  chipnomadInitChips(state, 44100, nullptr);
+  CHECK(state->nativePreviewReady == 16);
+  REQUIRE(chipnomadQueueDX7Preview(state, 0, &patch));
+  std::vector<float> audio(2048);
+  REQUIRE(chipnomadRender(state, audio.data(), 1024));
+  for (float sample : audio) CHECK(std::isfinite(sample));
+  chipnomadDestroy(state);
+}
 
 TEST_CASE("DX7 bounded voices preserve roots and prefer released or quiet notes") {
   auto storage = std::make_unique<DX7Part[]>(8);

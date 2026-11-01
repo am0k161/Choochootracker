@@ -9,6 +9,7 @@
 #include "audio_input_manager.h"
 #include "corelib/corelib_audio.h"
 #include "app.h"
+#include "startup_timing.h"
 #include "screens.h"
 #include "screens/selection_popup.h"
 #include "chipnomad_lib.h"
@@ -637,16 +638,15 @@ int appTapSequenceOpen(int button) {
   return tapButton == button && tapTimerCount > 0;
 }
 
-#ifndef WEB_BUILD
 // Moves an autosave that failed to load to autosave.cct.unreadable (or
 // .unreadable-2, -3, ...) so later autosaves cannot overwrite it.
-static int keepUnreadableAutosave(void) {
+static int keepAutosave(const char* suffix) {
   char autosave[PATH_LENGTH + 1];
   snprintf(autosave, sizeof(autosave), "%s", getAutosavePath());
   char keepPath[PATH_LENGTH + 32];
   for (int n = 1; n < 100; ++n) {
-    if (n == 1) snprintf(keepPath, sizeof(keepPath), "%s.unreadable", autosave);
-    else snprintf(keepPath, sizeof(keepPath), "%s.unreadable-%d", autosave, n);
+    if (n == 1) snprintf(keepPath, sizeof(keepPath), "%s.%s", autosave, suffix);
+    else snprintf(keepPath, sizeof(keepPath), "%s.%s-%d", autosave, suffix, n);
     FILE* existing = fopen(keepPath, "rb");
     if (existing) {
       fclose(existing);
@@ -656,18 +656,42 @@ static int keepUnreadableAutosave(void) {
   }
   return 0;
 }
-#endif
 
-static void autosaveProject(void) {
-  if (autosaveKept < 0) return; // The unreadable autosave is still in place
-  if (projectSave(&chipnomadState->project, getAutosavePath()) != 0)
+static bool projectActive = false;
+static bool unopenedAutosave = true;
+
+static int autosaveProject(void) {
+  if (!appHasProject()) return 0;
+  if (autosaveKept < 0) return 1; // The old autosave is still in place
+  // OPEN/NEW never parse the previous autosave. Preserve it before the first
+  // overwrite, including unreadable files that CONTINUE has not examined.
+  if (unopenedAutosave) {
+    FILE* previous = fopen(getAutosavePath(), "rb");
+    if (previous) {
+      fclose(previous);
+      if (!keepAutosave("previous")) {
+        screenMessage(MESSAGE_TIME_ERROR, "Cannot preserve previous autosave");
+        return 1;
+      }
+    }
+    unopenedAutosave = false;
+  }
+  const int result = projectSave(&chipnomadState->project, getAutosavePath());
+  if (result != 0)
     screenMessage(MESSAGE_TIME_ERROR, "%s", projectFileError);
+  return result;
 }
 
 /**
-* @brief Initialize the application: setup audio system, load auto-saved project, show the first screen
+* @brief Prepare the title UI without loading a project or opening audio devices.
 */
 void appSetup(void) {
+  StartupTiming timing("app setup without project");
+  projectActive = false;
+  unopenedAutosave = true;
+  autosaveLoadFailed = 0;
+  autosaveKept = 0;
+  autosaveCounter = 0;
   appResetBatteryInfo();
   playbackCounterTicks = 0;
   playbackCounterMicros = 0;
@@ -724,35 +748,56 @@ void appSetup(void) {
     return;
   }
 
-  // Restore autosave; a bundled Grieg demo is the first-launch fallback.
+  screensInitAll();
+  screenSetup(&screenTitle, 0);
+}
+
+int appHasProject(void) { return projectActive; }
+
+int appContinueProject(void) {
+  StartupTiming timing("continue including engine activation");
+  if (projectActive) return 0;
+  Project replacement;
+  projectInit(&replacement);
+  // Restore only after CONTINUE. Never autosave a placeholder from the title.
   int projectLoaded = 0;
   FILE* autosaveCheck = fopen(getAutosavePath(), "rb");
   int autosaveExists = autosaveCheck != NULL;
   if (autosaveCheck) fclose(autosaveCheck);
-  if (projectLoad(&chipnomadState->project, getAutosavePath()) == 0) {
+  if (projectLoad(&replacement, getAutosavePath()) == 0) {
     projectLoaded = 1;
   }
   // Only a genuine parse failure is worth warning about - no autosave yet
   // (first launch) is normal and falls through to the demo silently.
   autosaveLoadFailed = autosaveExists && !projectLoaded;
-#ifndef WEB_BUILD
   // Never autosave over a file that failed to load: set it aside first so
   // the work in it can still be recovered.
-  if (autosaveLoadFailed) autosaveKept = keepUnreadableAutosave() ? 1 : -1;
-#endif
+  if (autosaveLoadFailed) autosaveKept = keepAutosave("unreadable") ? 1 : -1;
+  if (autosaveLoadFailed) {
+    projectFree(&replacement);
+    return 1;
+  }
 #ifdef WEB_BUILD
   const char* defaultProject = "/projects/grieg-mountain-king-fm.cct";
 #else
   const char* defaultProject = "projects/grieg-mountain-king-fm.cct";
 #endif
-  if (!projectLoaded && projectLoad(&chipnomadState->project, defaultProject) == 0) {
+  if (!projectLoaded && projectLoad(&replacement, defaultProject) == 0) {
     projectLoaded = 1;
     extractFilenameWithoutExtension(defaultProject, appSettings.projectFilename, FILENAME_LENGTH + 1);
   }
-  if (!projectLoaded) projectInitAY(&chipnomadState->project);
-
-  // Initialize all screen states
+  if (!projectLoaded) projectInitAY(&replacement);
+  unopenedAutosave = false;
+  audioManager.replaceProject(&replacement);
   screensInitAll();
+  return 0;
+}
+
+void appActivateProject(void) {
+  StartupTiming timing("engine and audio/MIDI devices");
+  if (projectActive) return;
+  projectActive = true;
+  autosaveCounter = 0;
 
   playbackInit(&chipnomadState->playbackState, &chipnomadState->project);
 
@@ -761,7 +806,9 @@ void appSetup(void) {
   chipnomadState->aySampleDithering = appSettings.aySampleDithering;
 
   // Initialize audio system
-  chipnomadInitChips(chipnomadState, appSettings.audioSampleRate, NULL);
+  { StartupTiming engineTiming("synths and effects");
+    chipnomadInitChips(chipnomadState, appSettings.audioSampleRate, NULL);
+  }
   chipnomadSetQuality(chipnomadState, (ChipNomadQuality)appSettings.quality);
   chipnomadSetBraidsSettings(chipnomadState, appSettings.braidsBits,
     appSettings.braidsDrift, appSettings.braidsSignature,
@@ -775,8 +822,6 @@ void appSetup(void) {
       settingsSave();
     }
   }
-  audioManager.resume();
-
   // Audio input: enumerate capture devices and re-arm the ones saved in
   // settings (Phase 4). Monitor state comes from settings too.
   if (appSettings.audioInputEnabled) {
@@ -807,18 +852,17 @@ void appSetup(void) {
   resetLinkPhaseFollowing();
   resetMidiClockPhaseFollowing();
 
-  screenSetup(&screenTitle, 0);
 }
 
 #ifdef WEB_BUILD
 extern "C" EMSCRIPTEN_KEEPALIVE int webSaveProject(const char* path) {
-  if (!chipnomadState || !path || !path[0]) return 1;
+  if (!appHasProject() || !chipnomadState || !path || !path[0]) return 1;
   return projectSave(&chipnomadState->project, path);
 }
 
 extern "C" EMSCRIPTEN_KEEPALIVE int webSaveBrowserState() {
   if (!chipnomadState) return 1;
-  const int projectResult = projectSave(&chipnomadState->project, getAutosavePath());
+  const int projectResult = autosaveProject();
   const int settingsResult = settingsSave();
   return projectResult ? projectResult : settingsResult;
 }
@@ -828,6 +872,7 @@ extern "C" EMSCRIPTEN_KEEPALIVE int webSaveBrowserState() {
 * @brief Release all resources before closing the application
 */
 void appCleanup(void) {
+  projectActive = false;
   audioManager.stop();
   soundbankShutdown();
   // Explicitly flush and close MIDI I/O rather than relying on process exit:
@@ -937,6 +982,7 @@ void appDraw(void) {
 // and re-enumerate capture, then reopen the output device. The helper box
 // shows an animated notice while the restart runs.
 static void handleAudioDeviceRemoved(int isCapture) {
+  if (!appHasProject()) return;
   (void)isCapture; // both capture loss and output loss get the same rebuild
   screenNotifyAudioRestart();
   audioInputManagerStopRecording();
@@ -1118,6 +1164,7 @@ void appOnEvent(MainLoopEventData eventData) {
                               eventData.data.axes[2], eventData.data.axes[3]);
     break;
   case MainLoopEvent::tick: {
+    if (chipnomadState && chipnomadState->sampleRate > 0) {
     soundbankPoll();
     int motionRecordChanged = 0;
     MotionRecordEvent motionRecordEvent;
@@ -1310,6 +1357,7 @@ void appOnEvent(MainLoopEventData eventData) {
         }
       }
     }
+    }
     // Autosave
     if (++autosaveCounter >= AUTOSAVE_INTERVAL_FRAMES) {
       autosaveCounter = 0;
@@ -1352,8 +1400,8 @@ void appOnEvent(MainLoopEventData eventData) {
     break;
   case MainLoopEvent::sleep:
     // Pause audio when app goes to background
-    audioManager.pause();
-    if (chipnomadState) {
+    if (appHasProject()) audioManager.pause();
+    if (appHasProject() && chipnomadState) {
       // Stop playback to avoid state issues
       chipnomadQueuePlaybackStop(chipnomadState);
       // Auto-save project
@@ -1364,7 +1412,7 @@ void appOnEvent(MainLoopEventData eventData) {
     break;
   case MainLoopEvent::wake:
     // Resume audio when app comes back to foreground
-    audioManager.resume();
+    if (appHasProject()) audioManager.resume();
     break;
   case MainLoopEvent::fullRedraw:
     // Force full screen redraw

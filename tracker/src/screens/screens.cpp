@@ -208,7 +208,6 @@ void screenClearMessage(void) {
 }
 
 void screensInitAll(void) {
-  screenTitle.init();
   screenSong.init();
   screenChain.init();
   screenPhrase.init();

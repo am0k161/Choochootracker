@@ -1,6 +1,7 @@
 #include "screen_instrument.h"
 #include "selection_popup.h"
 #include "corelib_gfx.h"
+#include "corelib_audio.h"
 #include "opll_presets.h"
 #include "chipnomad_lib.h"
 #include "utils.h"
@@ -11,8 +12,10 @@ static SelectionItem programs[15];
 static Instrument* current() { return &chipnomadState->project.instruments[cInstrument]; }
 static void previewPreset(int program, bool held) {
   Instrument temporary = *current();
+  audioLock();
   if (held && opllApplyPreset(&temporary, program)) chipnomadQueueOPLLPreview(chipnomadState, *pSongTrack, &temporary.chip.opll);
   else chipnomadQueueOPLLPreview(chipnomadState, *pSongTrack, nullptr);
+  audioUnlock();
 }
 static void selectPreset(int program) {
   previewPreset(0, false);

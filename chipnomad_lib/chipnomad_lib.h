@@ -150,6 +150,7 @@ struct ChipNomadState {
   SimpleChipVoice* simpleChipVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
   SimpleChipVoice* simpleChipPreview;
   InstrumentType chipPreviewType;
+  uint8_t nativePreviewReady;
   DX7Part* dx7Parts[VOICE_OWNER_COUNT];
   DX7Voice* dx7Voices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
   DX7Part* dx7Preview;
@@ -246,6 +247,8 @@ int chipnomadQueueOPLPreview(ChipNomadState* state, int track, InstrumentType ty
 int chipnomadQueueDX7Preview(ChipNomadState* state,int track,const InstrumentDX7* patch);
 int chipnomadQueueMonkPreview(ChipNomadState* state, int track, const InstrumentMonk* patch);
 int chipnomadQueueSIDPreview(ChipNomadState* state,int track,const InstrumentSID* patch);
+// Native preview starts lazily initialize DSP on the calling thread. Hosts
+// must hold their audio lock (or stop rendering) when submitting a patch.
 int chipnomadQueueOPLLPreview(ChipNomadState* state, int track, const InstrumentOPLL* patch);
 int chipnomadQueuePlaybackStopPreview(ChipNomadState* state, int trackIdx);
 int chipnomadQueuePlaybackClearTrackFX(ChipNomadState* state, int trackIdx);
