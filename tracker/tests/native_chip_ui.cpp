@@ -43,6 +43,8 @@
 extern SDL_Renderer* renderer;
 static const char* output;
 static void require(bool condition,const char* why){if(!condition){fprintf(stderr,"FAIL: %s\n",why);exit(2);}}
+static std::vector<uint32_t> framePixels(){std::vector<uint32_t> pixels(640*480);require(SDL_RenderReadPixels(renderer,nullptr,SDL_PIXELFORMAT_ARGB8888,pixels.data(),640*4)==0,"frame pixels");return pixels;}
+static size_t trackerInkPixels(const std::vector<uint32_t>& pixels){size_t count=0;for(uint32_t p:pixels){int r=(p>>16)&255,g=(p>>8)&255,b=p&255;int hi=std::max(r,std::max(g,b)),lo=std::min(r,std::min(g,b));if(hi-lo>40||lo>120)++count;}return count;}
 static void capture(const char* name){appDraw();auto* s=SDL_CreateRGBSurfaceWithFormat(0,640,480,32,SDL_PIXELFORMAT_ARGB8888);require(s,"surface");require(SDL_RenderReadPixels(renderer,nullptr,s->format->format,s->pixels,s->pitch)==0,"pixels");char path[2048];snprintf(path,sizeof(path),"%s/%s.bmp",output,name);require(SDL_SaveBMP(s,path)==0,"capture");SDL_FreeSurface(s);}
 static void key(int down,int keys){appDraw();currentScreen->onInput(down,keys,1);appDraw();}
 static void tapEdit(){key(1,keyEdit);key(0,0);}
@@ -521,10 +523,29 @@ int main(int argc,char** argv){
   }
   if(argc==3 && !strcmp(argv[2],"--insert-popup-only")) {
     screensInitAll();waveformDisplayInit();monitorDisplayInit();
+    printf("Renderer: %s\n",gfxGetRendererType());
+    screenSetup(&screenTitle,0);appDraw();
+    gfxTitleEnd();screenSetup(&screenSong,0);appDraw();
+    require(currentScreen==&screenSong,"title opens the tracker");
+    const auto afterTitle=framePixels();
+    require(trackerInkPixels(afterTitle)>1000,"tracker is fully drawn after the title");
+    capture("post-title-before-redraw");
+    MainLoopEventData redraw{};redraw.type=MainLoopEvent::fullRedraw;appOnEvent(redraw);appDraw();
+    capture("post-title-after-redraw");
+    require(trackerInkPixels(framePixels())>1000,"full redraw restores tracker text");
     const int nativeCharWidth=gfxGetCharWidth(),nativeCharHeight=gfxGetCharHeight();
+    screenSetup(&screenPhrase,-1);appDraw();
+    require(trackerInkPixels(framePixels())>1000,"tracker baseline contains text");
     gfxHandleResize(912,499);
     require(gfxGetCharWidth()==nativeCharWidth&&gfxGetCharHeight()==nativeCharHeight,
             "desktop resize keeps the fixed tracker canvas and font");
+    redraw={};redraw.type=MainLoopEvent::fullRedraw;appOnEvent(redraw);appDraw();
+    require(trackerInkPixels(framePixels())>1000,"desktop resize restores tracker text");
+    capture("post-resize-tracker");
+    gfxToggleFullscreen();currentScreen->fullRedraw();appDraw();
+    require(trackerInkPixels(framePixels())>1000,"fullscreen entry restores tracker text");
+    gfxToggleFullscreen();currentScreen->fullRedraw();appDraw();
+    require(trackerInkPixels(framePixels())>1000,"fullscreen exit restores tracker text");
     auto& project=chipnomadState->project;
     *pSongRow=*pChainRow=*pSongTrack=0;
     project.song[0][0]=0;project.chains[0].rows[0].phrase=0;

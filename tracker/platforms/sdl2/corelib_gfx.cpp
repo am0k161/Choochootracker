@@ -43,6 +43,24 @@ static int screenW;
 static int screenH;
 static int logicalW;
 static int logicalH;
+
+// SDL renderer state is shared by the window and every render-target texture.
+// Always establish the complete state after a target switch; relying on a
+// backend's retained viewport/scale is what caused the Windows resize bugs.
+static void selectRenderTarget(SDL_Texture* target) {
+  SDL_SetRenderTarget(renderer, target);
+  SDL_RenderSetLogicalSize(renderer, 0, 0);
+  SDL_RenderSetViewport(renderer, NULL);
+  SDL_RenderSetScale(renderer, 1.0f, 1.0f);
+}
+
+static void destroyRenderTarget(SDL_Texture*& target) {
+  if (!target) return;
+  if (renderer && SDL_GetRenderTarget(renderer) == target)
+    selectRenderTarget(NULL);
+  SDL_DestroyTexture(target);
+  target = NULL;
+}
 #ifdef ANDROID_BUILD
 // The tracker was designed for a 640x480 canvas. Keep that canvas intact on
 // phones; physical pixels are used only by the touch-control overlay.
@@ -78,11 +96,7 @@ static SDL_Rect getTrackerViewport(void) {
 }
 
 static void useWindowPixels(void) {
-  // SDL renderer state survives target switches on some Android drivers.
-  // Present overlays and the composition target in unscaled physical pixels.
-  SDL_RenderSetLogicalSize(renderer, 0, 0);
-  SDL_RenderSetViewport(renderer, NULL);
-  SDL_RenderSetScale(renderer, 1.0f, 1.0f);
+  selectRenderTarget(NULL);
 }
 #endif
 static int charW;
@@ -163,19 +177,10 @@ static void useCompositionTarget(void) {
   // The MMIYOO backend does not reliably support render-target textures.
   // Render straight to the window, scaling the 640x480 logical canvas to the
   // physical display (640x480 on older Minis, 752x560 on V4/Flip).
-  SDL_SetRenderTarget(renderer, NULL);
-  SDL_RenderSetViewport(renderer, NULL);
-  SDL_RenderSetScale(renderer, 1.0f, 1.0f);
+  selectRenderTarget(NULL);
   SDL_RenderSetLogicalSize(renderer, logicalW, logicalH);
 #else
-  SDL_SetRenderTarget(renderer, compositionTexture);
-  // A render target already has the tracker canvas's native dimensions.
-  // Do not inherit the physical window's logical viewport or scale after a
-  // present: on Android/EGL that state can otherwise clip the first tracker
-  // frame after leaving the title screen.
-  SDL_RenderSetLogicalSize(renderer, 0, 0);
-  SDL_RenderSetViewport(renderer, NULL);
-  SDL_RenderSetScale(renderer, 1.0f, 1.0f);
+  selectRenderTarget(compositionTexture);
 #endif
 }
 
@@ -197,8 +202,7 @@ static int createCompositionTexture(void) {
 }
 
 static void destroyCompositionTexture(void) {
-  if (compositionTexture) SDL_DestroyTexture(compositionTexture);
-  compositionTexture = NULL;
+  destroyRenderTarget(compositionTexture);
   compositionW = compositionH = 0;
 }
 
@@ -214,11 +218,10 @@ static void getAndroidSurfaceSize(int* width, int* height) {
   // SDL_RendererOutputSize describes the active target. Temporarily select the
   // window so a 640x480 composition texture cannot masquerade as the phone.
   SDL_Texture* target = SDL_GetRenderTarget(renderer);
-  SDL_SetRenderTarget(renderer, NULL);
+  selectRenderTarget(NULL);
   SDL_GetRendererOutputSize(renderer, width, height);
-  SDL_SetRenderTarget(renderer, target);
   if (target == compositionTexture) useCompositionTarget();
-  else if (target) SDL_RenderSetLogicalSize(renderer, logicalW, logicalH);
+  else selectRenderTarget(target);
 }
 #endif
 
@@ -390,12 +393,9 @@ void gfxTitleBegin(void) {
     if (!titleTexture) return;
     SDL_SetTextureBlendMode(titleTexture, SDL_BLENDMODE_NONE);
     setTextureNearest(titleTexture);
-    SDL_RenderSetLogicalSize(renderer, 640, 480);
     titleLogicalSizeActive = 1;
   }
-  SDL_SetRenderTarget(renderer, titleTexture);
-  SDL_RenderSetLogicalSize(renderer, 256, 224);
-  SDL_RenderSetScale(renderer, 1.0f, 1.0f);
+  selectRenderTarget(titleTexture);
   SDL_SetRenderDrawColor(renderer, 5, 12, 31, 255);
   SDL_RenderClear(renderer);
   isDirty = 1;
@@ -419,7 +419,7 @@ void gfxTitlePresent(void) {
   SDL_RenderCopy(renderer, titleTexture, NULL, &destination);
 #else
   if (!titleTexture) return;
-  SDL_SetRenderTarget(renderer, NULL);
+  selectRenderTarget(NULL);
 #ifdef ANDROID_BUILD
   // A title frame only occupies the centered 4:3 canvas. Clear the physical
   // display first, otherwise pixels from the preceding tracker frame remain
@@ -446,14 +446,11 @@ void gfxTitlePresent(void) {
 
 void gfxTitleEnd(void) {
 #ifndef WEB_BUILD
-  if (titleTexture) SDL_DestroyTexture(titleTexture);
-  titleTexture = NULL;
+  destroyRenderTarget(titleTexture);
   useCompositionTarget();
 #else
-  SDL_SetRenderTarget(renderer, NULL);
-  SDL_RenderSetScale(renderer, 1.0f, 1.0f);
-  if (titleTexture) SDL_DestroyTexture(titleTexture);
-  titleTexture = NULL;
+  selectRenderTarget(NULL);
+  destroyRenderTarget(titleTexture);
   if (titleLogicalSizeActive) {
 #ifdef ANDROID_BUILD
     useTrackerCanvas();
@@ -541,8 +538,10 @@ static void createFontTexture(void) {
   if (rows * charH > 480) return;
 #endif
 
+  const int atlasW = charW * charsPerRow;
+  const int atlasH = charH * rows;
   fontTexture = SDL_CreateTexture(renderer, nativeTexturePixelFormat(),
-    SDL_TEXTUREACCESS_TARGET, charW * charsPerRow, charH * rows);
+    SDL_TEXTUREACCESS_STATIC, atlasW, atlasH);
   if (!fontTexture) {
     fprintf(stderr, "Could not create font texture: %s\n", SDL_GetError());
     return;
@@ -550,9 +549,15 @@ static void createFontTexture(void) {
   SDL_SetTextureBlendMode(fontTexture, SDL_BLENDMODE_BLEND);
   setTextureNearest(fontTexture);
 
-  SDL_SetRenderTarget(renderer, fontTexture);
-  SDL_SetRenderDrawColor(renderer, 0, 0, 0, 0);
-  SDL_RenderClear(renderer);
+  uint32_t* pixels = (uint32_t*)calloc((size_t)atlasW * atlasH, sizeof(uint32_t));
+  SDL_PixelFormat* format = SDL_AllocFormat(nativeTexturePixelFormat());
+  if (!pixels || !format) {
+    free(pixels);
+    if (format) SDL_FreeFormat(format);
+    destroyRenderTarget(fontTexture);
+    return;
+  }
+  const uint32_t white = SDL_MapRGBA(format, 255, 255, 255, 255);
 
   for (int ch = 0; ch < 95; ch++) {
     int charX = (ch % charsPerRow) * charW;
@@ -566,17 +571,19 @@ static void createFontTexture(void) {
         uint8_t mask = 0x80;
 
         for (int b = 0; b < bitsToDraw; b++) {
-          if (fontByte & mask) {
-            SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
-            SDL_RenderDrawPoint(renderer, charX + c * 8 + b, charY + l);
-          }
+          if (fontByte & mask)
+            pixels[(charY + l) * atlasW + charX + c * 8 + b] = white;
           mask >>= 1;
         }
       }
     }
   }
-
-  SDL_SetRenderTarget(renderer, NULL);
+  if (SDL_UpdateTexture(fontTexture, NULL, pixels, atlasW * sizeof(uint32_t)) != 0) {
+    fprintf(stderr, "Could not upload font texture: %s\n", SDL_GetError());
+    destroyRenderTarget(fontTexture);
+  }
+  SDL_FreeFormat(format);
+  free(pixels);
 }
 
 // Some PortMaster SDL2 builds omit haptic and sensor support (including
@@ -667,8 +674,14 @@ int gfxSetup(int *screenWidth, int *screenHeight) {
 
   // Prefer a VSync'd GPU renderer. The composition target below removes any
   // dependency on the platform retaining window-backbuffer contents.
-#ifdef WEB_BUILD
+#if defined(WEB_BUILD) || defined(_WIN32)
+  // SDL's Direct3D render targets can lose only part of their contents during
+  // an ordinary live resize. The tracker is a fixed 640x480 canvas, so the
+  // software renderer is fast enough and gives Windows a persistent frame.
   renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+#ifndef WEB_BUILD
+  rendererUsesGpu = 0;
+#endif
 #else
   renderer = SDL_CreateRenderer(window, -1,
     SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC);
@@ -778,8 +791,8 @@ int gfxSetup(int *screenWidth, int *screenHeight) {
 }
 
 void gfxCleanup(void) {
-  if (titleTexture) SDL_DestroyTexture(titleTexture);
-  if (fontTexture) SDL_DestroyTexture(fontTexture);
+  destroyRenderTarget(titleTexture);
+  destroyRenderTarget(fontTexture);
 #ifndef WEB_BUILD
   destroyCompositionTexture();
 #endif
@@ -964,12 +977,10 @@ void gfxPrint(int x, int y, const char* text) {
     const int row = (cy - offsetY) / charH;
     CachedCell* cached = row >= 0 && row < TEXT_ROWS && col >= 0 && col < TEXT_COLS
       ? &cellCache[row][col] : NULL;
-#ifdef CCT_GFX_REFERENCE_PATH
+    // The canvas can be replaced or cleared outside individual cell draws
+    // (resize, fullscreen and device reset). Always repaint requested text;
+    // a cache hit cannot prove that the destination pixels still exist.
     const bool same = false;
-#else
-    const bool same = cached && cached->valid && cached->glyph == C &&
-      cached->foreground == fgColor && cached->background == bgColor;
-#endif
     if (!same) {
       SDL_Rect bgRect = {cx, cy, charW, charH};
       setColor(bgColor);
@@ -1095,17 +1106,20 @@ void gfxUpdateScreen(void) {
     SDL_RenderPresent(renderer);
     useCompositionTarget();
 #else
-    SDL_SetRenderTarget(renderer, NULL);
+#ifdef ANDROID_BUILD
+    useWindowPixels();
+#else
+    selectRenderTarget(NULL);
+    SDL_RenderSetLogicalSize(renderer, logicalW, logicalH);
+#endif
     setColor(bgColor);
     SDL_RenderClear(renderer);
 #ifdef ANDROID_BUILD
-    useWindowPixels();
     SDL_Rect viewport = getTrackerViewport();
     SDL_RenderCopy(renderer, compositionTexture, NULL, &viewport);
     cursorWindowViewport = viewport;
     drawCursorOverlay();
 #else
-    SDL_RenderSetLogicalSize(renderer, logicalW, logicalH);
     SDL_Rect destination = {0, 0, logicalW, logicalH};
     SDL_RenderCopy(renderer, compositionTexture, NULL, &destination);
     drawCursorOverlay();
@@ -1273,10 +1287,7 @@ int gfxGetCharHeight(void) {
 
 void gfxReloadFont(void) {
   invalidateCellCache();
-  if (fontTexture) {
-    SDL_DestroyTexture(fontTexture);
-    fontTexture = NULL;
-  }
+  destroyRenderTarget(fontTexture);
 
   currentResolution = fontSelectResolution(fontGetCurrent(), screenW, screenH);
   if (currentResolution) {
@@ -1345,11 +1356,9 @@ void gfxHandleResize(int width, int height) {
 void gfxHandleRenderReset(void) {
 #ifndef WEB_BUILD
   if (!renderer) return;
-  if (titleTexture) SDL_DestroyTexture(titleTexture);
-  titleTexture = NULL;
+  destroyRenderTarget(titleTexture);
   titleLogicalSizeActive = 0;
-  if (fontTexture) SDL_DestroyTexture(fontTexture);
-  fontTexture = NULL;
+  destroyRenderTarget(fontTexture);
   destroyCompositionTexture();
   if (createCompositionTexture()) gfxReloadFont();
 #endif
