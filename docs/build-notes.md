@@ -225,6 +225,10 @@ the archive before upload:
 & 'C:\Program Files\7-Zip\7z.exe' t releases\ChooChooTracker.pak.zip
 ```
 
+For `v*` tags, the PortMaster workflow builds this archive and attaches it to
+the matching GitHub release automatically. Updating `src/version.cpp` without
+the same version in the root `pak.json` makes the packaging job fail.
+
 ## Android / Google Play
 
 The Android app is `com.paiheulevrai.choochootracker`, targets API 36, and
