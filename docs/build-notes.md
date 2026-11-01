@@ -26,6 +26,21 @@ make -j4 choochooplayer
 Its self-contained package is written to `choochooplayer/build/windows/`.
 Run `launch-alf-dance.bat` there to preview the bundled `alf dance.cct` project.
 
+## Developer UI screenshots
+
+The developer-only offscreen SDL harness lives in
+`tracker/tests/native_chip_ui.cpp`; it is not part of the application package.
+From `tracker`, build its Windows executable with
+`make -f Makefile.windows native-chip-screenshots`. Run the executable from
+`tracker/build/windows` so the packaged fonts, themes, projects, and samples
+resolve. Set `SDL_VIDEODRIVER=dummy` and `SDL_AUDIODRIVER=dummy`, then pass an
+existing output directory followed by `--capture-homepage`. It writes BMPs at
+640 x 480; convert them to PNG before publishing. The homepage mode uses
+`projects/ChooTest_01.cct` and `projects/ChooBreaks01.cct` for real song,
+phrase, and chain views. The sample editor uses a bundled 909 one-shot; break
+slicing uses `AMEN.WAV`, and the sampler, wavetable, and SCWF views load
+bundled sample assets.
+
 ## Linux / Steam Deck (x86_64)
 
 For a native local test, use the existing Ubuntu-24.04 WSL distribution with

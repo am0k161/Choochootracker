@@ -21,6 +21,12 @@ XTRA_LIBS = $(SDL_LIBS) -lws2_32 -liphlpapi -lkernel32 -static-libgcc -static-li
 WINDOWS_CFLAGS = $(filter-out -flto,$(COMMON_CFLAGS)) -D_USE_MATH_DEFINES
 WINDRES ?= $(shell command -v x86_64-w64-mingw32-windres 2>/dev/null || command -v windres)
 WINDOWS_ICON = $(BUILD)/choochootracker-icon.o
+empty :=
+space := $(empty) $(empty)
+define newline
+
+
+endef
 CFLAGS = $(WINDOWS_CFLAGS) $(INCLUDES) $(XTRA_CFLAGS)
 TARGET = $(BUILD)/choochootracker$(OUTPUT_EXT)
 OUTPUT = -o $(BUILD)/choochootracker$(OUTPUT_EXT)
@@ -60,7 +66,20 @@ windows: $(TARGET)
 
 $(TARGET): $(OBJECTS) $(WINDOWS_ICON)
 	mkdir -p $(BUILD)
-	$(CXX) $(WINDOWS_CFLAGS) $(OBJECTS) $(WINDOWS_ICON) $(XTRA_LIBS) $(OUTPUT)
+	@$(file >$(BUILD)/objects.rsp,$(subst $(space),$(newline),$(OBJECTS) $(WINDOWS_ICON)))
+	$(CXX) $(WINDOWS_CFLAGS) @$(BUILD)/objects.rsp $(XTRA_LIBS) $(OUTPUT)
+
+NATIVE_SCREENSHOT_OBJECT = $(BUILD)/obj/tests/native_chip_ui.o
+NATIVE_SCREENSHOT_TARGET = $(BUILD)/native-chip-screenshots$(OUTPUT_EXT)
+
+$(NATIVE_SCREENSHOT_OBJECT): tests/native_chip_ui.cpp $(HEADER_STAMP) Makefile.windows Makefile.common
+	@mkdir -p $(dir $@)
+	@$(CXX) $(CFLAGS) -Itests -c $< -o $@
+
+.PHONY: native-chip-screenshots
+native-chip-screenshots: $(filter-out $(call object_for,platforms/shared/main.cpp),$(OBJECTS)) $(NATIVE_SCREENSHOT_OBJECT)
+	@$(file >$(BUILD)/native-chip-screenshots-objects.rsp,$(subst $(space),$(newline),$(filter-out $(call object_for,platforms/shared/main.cpp),$(OBJECTS)) $(NATIVE_SCREENSHOT_OBJECT)))
+	$(CXX) $(WINDOWS_CFLAGS) @$(BUILD)/native-chip-screenshots-objects.rsp $(XTRA_LIBS) -o $(NATIVE_SCREENSHOT_TARGET)
 
 # Docker-based Windows build (internal target)
 .PHONY: .windows-docker

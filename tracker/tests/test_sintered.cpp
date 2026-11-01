@@ -32,6 +32,20 @@ TEST_CASE("Sintered motion center is static and both envelope sides alter sound"
   CHECK(adDiff > .01); CHECK(dDiff > .01);
 }
 
+TEST_CASE("Sintered motion extremes strongly animate every model") {
+  for (int model = 0; model < (int)SinteredModel::totalCount; ++model) {
+    InstrumentSintered still = sinteredFixture((SinteredModel)model), attack = still, decay = still;
+    attack.motion = 0; decay.motion = 255;
+    SinteredVoice a, b, c; a.init(48000); b.init(48000); c.init(48000);
+    a.configure(&still, 6000, 1, 20000, 0); b.configure(&attack, 6000, 1, 20000, 0); c.configure(&decay, 6000, 1, 20000, 0);
+    a.noteOn(); b.noteOn(); c.noteOn(); std::vector<float> x(4096), y(4096), z(4096);
+    a.render(x.data(), x.size()); b.render(y.data(), y.size()); c.render(z.data(), z.size());
+    double attackDiff = 0.0, decayDiff = 0.0;
+    for (size_t i = 0; i < x.size(); ++i) { attackDiff += std::fabs(x[i] - y[i]); decayDiff += std::fabs(x[i] - z[i]); }
+    CAPTURE(model); CHECK(attackDiff > 1.0); CHECK(decayDiff > 1.0);
+  }
+}
+
 TEST_CASE("Sintered block-rate constants are stable across callback block sizes") {
   for (int model = 0; model < (int)SinteredModel::totalCount; ++model) {
     InstrumentSintered s = sinteredFixture((SinteredModel)model);

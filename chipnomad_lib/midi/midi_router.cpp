@@ -12,9 +12,9 @@ struct MidiRouterState {
   // its own (see chipnomad_lib.cpp's applyVoiceEvents), so this is the
   // minimal per-slot state needed to send a matching Note Off later even if
   // the chord's pitch, instrument or channel has since changed.
-  uint8_t noteActive[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  uint8_t activeNote[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  uint8_t activeChannel[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
+  uint8_t noteActive[PROJECT_MAX_VOICE_OWNERS][CHORD_MAX_VOICES];
+  uint8_t activeNote[PROJECT_MAX_VOICE_OWNERS][CHORD_MAX_VOICES];
+  uint8_t activeChannel[PROJECT_MAX_VOICE_OWNERS][CHORD_MAX_VOICES];
   // Per MIDI channel (not per track: two tracks can share a channel), so
   // Program Change/Bank Select are only (re-)sent when they'd actually
   // change what the receiving device is set to.
@@ -142,7 +142,7 @@ void midiRouterMasterTick(MidiRouterState* router, int playing, uint64_t dueMicr
 
 void midiRouterEmitNoteOn(MidiRouterState* router, int trackIdx, int slot, uint8_t channel, uint8_t note, uint8_t velocity, uint64_t dueMicros) {
   if (!router || !g_backend) return;
-  if (trackIdx < 0 || trackIdx >= PROJECT_MAX_TRACKS || slot < 0 || slot >= CHORD_MAX_VOICES) return;
+  if (trackIdx < 0 || trackIdx >= PROJECT_MAX_VOICE_OWNERS || slot < 0 || slot >= CHORD_MAX_VOICES) return;
   // A slot retriggering without an intervening release (e.g. a chord voice
   // reused for a new note) must release the old note first, or it would be
   // silently overwritten below and left stuck on the external device.
@@ -157,7 +157,7 @@ void midiRouterEmitNoteOn(MidiRouterState* router, int trackIdx, int slot, uint8
 
 void midiRouterEmitNoteOff(MidiRouterState* router, int trackIdx, int slot, uint64_t dueMicros) {
   if (!router || !g_backend) return;
-  if (trackIdx < 0 || trackIdx >= PROJECT_MAX_TRACKS || slot < 0 || slot >= CHORD_MAX_VOICES) return;
+  if (trackIdx < 0 || trackIdx >= PROJECT_MAX_VOICE_OWNERS || slot < 0 || slot >= CHORD_MAX_VOICES) return;
   if (!router->noteActive[trackIdx][slot]) return;
   sendEvent(0x80, router->activeChannel[trackIdx][slot], router->activeNote[trackIdx][slot], 0, dueMicros);
   router->noteActive[trackIdx][slot] = 0;
@@ -193,7 +193,7 @@ void midiRouterPanic(MidiRouterState* router) {
   if (g_backend->flushOutputQueue) g_backend->flushOutputQueue(g_backend->userdata);
   uint64_t now = g_backend->nowMicros ? g_backend->nowMicros(g_backend->userdata) : 0;
   if (router->masterRunning.exchange(false)) sendEvent(0xfc, 0, 0, 0, now, false);
-  for (int trackIdx = 0; trackIdx < PROJECT_MAX_TRACKS; ++trackIdx) {
+  for (int trackIdx = 0; trackIdx < PROJECT_MAX_VOICE_OWNERS; ++trackIdx) {
     for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) {
       if (!router->noteActive[trackIdx][slot]) continue;
       sendEvent(0x80, router->activeChannel[trackIdx][slot], router->activeNote[trackIdx][slot], 0, now, false);

@@ -435,6 +435,22 @@ static int loadInstrumentAudioIn(FILE* file, Instrument* instrument) {
   return 0;
 }
 
+static int loadInstrumentLayer(FILE* file, Instrument* instrument) {
+  for (int i = 0; i < INSTRUMENT_LAYER_COUNT; ++i) {
+    char* line = peekLine(file);
+    unsigned slot, transpose, volume;
+    char tail;
+    if (!line || sscanf(line, "- Layer: %u,%u,%u %c", &slot, &transpose, &volume, &tail) != 3 ||
+        slot > 255 || transpose > 255 || volume > 255) return 1;
+    auto& entry = instrument->chip.layer.entries[i];
+    entry.instrument = slot < PROJECT_MAX_INSTRUMENTS ? (uint8_t)slot : EMPTY_VALUE_8;
+    entry.transpose = (uint8_t)transpose;
+    entry.volume = (uint8_t)volume;
+    consumeLine(file);
+  }
+  return 0;
+}
+
 static int loadInstrumentPlaits(FILE* file, Instrument* instrument) {
   InstrumentPlaits* p = &instrument->chip.plaits;
   while (1) {
@@ -737,6 +753,9 @@ int instrumentLoadData(FILE* file, Instrument* instrument, Project* p) {
         break;
       case InstrumentType::AudioIn:
         if (loadInstrumentAudioIn(file, instrument)) return 1;
+        break;
+      case InstrumentType::Layer:
+        if (projectFileVersion < 12 || loadInstrumentLayer(file, instrument)) return 1;
         break;
       case InstrumentType::MME:
         if (loadInstrumentMME(file, instrument)) return 1;
@@ -1133,6 +1152,10 @@ int instrumentSaveData(FILE* file, int idx, Instrument* instrument) {
     case InstrumentType::AudioIn:
       fprintf(file, "- Input source: %u\n", (unsigned)instrument->audioInputSource);
       saveVoicePostSettings(file, &instrument->chip.audioIn);
+      break;
+    case InstrumentType::Layer:
+      for (const auto& entry : instrument->chip.layer.entries)
+        fprintf(file, "- Layer: %u,%u,%u\n", entry.instrument, entry.transpose, entry.volume);
       break;
     case InstrumentType::MME:
       saveInstrumentMME(file, instrument);

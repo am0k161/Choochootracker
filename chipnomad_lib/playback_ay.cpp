@@ -272,20 +272,32 @@ int timerFunctionAY(SoundChip* chipBase, void* userdata) {
   SoundChip* chip = chipBase;
   PlaybackState* state = &chipNomadState->playbackState;
 
-  // Find chip index by scanning the chips array
+  // Find either a physical tracker chip or a virtual Layer AY lane.
   int chipIdx = -1;
+  int layerOwner = -1;
   for (int i = 0; i < PROJECT_MAX_CHIPS; i++) {
     if (chipNomadState->chips[i] == chipBase) {
       chipIdx = i;
       break;
     }
   }
-  if (chipIdx < 0) return 0;
+  if (chipIdx < 0) {
+    for (int owner = PROJECT_MAX_TRACKS; owner < PROJECT_MAX_VOICE_OWNERS; ++owner) {
+      if (chipNomadState->layerAYChips[owner] == chipBase) {
+        layerOwner = owner;
+        break;
+      }
+    }
+  }
+  if (chipIdx < 0 && layerOwner < 0) return 0;
 
-  int firstTrack = chipIdx;
+  int firstTrack = layerOwner >= 0
+    ? (layerOwner - PROJECT_MAX_TRACKS) / INSTRUMENT_LAYER_COUNT : chipIdx;
 
   for (int ch = 0; ch < 1; ch++) {
-    PlaybackTrackState* track = &state->tracks[firstTrack];
+    PlaybackTrackState* track = layerOwner >= 0
+      ? &state->layerTracks[firstTrack][(layerOwner - PROJECT_MAX_TRACKS) % INSTRUMENT_LAYER_COUNT]
+      : &state->tracks[firstTrack];
     if (track->note.instrument == EMPTY_VALUE_8) continue; // No instrument, skip
 
     Instrument *instrument = &state->p->instruments[track->note.instrument];

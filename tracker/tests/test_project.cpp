@@ -124,9 +124,9 @@ TEST_CASE("table volumes retain their level when loading old projects") {
   std::ifstream input(path, std::ios::binary);
   std::string data((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
   input.close();
-  const size_t header = data.find("# ChooChooTracker Module 11.0");
+  const size_t header = data.find("# ChooChooTracker Module 12.0");
   REQUIRE(header != std::string::npos);
-  data.replace(header, std::strlen("# ChooChooTracker Module 11.0"), "# ChooChooTracker Module 7.0");
+  data.replace(header, std::strlen("# ChooChooTracker Module 12.0"), "# ChooChooTracker Module 7.0");
   std::ofstream output(path, std::ios::binary | std::ios::trunc);
   output.write(data.data(), data.size());
   output.close();
@@ -582,7 +582,7 @@ TEST_CASE("projects preserve syncLFO and slowLFO settings") {
   REQUIRE(projectSave(&saved, path) == 0);
   INFO(projectFileError);
   REQUIRE(projectLoad(&loaded, path) == 0);
-  CHECK(projectFileVersion == 11);
+  CHECK(projectFileVersion == 12);
   const Modulation& reloaded = loaded.instruments[0].modulation[2];
   CHECK(reloaded.type == mod.type);
   CHECK(reloaded.p3 == mod.p3);

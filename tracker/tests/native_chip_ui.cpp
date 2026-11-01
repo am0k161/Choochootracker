@@ -29,15 +29,270 @@
 #include "fm_catalog.h"
 #include "user_presets.h"
 #include "user_preset_browser.h"
+#include "soundbank_library.h"
+#include "soundbank_runtime.h"
+#include "synth/sample_voice.h"
+#include "synth/sample_transient.h"
+#include "synth/sr_wavetable_loader.h"
+#include "audio_manager.h"
+#include <fstream>
+#include <thread>
+#include <chrono>
+#include <cctype>
 extern SDL_Renderer* renderer;
 static const char* output;
 static void require(bool condition,const char* why){if(!condition){fprintf(stderr,"FAIL: %s\n",why);exit(2);}}
 static void capture(const char* name){appDraw();auto* s=SDL_CreateRGBSurfaceWithFormat(0,640,480,32,SDL_PIXELFORMAT_ARGB8888);require(s,"surface");require(SDL_RenderReadPixels(renderer,nullptr,s->format->format,s->pixels,s->pitch)==0,"pixels");char path[2048];snprintf(path,sizeof(path),"%s/%s.bmp",output,name);require(SDL_SaveBMP(s,path)==0,"capture");SDL_FreeSurface(s);}
 static void key(int down,int keys){appDraw();currentScreen->onInput(down,keys,1);appDraw();}
 static void tapEdit(){key(1,keyEdit);key(0,0);}
+static void useTheme(const std::string& filename) {
+  const std::string path = "themes/" + filename;
+  require(loadTheme(path.c_str()) == 0, "theme loaded");
+  gfxSetBgColor(appSettings.colorScheme.background);
+}
+static Instrument& prepareHomepageInstrument(InstrumentType type, const char* name) {
+  Instrument& instrument = chipnomadState->project.instruments[0];
+  getInstrumentFunctions(instrument.type).free(&instrument);
+  memset(&instrument, 0, sizeof(instrument));
+  getInstrumentFunctions(type).init(&instrument);
+  snprintf(instrument.name, sizeof(instrument.name), "%s", name);
+  instrument.volume = 224;
+  instrument.pan = 128;
+  cInstrument = 0;
+  return instrument;
+}
+static void prepareHomepageSoundbank(const char* name) {
+  namespace fs = std::filesystem;
+  const fs::path bankDirectory = "instruments/USER/soundfont";
+  const fs::path sfzPath = bankDirectory / "Soft Keys.sfz";
+  const fs::path sfzSample = bankDirectory / "SoftKeys.wav";
+  fs::create_directories(bankDirectory);
+  fs::copy_file("samples/ST-01/EPiano.wav", sfzSample, fs::copy_options::overwrite_existing);
+  std::ofstream sfz(sfzPath, std::ios::binary | std::ios::trunc);
+  require(bool(sfz), "temporary homepage SFZ created");
+  sfz << "<region> sample=SoftKeys.wav key=60 lokey=0 hikey=127\n";
+  sfz.close();
+  auto& instrument = prepareHomepageInstrument(InstrumentType::SoundFont, name);
+  const auto bank = soundbank::parseBank({fs::absolute(sfzPath).string(), "", ""});
+  require(!bank.presets.empty(), "homepage SFZ parsed");
+  soundbank::SampleCache cache;
+  const auto preset = cache.prepare(bank, bank.presets.front().id);
+  audioManager.pause();
+  instrument.chip.soundfont.prepared = soundbank::publish(preset);
+  audioManager.resume();
+  snprintf(instrument.chip.soundfont.bank, sizeof(instrument.chip.soundfont.bank), "Soft Keys.sfz");
+  snprintf(instrument.chip.soundfont.preset, sizeof(instrument.chip.soundfont.preset), "%s",
+           bank.presets.front().id.c_str());
+  chipnomadQueueProjectRefresh(chipnomadState);
+  require(instrument.chip.soundfont.prepared != 0, "homepage SoundFont preset prepared");
+  fs::remove(sfzPath);
+  fs::remove(sfzSample);
+}
+static void captureHomepage() {
+  namespace fs = std::filesystem;
+  std::string baseTheme;
+  std::string sidTheme;
+  std::string soundfontTheme;
+  std::string mmeTheme;
+  std::string monkTheme;
+  std::string scwfTheme;
+  std::string wavetableTheme;
+  std::string sampleEditorTheme;
+  std::string sampleSlicesTheme;
+  std::string insertTheme;
+  std::string reverbTheme;
+  std::ofstream themeManifest(fs::path(output) / "homepage-theme-manifest.txt", std::ios::trunc);
+  require(bool(themeManifest), "homepage theme manifest opened");
+  for (const auto& entry : fs::recursive_directory_iterator("themes")) {
+    if (!entry.is_regular_file() || entry.path().extension() != ".cth") continue;
+    const std::string file = entry.path().lexically_relative("themes").generic_string();
+    std::string lower = file;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    if (lower == "bb22200.cth") baseTheme = file;
+    else if (lower == "synths/nutable.cth") sidTheme = file;
+    else if (lower == "synths/dixiseven.cth") soundfontTheme = file;
+    else if (lower == "idecolorthemes/nordlight.cth") mmeTheme = file;
+    else if (lower == "idecolorthemes/wlterminalgreenlight.cth") monkTheme = file;
+    else if (lower == "idecolorthemes/catpuccinlight.cth") scwfTheme = file;
+    else if (lower == "idecolorthemes/cyberpunkdark.cth") wavetableTheme = file;
+    else if (lower == "wood.cth") sampleEditorTheme = file;
+    else if (lower == "dubwise.cth") sampleSlicesTheme = file;
+    else if (lower == "idecolorthemes/nostromoamberdark.cth") insertTheme = file;
+    else if (lower == "idecolorthemes/draculadark.cth") reverbTheme = file;
+  }
+  require(!baseTheme.empty() && !sampleEditorTheme.empty() && !sampleSlicesTheme.empty() && !reverbTheme.empty() &&
+          !sidTheme.empty() && !soundfontTheme.empty() && !mmeTheme.empty() && !monkTheme.empty() &&
+          !scwfTheme.empty() && !wavetableTheme.empty() && !insertTheme.empty(),
+          "BB22200, nested themes, and distinct capture themes available");
+  const auto themeFor = [&](int pageIndex) -> std::string {
+    if (pageIndex < 10) return baseTheme;
+    switch (pageIndex) {
+      case 10: return sidTheme;
+      case 11: return soundfontTheme;
+      case 12: return mmeTheme;
+      case 13: return monkTheme;
+      case 14: return scwfTheme;
+      case 15: return wavetableTheme;
+      case 16: return sampleEditorTheme;
+      case 17: return sampleSlicesTheme;
+      case 18: return insertTheme;
+      case 19: return reverbTheme;
+      default: return baseTheme;
+    }
+  };
+  const auto show = [&](int pageIndex, const char* name, const AppScreen* screen, int input = 0) {
+    const std::string theme = themeFor(pageIndex);
+    useTheme(theme);
+    screenMessage(0, "");
+    screenSetup(screen, input);
+    capture(name);
+    themeManifest << name << " theme=" << theme << '\n';
+    themeManifest.flush();
+    printf("%02d %s theme=%s\n", pageIndex + 1, name, theme.c_str());
+  };
+
+  require(!projectLoad(&chipnomadState->project, "projects/ChooBreaks01.cct"), "ChooBreaks project loaded");
+  appSettings.persistentWaveform = 1;
+  show(0, "song", &screenSong);
+  Instrument& achchid = prepareHomepageInstrument(InstrumentType::AChChid, "Acid Bass");
+  achchid.chip.achchid.wave = AChChidWave::braids; achchid.chip.achchid.model = 10;
+  achchid.chip.achchid.timbre = 19200; achchid.chip.achchid.color = 22400;
+  achchid.chip.achchid.saturation = 88; achchid.chip.achchid.cutoff = 3100;
+  achchid.chip.achchid.resonance = 92; achchid.chip.achchid.envMod = 76;
+  achchid.chip.achchid.decay = 188; achchid.chip.achchid.accent = 126;
+  show(1, "engine-achchid", &screenInstrument);
+  show(2, "mixer", &screenMixer);
+
+  require(!projectLoad(&chipnomadState->project, "projects/ChooTest_01.cct"), "ChooTest project loaded");
+  screenSetup(&screenSong, 0);
+  screenSetup(&screenChain, 0);
+  show(3, "phrase", &screenPhrase);
+  // Track 8, row 0 points to ChooTest's most varied populated chain (80).
+  screenSetup(&screenSong, 0);
+  *pSongTrack = 7;
+  show(4, "chain", &screenChain);
+
+  Instrument& modulationInstrument = prepareHomepageInstrument(InstrumentType::Braids, "Modulated Bass");
+  modulationInstrument.chip.braids.model = 4;
+  modulationInstrument.chip.braids.timbre = 17600;
+  modulationInstrument.chip.braids.color = 9200;
+  modulationInstrument.modulation[0] = {ModulationType::ADSR, 1, 72, 20, 82, 190, 54, 0};
+  modulationInstrument.modulation[1] = {ModulationType::LFO, 2, -48, 1, 1, 36, 0, 0};
+  show(5, "modulation", &screenModulation);
+
+  Instrument& braids = prepareHomepageInstrument(InstrumentType::Braids, "Bells in Rain");
+  braids.chip.braids.model = 14; braids.chip.braids.timbre = 20900; braids.chip.braids.color = 14300;
+  show(6, "engine-braids", &screenInstrument);
+  Instrument& plaits = prepareHomepageInstrument(InstrumentType::Plaits, "Wavetable Pluck");
+  plaits.chip.plaits.engine = 8; plaits.chip.plaits.harmonics = 16300; plaits.chip.plaits.timbre = 22100;
+  plaits.chip.plaits.morph = 12700; plaits.chip.plaits.auxMix = 62;
+  show(7, "engine-plaits", &screenInstrument);
+  Instrument& bogie = prepareHomepageInstrument(InstrumentType::DrumSynth, "Round Kick");
+  bogie.chip.drumSynth.engine = DrumSynthEngine::kick; bogie.chip.drumSynth.decay = 174;
+  bogie.chip.drumSynth.tone = 164; bogie.chip.drumSynth.sweep = 126; bogie.chip.drumSynth.drive = 58;
+  show(8, "engine-bogie", &screenInstrument);
+  Instrument& sintered = prepareHomepageInstrument(InstrumentType::Sintered, "Shifting Metal");
+  sintered.chip.sintered.model = SinteredModel::comb; sintered.chip.sintered.decay = 122;
+  sintered.chip.sintered.mod = 174; sintered.chip.sintered.a = 198; sintered.chip.sintered.b = 76;
+  sintered.chip.sintered.motion = 152; sintered.chip.sintered.c = 104;
+  show(9, "engine-sintered", &screenInstrument);
+  Instrument& sid = prepareHomepageInstrument(InstrumentType::SID, "Filter Bass");
+  snprintf(sid.chip.sid.presetName, sizeof(sid.chip.sid.presetName), "Filter Bass");
+  show(10, "engine-sid", &screenInstrument);
+
+  prepareHomepageSoundbank("Soft Keys");
+  show(11, "engine-soundfont", &screenInstrument);
+  Instrument& mme = prepareHomepageInstrument(InstrumentType::MME, "Folded Saw");
+  mme.chip.mme.model = MMEModel::fold; mme.chip.mme.waves = 72; mme.chip.mme.interval = 144;
+  mme.chip.mme.amount = 190; mme.chip.mme.flow = 124; mme.chip.mme.feedback = 78; mme.chip.mme.shaper = 142;
+  show(12, "engine-mme", &screenInstrument);
+  Instrument& monk = prepareHomepageInstrument(InstrumentType::Monk, "Soft Choir");
+  monk.chip.monk.attack = 26; monk.chip.monk.decay = 92; monk.chip.monk.sustain = 188;
+  monk.chip.monk.release = 76; monk.chip.monk.vowel = 142; monk.chip.monk.character = 168;
+  monk.chip.monk.breath = 86; monk.chip.monk.glide = 24; monk.chip.monk.vibrato = 62;
+  monk.chip.monk.rate = 80; monk.chip.monk.unison = 2; monk.chip.monk.detune = 54;
+  monk.chip.monk.voiceSpread = 144; monk.chip.monk.delayMix = 48; monk.chip.monk.delayRate = 92;
+  monk.chip.monk.level = 210;
+  show(13, "engine-monk", &screenInstrument);
+
+  char error[128] = {};
+  Instrument& scwf = prepareHomepageInstrument(InstrumentType::SCWF, "Chello Glass");
+  require(!sampleLoadWav16("waveforms/AKWF/AKWF_cello_0001.wav", &scwf.chip.scwf.oscillator[0], error, sizeof(error)), "SCWF oscillator one loaded");
+  require(!sampleLoadWav16("waveforms/AKWF/AKWF_cello_0002.wav", &scwf.chip.scwf.oscillator[1], error, sizeof(error)), "SCWF oscillator two loaded");
+  scwf.chip.scwf.detune = 37; scwf.chip.scwf.mix = 94;
+  show(14, "engine-scwf", &screenInstrument);
+  Instrument& table = prepareHomepageInstrument(InstrumentType::BYOWTBL, "Acid Wavetable");
+  require(!srWavetableLoadWav("SR_wavetables/WaveEdit/ACID_RIN.WAV", &table.chip.byowtbl.oscillator[0],
+    &table.chip.byowtbl.frameSize[0], &table.chip.byowtbl.tableFrames[0], error, sizeof(error)), "wavetable oscillator one loaded");
+  require(!srWavetableLoadWav("SR_wavetables/WaveEdit/BASIC_WA.WAV", &table.chip.byowtbl.oscillator[1],
+    &table.chip.byowtbl.frameSize[1], &table.chip.byowtbl.tableFrames[1], error, sizeof(error)), "wavetable oscillator two loaded");
+  table.chip.byowtbl.frameIndex[0] = 2; table.chip.byowtbl.frameIndex[1] = 5;
+  table.chip.byowtbl.detune = 30; table.chip.byowtbl.mix = 104;
+  show(15, "engine-byowtbl", &screenInstrument);
+
+  require(!projectLoad(&chipnomadState->project, "projects/ChooBreaks01.cct"), "one-shot source project loaded");
+  Instrument& oneShot = prepareHomepageInstrument(InstrumentType::Sample, "909 Kick");
+  require(!sampleLoadWav16("samples/909/BT0A0A7.WAV", &oneShot.chip.sample, error, sizeof(error)),
+          "bundled 909 one-shot loaded");
+  show(16, "sample-editor", &screenSampleSettings, 0);
+
+  Instrument& breakInstrument = prepareHomepageInstrument(InstrumentType::Sample, "AMEN.WAV");
+  require(!sampleLoadWav16("SR_wavetables/WaveEdit/AMEN.WAV", &breakInstrument.chip.sample, error, sizeof(error)), "AMEN break loaded");
+  auto& sample = breakInstrument.chip.sample;
+  sample.autoSensitivity = 55;
+  uint8_t sliceCount = 0;
+  uint32_t bounds[PROJECT_SAMPLE_MAX_SLICES] = {};
+  if (!sampleDetectTransients(&sample, 0, sample.frameCount, 16, sample.autoSensitivity, bounds, &sliceCount) && sliceCount > 1) {
+    sample.slice = sampleEncodeSlice(sliceModeAuto, sliceCount);
+    memcpy(sample.sliceBounds, bounds, sliceCount * sizeof(bounds[0]));
+  } else {
+    sample.slice = sampleEncodeSlice(sliceModeEqual, 16);
+  }
+  show(17, "sample-slices", &screenSampleSettings, 0);
+
+  auto& insert = chipnomadState->project.trackInserts[0][0];
+  insertSelect(&insert, insertOTT); insertEdit(&insert, 0, 186); insertEdit(&insert, 1, 170);
+  screenSetup(&screenSong, 0);
+  show(18, "insert-fx", &screenInsertFX, -1);
+  require(!projectLoad(&chipnomadState->project, "projects/ChooBreaks01.cct"), "effect project loaded");
+  screenSetup(&screenSong, 0);
+  for (int track = 0; track < PROJECT_MAX_TRACKS; ++track) {
+    chipnomadState->project.trackReverbSend[track] = track < 4 ? (uint8_t)(34 + track * 7) : 0;
+    chipnomadState->project.trackDelaySend[track] = track == 0 || track == 2 ? 28 : 0;
+  }
+  show(19, "reverb", &screenMixer);
+  key(1, keyShift | keyUp);
+  capture("reverb");
+  screenMessage(0, "");
+  soundbankShutdown();
+  printf("Captured 20 homepage screens as 640x480 BMPs.\n");
+}
 int main(int argc,char** argv){
-  if(argc!=2&&argc!=3)return 1;output=argv[1];initDefaultAppSettings();appSettings.screenWidth=640;appSettings.screenHeight=480;fontSetCurrent(fontGetDefault());require(!gfxSetup(&appSettings.screenWidth,&appSettings.screenHeight),"SDL dummy setup");
+  if(argc!=2&&argc!=3) return 1;
+  output=argv[1];initDefaultAppSettings();appSettings.screenWidth=640;appSettings.screenHeight=480;fontSetCurrent(fontGetDefault());require(!gfxSetup(&appSettings.screenWidth,&appSettings.screenHeight),"SDL dummy setup");
   chipnomadState=chipnomadCreate();require(chipnomadState,"state");require(!projectLoad(&chipnomadState->project,"projects/gm-midi-demo.cct"),"fixture");
+  if(argc==3 && !strcmp(argv[2],"--gfx-benchmark")) {
+    screensInitAll();waveformDisplayInit();monitorDisplayInit();
+    appSettings.persistentWaveform=0;
+    appSettings.cursorBrackets=0;
+    screenSetup(&screenSong,0);
+    appDraw();gfxUpdateScreen();
+    constexpr int frames=5000;
+    auto started=std::chrono::steady_clock::now();
+    for(int i=0;i<frames;++i){appDraw();gfxUpdateScreen();}
+    SDL_RenderFlush(renderer);
+    auto elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
+    std::ofstream benchmark(std::filesystem::path(output)/"gfx-benchmark.txt",std::ios::trunc);
+    require(bool(benchmark),"graphics benchmark log");
+    benchmark<<"static: "<<elapsed<<" ms, "<<elapsed*1000.0/frames<<" us/frame\n";
+    started=std::chrono::steady_clock::now();
+    for(int i=0;i<frames;++i){chipnomadState->trackClipping[0]=(i&1)?5:0;appDraw();gfxUpdateScreen();}
+    SDL_RenderFlush(renderer);
+    elapsed=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
+    benchmark<<"animated: "<<elapsed<<" ms, "<<elapsed*1000.0/frames<<" us/frame\n";
+    benchmark.close();
+    chipnomadDestroy(chipnomadState);gfxCleanup();SDL_Quit();return 0;
+  }
   if(argc==3 && !strcmp(argv[2],"--filter-only")) {
     screensInitAll();waveformDisplayInit();monitorDisplayInit();cInstrument=0;
     auto& instrument=chipnomadState->project.instruments[0];
@@ -243,6 +498,10 @@ int main(int argc,char** argv){
   }
   if(argc==3 && !strcmp(argv[2],"--insert-popup-only")) {
     screensInitAll();waveformDisplayInit();monitorDisplayInit();
+    const int nativeCharWidth=gfxGetCharWidth(),nativeCharHeight=gfxGetCharHeight();
+    gfxHandleResize(912,499);
+    require(gfxGetCharWidth()==nativeCharWidth&&gfxGetCharHeight()==nativeCharHeight,
+            "desktop resize keeps the fixed tracker canvas and font");
     auto& project=chipnomadState->project;
     *pSongRow=*pChainRow=*pSongTrack=0;
     project.song[0][0]=0;project.chains[0].rows[0].phrase=0;
@@ -306,13 +565,18 @@ int main(int argc,char** argv){
     require(screenMixerGetPage()==1,"reverb page entered");eventKey(keyLeft,true);eventKey(keyLeft,false);eventKey(keyShift,false);
     require(currentScreen==&screenMixer&&screenMixerGetPage()==0,"left edge returns to mixer");
     appSettings.mixVolume=chipnomadState->mixVolume=1.0f;projectModified=0;
-    require(screenTouchTap(29,12),"master level is selectable beside EDIT");
+    require(screenTouchTap(27,12),"master level is selectable beside EQ");
     eventKey(keyEdit|keyDown,true);eventKey(keyEdit|keyDown,false);
     require(std::abs(appSettings.mixVolume-0.9f)<0.001f&&
             std::abs(chipnomadState->mixVolume-0.9f)<0.001f,"master level changes output gain");
     require(!projectModified,"device volume does not modify the project");
     capture("mixer-master-level");
-    require(screenTouchTap(12,12),"short master EDIT is selectable");
+    require(screenTouchTap(12,12),"master EQ label is selectable");
+    eventKey(keyEdit,true);eventKey(keyEdit,false);
+    require(currentScreen==&screenInstrumentEQ,"master EQ opens bank FE");
+    eventKey(keyOpt,true);eventKey(keyOpt,false);
+    require(currentScreen==&screenMixer,"OPT returns from master EQ to mixer");
+    require(screenTouchTap(4,12),"master FX label is selectable");
     eventKey(keyEdit,true);eventKey(keyEdit,false);
     require(currentScreen==&screenInsertFX,"master EDIT opens master effects");
     printf("Insert popup production UI and Shift spine navigation passed: all modules, both slots, active-only selection, waveform off/on\n");
@@ -423,6 +687,33 @@ int main(int argc,char** argv){
     chipnomadDestroy(chipnomadState);SDL_Quit();return 0;
   }
   chipnomadInitChips(chipnomadState,48000,nullptr);chipnomadReserveRenderBuffers(chipnomadState,1024);screensInitAll();waveformDisplayInit();monitorDisplayInit();
+  if(argc==3 && !strcmp(argv[2],"--capture-homepage")) {
+    captureHomepage();
+    chipnomadDestroy(chipnomadState);SDL_Quit();return 0;
+  }
+  if(argc==3 && !strcmp(argv[2],"--layer-only")) {
+    auto& project=chipnomadState->project;
+    getInstrumentFunctions(InstrumentType::Layer).init(&project.instruments[0]);
+    getInstrumentFunctions(InstrumentType::Sintered).init(&project.instruments[1]);
+    getInstrumentFunctions(InstrumentType::AChChid).init(&project.instruments[2]);
+    project.instruments[0].chip.layer.entries[0]={1,96,112};
+    project.instruments[0].chip.layer.entries[1]={2,255,128};
+    chipnomadInitChips(chipnomadState,48000,nullptr);
+    screenSetup(&screenInstrument,0);appDraw();capture("instrument-31");
+    std::vector<float> audio(2048);
+    chipnomadQueuePlaybackPreviewNote(chipnomadState,0,45,0);
+    chipnomadRender(chipnomadState,audio.data(),1024);chipnomadGetPlaybackStatus(chipnomadState);appDraw();
+    project.instruments[0].chip.layer.entries[0].transpose=0xff;
+    currentScreen->fullRedraw();appDraw();
+    std::vector<uint32_t> before(640*480),after(before.size());
+    require(SDL_RenderReadPixels(renderer,nullptr,SDL_PIXELFORMAT_ARGB8888,before.data(),640*4)==0,"read Layer pixels");
+    require(chipnomadQueueProjectRefresh(chipnomadState),"refresh Layer project");
+    chipnomadRender(chipnomadState,audio.data(),1024);chipnomadGetPlaybackStatus(chipnomadState);appDraw();
+    require(SDL_RenderReadPixels(renderer,nullptr,SDL_PIXELFORMAT_ARGB8888,after.data(),640*4)==0,"read refreshed Layer pixels");
+    require(before!=after,"Layer live bar refreshes without moving the cursor");
+    capture("instrument-31-refreshed");
+    chipnomadDestroy(chipnomadState);SDL_Quit();return 0;
+  }
   if(argc==3 && !strcmp(argv[2],"--presets-only")) {
     std::vector<FMPresetEntry> factory, builtins;
     require(loadFMCatalog("instruments/FACTORY/catalog.tsv",factory),"factory catalog");
@@ -560,7 +851,7 @@ int main(int argc,char** argv){
     ++fmIndex;
   }
   printf("Type popup passed: all seven FM types selected and reopened\n");
-  for(auto type:{InstrumentType::SID,InstrumentType::OPLL,InstrumentType::VRC7,InstrumentType::OPL2,InstrumentType::OPL3,InstrumentType::SegaPSG,InstrumentType::GBPulse,InstrumentType::GBNoise,InstrumentType::GenesisFM,InstrumentType::ArcadeFM,InstrumentType::DX7}){
+  for(auto type:{InstrumentType::SID,InstrumentType::OPLL,InstrumentType::VRC7,InstrumentType::OPL2,InstrumentType::OPL3,InstrumentType::SegaPSG,InstrumentType::GBPulse,InstrumentType::GBNoise,InstrumentType::GenesisFM,InstrumentType::ArcadeFM,InstrumentType::DX7,InstrumentType::Layer}){
     getInstrumentFunctions(type).init(&chipnomadState->project.instruments[0]);screenSetup(&screenInstrument,0);appDraw();if(type==InstrumentType::SegaPSG)require(screenInstrumentSimpleChip.isCellValid(0,6),"Sega bass extension selectable");char name[40];snprintf(name,sizeof(name),"instrument-%d",int(type));capture(name);
   }
   require(!strcmp(instrumentTypeName(InstrumentType::SID),"SID"),"SID instrument and browser titles identify the engine");

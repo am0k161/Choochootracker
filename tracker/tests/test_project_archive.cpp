@@ -53,7 +53,7 @@ TEST_CASE("upstream song archives retain native patches and every sample oscilla
   saved->instruments[15].chip.dx7.bankId = 900;
   saved->instruments[15].chip.dx7.fineTune = -37;
   REQUIRE(projectSave(saved.get(), "build/tests/archive-legacy.cct") == 0);
-  CHECK(readFile("build/tests/archive-legacy.cct").find("# ChooChooTracker Module 11.0") == 0);
+  CHECK(readFile("build/tests/archive-legacy.cct").find("# ChooChooTracker Module 12.0") == 0);
   REQUIRE(projectLoad(legacy.get(), "build/tests/archive-legacy.cct") == 0);
 
   getInstrumentFunctions(InstrumentType::Sample).init(&saved->instruments[0]);

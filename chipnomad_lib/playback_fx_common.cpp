@@ -417,6 +417,9 @@ void initFX(PlaybackState* state, int trackIdx, const FXCell* fx, PlaybackTableS
   if (tableState != NULL && (fx->command == fxSCL || fx->command == fxCRD)) return;
 
   PlaybackTrackState* track = &state->tracks[trackIdx];
+  const bool layerAccepts = track->note.instrument != EMPTY_VALUE_8 &&
+    state->p->instruments[track->note.instrument].type == InstrumentType::Layer &&
+    instrumentFXAvailableInProject(state->p, track->note.instrument, fx->command);
   if (fx->command >= fxF11 && fx->command <= fxF28) {
     int address = fx->command - fxF11, slot = address / 8, parameter = address % 8;
     int module = state->p->trackInserts[trackIdx][slot].module;
@@ -428,7 +431,7 @@ void initFX(PlaybackState* state, int trackIdx, const FXCell* fx, PlaybackTableS
   }
   if (fx->command >= fxMUV && fx->command <= fxMLV) {
     if (track->note.instrument == EMPTY_VALUE_8 ||
-        state->p->instruments[track->note.instrument].type != InstrumentType::Monk) return;
+        (state->p->instruments[track->note.instrument].type != InstrumentType::Monk && !layerAccepts)) return;
     auto& control = track->note.fx[fx->command];
     control.isOn = 1;
     control.fxValue = fx->command == fxMUV ? clampInt(fx->value, 1, 10) : fx->value;
@@ -436,7 +439,7 @@ void initFX(PlaybackState* state, int trackIdx, const FXCell* fx, PlaybackTableS
   }
   if (fx->command >= fxFPT && fx->command <= fxFSU) {
     if (track->note.instrument == EMPTY_VALUE_8 ||
-        state->p->instruments[track->note.instrument].type != InstrumentType::SoundFont) return;
+        (state->p->instruments[track->note.instrument].type != InstrumentType::SoundFont && !layerAccepts)) return;
     auto& f = track->note.fx[fx->command];
     f.isOn = 1;
     f.fxValue = fx->command == fxFPT ? std::min(int(fx->value), 48) : fx->value;
@@ -445,6 +448,13 @@ void initFX(PlaybackState* state, int trackIdx, const FXCell* fx, PlaybackTableS
   if (fx->command >= fxOAR && fx->command <= fxLEN) {
     if (track->note.instrument == EMPTY_VALUE_8) return;
     const auto* instrument = &state->p->instruments[track->note.instrument];
+    if (instrument->type == InstrumentType::Layer) {
+      if (!layerAccepts) return;
+      auto& f = track->note.fx[fx->command];
+      f.isOn = 1;
+      f.fxValue = fx->value;
+      return;
+    }
     if (!instrumentFXAvailableForInstrument(instrument, fx->command)) return;
     constexpr int op = 0;
     NativeFXInfo info{};

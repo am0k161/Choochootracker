@@ -87,14 +87,18 @@ const SelectionItem braidsCategories[] = {
 };
 const int braidsCategoryCount = sizeof(braidsCategories) / sizeof(braidsCategories[0]);
 
-static const SelectionItem drumSynthDrums[] = {
-  LEAF("KICK", 0), LEAF("SNARE", 1), LEAF("HAT", 2), LEAF("CLAP", 3),
-  LEAF("TOM", 4), LEAF("RIM", 5), LEAF("COWBELL", 8), LEAF("CYMBAL", 9),
-  LEAF("SHAKER", 10), LEAF("CLAVE", 11)
+static const SelectionItem drumSynthBody[] = {
+  LEAF("KICK", 0), LEAF("TOM", 4), LEAF("FM", 6), LEAF("CLAVE", 11)
 };
-static const SelectionItem drumSynthSynthetic[] = {LEAF("FM", 6), LEAF("NOISE", 7)};
+static const SelectionItem drumSynthNoise[] = {
+  LEAF("SNARE", 1), LEAF("CLAP", 3), LEAF("NOISE", 7), LEAF("SHAKER", 10)
+};
+static const SelectionItem drumSynthMetal[] = {
+  LEAF("HAT", 2), LEAF("RIM", 5), LEAF("COWBELL", 8), LEAF("CYMBAL", 9)
+};
 const SelectionItem drumSynthCategories[] = {
-  CATEGORY("DRUMS", drumSynthDrums), CATEGORY("SYNTHETIC", drumSynthSynthetic)
+  CATEGORY("BODY / TONAL", drumSynthBody), CATEGORY("NOISE / SNAP", drumSynthNoise),
+  CATEGORY("METAL / BRIGHT", drumSynthMetal)
 };
 const int drumSynthCategoryCount = sizeof(drumSynthCategories) / sizeof(drumSynthCategories[0]);
 
@@ -130,6 +134,7 @@ bool modelCatalogsValid() {
   return catalogValid(plaitsCategories, plaitsCategoryCount, 24) &&
          catalogValid(plaitsAltCategories, plaitsAltCategoryCount, 24) &&
          catalogValid(braidsCategories, braidsCategoryCount, 47) &&
+         catalogValid(drumSynthCategories, drumSynthCategoryCount, (int)DrumSynthEngine::totalCount) &&
          catalogValid(mmeCategories, mmeCategoryCount, (int)MMEModel::totalCount) &&
          catalogValid(sinteredCategories, sinteredCategoryCount, (int)SinteredModel::totalCount);
 }

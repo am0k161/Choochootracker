@@ -87,6 +87,7 @@ const char* instrumentTypeName(InstrumentType type) {
       return "Bogie";
     case InstrumentType::Monk: return "MonkSynth";
     case InstrumentType::AudioIn: return "Audio in";
+    case InstrumentType::Layer: return "Layer";
     case InstrumentType::MME:
       return "MME";
     case InstrumentType::Sintered:
@@ -138,6 +139,13 @@ static void instrumentSwapReferences(Project* project, uint8_t inst1, uint8_t in
       }
     }
   }
+  for (auto& instrument : project->instruments) {
+    if (instrument.type != InstrumentType::Layer) continue;
+    for (auto& entry : instrument.chip.layer.entries) {
+      if (entry.instrument == inst1) entry.instrument = inst2;
+      else if (entry.instrument == inst2) entry.instrument = inst1;
+    }
+  }
 }
 
 // Swap two instruments and their default tables
@@ -181,11 +189,22 @@ static int phraseIsUsedInChains(Project* project, int phraseIdx) {
 }
 
 // Check if instrument is used in any phrase
-static int instrumentIsUsedInPhrases(Project* project, int instrumentIdx) {
+static int instrumentIsUsedDirectly(Project* project, int instrumentIdx) {
   for (int p = 0; p < PROJECT_MAX_PHRASES; p++) {
     for (int row = 0; row < 16; row++) {
       if (project->phrases[p].rows[row].instrument == instrumentIdx) return 1;
     }
+  }
+  return 0;
+}
+
+static int instrumentIsUsedInPhrases(Project* project, int instrumentIdx) {
+  if (instrumentIsUsedDirectly(project, instrumentIdx)) return 1;
+  for (int layerIdx = 0; layerIdx < PROJECT_MAX_INSTRUMENTS; ++layerIdx) {
+    const Instrument& layer = project->instruments[layerIdx];
+    if (layer.type != InstrumentType::Layer || !instrumentIsUsedDirectly(project, layerIdx)) continue;
+    for (const auto& entry : layer.chip.layer.entries)
+      if (entry.instrument == instrumentIdx) return 1;
   }
   return 0;
 }

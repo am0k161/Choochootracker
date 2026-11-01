@@ -137,7 +137,16 @@ static const InsertDescriptor descriptors[] = {
       {"F1", "First formant", "Hz", 200, 1200, 206, M::exponential},
       {"F2", "Second formant", "Hz", 500, 2800, 173, M::exponential},
       {"RES", "Resonance", "Q", 2, 16, 85, M::exponential},
-      {"MIX", "Mix", "%", 0, 1, 255, M::linear}}}};
+      {"MIX", "Mix", "%", 0, 1, 255, M::linear}}},
+    {"Stereo Width", 8,
+     {{"Width", "Stereo width", "%", 0, 2, 255, M::linear},
+      {"Space", "Mono width", "%", 0, 1, 255, M::linear},
+      {"Side HPF", "Side high-pass", "Hz", 0, 400, 0, M::exponential},
+      {"Side Low", "Side low shelf", "dB", -12, 12, 128, M::bipolar},
+      {"Mid Freq", "Mid frequency", "Hz", 400, 8000, 137, M::exponential},
+      {"Mid Gain", "Side mid gain", "dB", -12, 12, 128, M::bipolar},
+      {"Side High", "Side high shelf", "dB", -12, 12, 128, M::bipolar},
+      {"Mix", "Dry / wet", "%", 0, 1, 255, M::linear}}}};
 static_assert(sizeof(descriptors) / sizeof(descriptors[0]) == insertModuleCount,
               "Stable module catalogue");
 const InsertDescriptor& insertDescriptor(int m) {
@@ -172,6 +181,10 @@ float insertMap(int m, int p, int v) {
   if (m == insertDestruction && p == 7)
     return v <= 127 ? 12.0f * v / 127.0f
                     : 12.0f + 24.0f * (v - 127) / 128.0f;
+  if (m == insertStereoWidth && p == 0)
+    return v <= 128 ? v / 128.0f : 1.0f + (v - 128) / 127.0f;
+  if (m == insertStereoWidth && p == 2)
+    return v == 0 ? 0.0f : 40.0f * powf(10.0f, (v - 1) / 254.0f);
   float x = v / float(std::max(1, insertParameterMaximum(m, p)));
   if (a.mapping == M::discrete) return v;
   if (a.mapping == M::exponential) return a.minimum * powf(a.maximum / a.minimum, x);
@@ -223,6 +236,8 @@ void insertDescribe(char* text, size_t size, int m, int p, int value) {
   } else if (m == insertDistortion && p == 1) {
     static const char* n[] = {"Density", "Drive", "Spiral", "Mojo", "Dyno"};
     snprintf(text, size, "%s", n[(int)v]);
+  } else if (m == insertStereoWidth && p == 2 && value == 0) {
+    snprintf(text, size, "Off");
   } else if (m == insertRotary && p == 0) {
     // Keep neighboring very slow rates distinguishable in the edit hint.
     snprintf(text, size, "%.4g Hz", v);
@@ -584,6 +599,22 @@ struct InsertChain::Impl {
         }
         break;
       }
+      case insertStereoWidth: {
+        bool neutral = v[3] == 128 && v[5] == 128 && v[6] == 128;
+        if (neutral) {
+          if (!s.eqNeutral)
+            for (auto& band : s.eq[0]) band.reset();
+          s.eqNeutral = true;
+          break;
+        }
+        if (s.eqNeutral)
+          for (auto& band : s.eq[0]) band.reset();
+        s.eqNeutral = false;
+        setEQBand(s.eq[0][0], 0, p[3], 250.0f, rate);
+        setEQBand(s.eq[0][1], 1, p[5], p[4], rate);
+        setEQBand(s.eq[0][2], 2, p[6], 6000.0f, rate);
+        break;
+      }
     }
     memcpy(s.previous, v, 8);
     s.dirty = false;
@@ -854,6 +885,40 @@ struct InsertChain::Impl {
             l[i] *= gain;
             r[i] *= gain;
             s.gateFrames += 1.0;
+          }
+          break;
+        }
+        case insertStereoWidth: {
+          constexpr float allpassGain = 0.6f;
+          const int decorrelationDelay = std::max(1, std::min(delaySize - 1, (int)roundf(rate * 0.0067f)));
+          const float syntheticHighpass = coefficient(150.0f, rate);
+          const float sideHighpass = p[2] > 0 ? coefficient(p[2], rate) : 0.0f;
+          const float width = p[0];
+          const float syntheticAmount = std::max(0.0f, width - 1.0f) * p[1];
+          for (int i = 0; i < n; ++i) {
+            const float dryL = l[i], dryR = r[i];
+            const float mid = (dryL + dryR) * 0.5f;
+            const float side = (dryL - dryR) * 0.5f;
+            int delayed = s.delayWrite - decorrelationDelay;
+            if (delayed < 0) delayed += delaySize;
+            const float decorrelated = -allpassGain * mid + s.delay[0][delayed] +
+                                        allpassGain * s.delay[1][delayed];
+            s.delay[0][s.delayWrite] = mid;
+            s.delay[1][s.delayWrite] = decorrelated;
+            if (++s.delayWrite == delaySize) s.delayWrite = 0;
+            s.filter[0] += syntheticHighpass * (decorrelated - s.filter[0]);
+            if (values[7] == 0 || (values[0] == 128 && values[2] == 0 && s.eqNeutral))
+              continue; // Exact dry path while keeping the decorrelator warm.
+            float widenedSide = side * width + (decorrelated - s.filter[0]) * syntheticAmount;
+            if (sideHighpass > 0) {
+              s.filter[1] += sideHighpass * (widenedSide - s.filter[1]);
+              widenedSide -= s.filter[1];
+            }
+            if (!s.eqNeutral)
+              widenedSide = s.eq[0][2].process(s.eq[0][1].process(s.eq[0][0].process(widenedSide)));
+            const float wetL = mid + widenedSide, wetR = mid - widenedSide;
+            l[i] = dryL + p[7] * (wetL - dryL);
+            r[i] = dryR + p[7] * (wetR - dryR);
           }
           break;
         }

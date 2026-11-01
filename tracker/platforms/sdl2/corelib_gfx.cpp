@@ -593,6 +593,8 @@ int gfxSetup(int *screenWidth, int *screenHeight) {
   #ifdef ANDROID_BUILD
   SDL_SetHint(SDL_HINT_ORIENTATIONS,
     "LandscapeLeft LandscapeRight Portrait PortraitUpsideDown");
+  SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE, "0");
+  SDL_SetHint(SDL_HINT_ANDROID_BLOCK_ON_PAUSE_PAUSEAUDIO, "0");
   #endif
   if (SDL_Init(SDL_INIT_FLAGS) != 0) {
     fprintf(stderr, "SDL2 Initialization Error: %s\n", SDL_GetError());

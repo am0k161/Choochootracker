@@ -30,6 +30,33 @@ static const Instrument* getCurrentInstrument() {
     ? &chipnomadState->project.instruments[currentInstrumentIdx] : NULL;
 }
 
+static bool currentInstrumentHasFX(FXId fx) {
+  return currentInstrumentIdx < PROJECT_MAX_INSTRUMENTS &&
+    instrumentFXAvailableInProject(&chipnomadState->project, currentInstrumentIdx, fx);
+}
+
+static bool groupApplies(const FXGroup& group, InstrumentType type) {
+  if (group.instType == InstrumentType::none || group.instType == type) return true;
+  const Instrument* instrument = getCurrentInstrument();
+  if (!instrument || instrument->type != InstrumentType::Layer) return false;
+  for (const auto& entry : instrument->chip.layer.entries)
+    if (entry.instrument < PROJECT_MAX_INSTRUMENTS &&
+        chipnomadState->project.instruments[entry.instrument].type == group.instType) return true;
+  return false;
+}
+
+static bool layerFXDuplicate(const FXGroup* group, FXId fx) {
+  if (getCurrentInstrumentType() != InstrumentType::Layer) return false;
+  extern FXGroup fxGroups[];
+  extern int fxGroupCount;
+  for (int i = 0; i < fxGroupCount && &fxGroups[i] != group; ++i) {
+    if (!groupApplies(fxGroups[i], InstrumentType::Layer)) continue;
+    for (int n = 0; n < fxGroups[i].count; ++n)
+      if (fxGroups[i].fxList && fxGroups[i].fxList[n].fx == fx) return true;
+  }
+  return false;
+}
+
 // Insert addresses remain stable in songs; only the picker is contextual.
 static bool insertFXAvailable(int fx) {
   if (fx < fxF11 || fx > fxF28) return true;
@@ -51,7 +78,16 @@ static FXId availableInsertChoice(FXId fx) {
 }
 
 static bool nativeInfo(uint8_t instrumentIdx,int fx,NativeFXInfo& info) {
-  return instrumentIdx!=EMPTY_VALUE_8 && instrumentIdx<PROJECT_MAX_INSTRUMENTS && instrumentFXAvailableForInstrument(&chipnomadState->project.instruments[instrumentIdx],fx) && instrumentNativeFXInfo(&chipnomadState->project.instruments[instrumentIdx],fx,&info);
+  if (instrumentIdx == EMPTY_VALUE_8 || instrumentIdx >= PROJECT_MAX_INSTRUMENTS) return false;
+  const Instrument& instrument = chipnomadState->project.instruments[instrumentIdx];
+  if (instrument.type != InstrumentType::Layer)
+    return instrumentFXAvailableForInstrument(&instrument, fx) && instrumentNativeFXInfo(&instrument,fx,&info);
+  for (const auto& entry : instrument.chip.layer.entries)
+    if (entry.instrument < PROJECT_MAX_INSTRUMENTS) {
+      const Instrument& child = chipnomadState->project.instruments[entry.instrument];
+      if (instrumentFXAvailableForInstrument(&child, fx) && instrumentNativeFXInfo(&child, fx, &info)) return true;
+    }
+  return false;
 }
 
 static const char* nativeControlDescription(int fx) {
@@ -180,14 +216,14 @@ static bool isFXAvailable(FXId fx, uint8_t instrumentIdx, int isTable) {
   InstrumentType instrumentType = getInstrumentType(instrumentIdx);
   const Instrument* instrument = instrumentIdx != EMPTY_VALUE_8 && instrumentIdx < PROJECT_MAX_INSTRUMENTS
     ? &chipnomadState->project.instruments[instrumentIdx] : NULL;
-  if((fx>=fxFBR&&fx<=fxLEN)||(fx>=fxFPT&&fx<=fxFSU)||(fx>=fxMUV&&fx<=fxMLV))return instrument && instrumentFXAvailableForInstrument(instrument,fx);
+  if((fx>=fxFBR&&fx<=fxLEN)||(fx>=fxFPT&&fx<=fxFSU)||(fx>=fxMUV&&fx<=fxMLV))return instrument && instrumentFXAvailableInProject(&chipnomadState->project,instrumentIdx,fx);
   if (instrumentType == InstrumentType::Monk && fx == fxESH) return false;
-  if (instrument && instrumentFXAvailableForInstrument(instrument, fx)) return true;
+  if (instrument && instrumentFXAvailableInProject(&chipnomadState->project, instrumentIdx, fx)) return true;
   for (int groupIdx = 0; groupIdx < fxGroupCount; groupIdx++) {
     FXGroup* group = &fxGroups[groupIdx];
-    if (group->instType != InstrumentType::none && group->instType != instrumentType) continue;
+    if (!groupApplies(*group, instrumentType)) continue;
     if (group->instType == InstrumentType::DrumSynth && instrument &&
-        !instrumentFXAvailableForInstrument(instrument, fx)) continue;
+        !instrumentFXAvailableInProject(&chipnomadState->project, instrumentIdx, fx)) continue;
     for (int i = 0; i < group->count; i++) {
       if (group->fxList[i].fx == fx) return true;
     }
@@ -218,8 +254,10 @@ static int visibleFXCount(const FXGroup* group) {
 
     if (currentIsTable && (group->fxList[i].fx == fxSCL || group->fxList[i].fx == fxCRD)) continue;
     if (hideSCL && group->fxList[i].fx == fxSCL) continue;
-    if(group->fxList[i].fx>=fxFBR && group->fxList[i].fx<=fxLEN && (!instrument || !instrumentFXAvailableForInstrument(instrument,group->fxList[i].fx)))continue;
-    if (!instrument || group->instType != InstrumentType::DrumSynth || instrumentFXAvailableForInstrument(instrument, group->fxList[i].fx)) ++count;
+    if (layerFXDuplicate(group, group->fxList[i].fx)) continue;
+    if (group->instType != InstrumentType::none && instrument && !currentInstrumentHasFX(group->fxList[i].fx)) continue;
+    if(group->fxList[i].fx>=fxFBR && group->fxList[i].fx<=fxLEN && (!instrument || !currentInstrumentHasFX(group->fxList[i].fx)))continue;
+    if (!instrument || group->instType != InstrumentType::DrumSynth || currentInstrumentHasFX(group->fxList[i].fx)) ++count;
   }
   return count;
 }
@@ -236,8 +274,10 @@ static const FXName* visibleFXAt(const FXGroup* group, int visibleIndex) {
 
     if (currentIsTable && (group->fxList[i].fx == fxSCL || group->fxList[i].fx == fxCRD)) continue;
     if (hideSCL && group->fxList[i].fx == fxSCL) continue;
-    if(group->fxList[i].fx>=fxFBR && group->fxList[i].fx<=fxLEN && (!instrument || !instrumentFXAvailableForInstrument(instrument,group->fxList[i].fx)))continue;
-    if (instrument && group->instType == InstrumentType::DrumSynth && !instrumentFXAvailableForInstrument(instrument, group->fxList[i].fx)) continue;
+    if (layerFXDuplicate(group, group->fxList[i].fx)) continue;
+    if (group->instType != InstrumentType::none && instrument && !currentInstrumentHasFX(group->fxList[i].fx)) continue;
+    if(group->fxList[i].fx>=fxFBR && group->fxList[i].fx<=fxLEN && (!instrument || !currentInstrumentHasFX(group->fxList[i].fx)))continue;
+    if (instrument && group->instType == InstrumentType::DrumSynth && !currentInstrumentHasFX(group->fxList[i].fx)) continue;
     if (visibleIndex-- == 0) return &group->fxList[i];
   }
   return NULL;
@@ -464,7 +504,7 @@ int getVisibleGroupCount(InstrumentType instType) {
   int count = 0;
   for (int i = 0; i < fxGroupCount; i++) {
     // Show group if it's non-instrument (InstrumentType::none) or matches current instrument type
-    if ((fxGroups[i].instType == InstrumentType::none || fxGroups[i].instType == instType) &&
+    if (groupApplies(fxGroups[i], instType) &&
         visibleFXCount(&fxGroups[i]) > 0) {
       count++;
     }
@@ -479,7 +519,7 @@ FXGroup* getVisibleGroup(int visibleIdx, InstrumentType instType) {
 
   int visibleCount = 0;
   for (int i = 0; i < fxGroupCount; i++) {
-    if ((fxGroups[i].instType == InstrumentType::none || fxGroups[i].instType == instType) &&
+    if (groupApplies(fxGroups[i], instType) &&
         visibleFXCount(&fxGroups[i]) > 0) {
       if (visibleCount == visibleIdx) {
         return &fxGroups[i];
@@ -497,7 +537,7 @@ int getActualGroupIndex(int visibleIdx, InstrumentType instType) {
 
   int visibleCount = 0;
   for (int i = 0; i < fxGroupCount; i++) {
-    if ((fxGroups[i].instType == InstrumentType::none || fxGroups[i].instType == instType) &&
+    if (groupApplies(fxGroups[i], instType) &&
         visibleFXCount(&fxGroups[i]) > 0) {
       if (visibleCount == visibleIdx) {
         return i;

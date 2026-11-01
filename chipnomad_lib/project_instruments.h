@@ -41,8 +41,31 @@ enum class InstrumentType : uint8_t {
   SoundFont = 28,
   Monk = 29,
   AudioIn = 30,
+  Layer = 31,
   totalCount,
 };
+
+constexpr int INSTRUMENT_LAYER_COUNT = 3;
+
+struct InstrumentLayerEntry {
+  uint8_t instrument; // Project slot, or EMPTY_VALUE_8.
+  uint8_t transpose;  // 0..255 quadratic control, 0x80 is zero cents.
+  uint8_t volume;
+};
+
+struct InstrumentLayer {
+  InstrumentLayerEntry entries[INSTRUMENT_LAYER_COUNT];
+};
+
+inline int instrumentLayerTransposeCents(uint8_t value) {
+  const int delta = (int)value - 128;
+  if (!delta) return 0;
+  const int scale = delta < 0 ? 128 : 127;
+  const int magnitude = delta < 0 ? -delta : delta;
+  int cents = (2400 * magnitude * magnitude + scale * scale / 2) / (scale * scale);
+  if (cents >= 100) cents = ((cents + 50) / 100) * 100;
+  return delta < 0 ? -cents : cents;
+}
 
 enum class InstrumentAudioInputSource : uint8_t {
   external = 0, track1, track2, track3, track4, track5, track6, track7, track8
@@ -284,9 +307,9 @@ struct InstrumentAChChid {
   uint16_t timbre;
   uint16_t color;
   uint8_t saturation;
-  uint16_t cutoff;
   uint8_t sidShape;
   uint16_t sidPulseWidth;
+  uint16_t cutoff;
   uint8_t resonance;
   uint8_t envMod;
   uint16_t decay;
@@ -560,6 +583,7 @@ union InstrumentChipData {
   InstrumentSintered sintered;
   InstrumentMidi midi;
   InstrumentVoicePostSettings audioIn;
+  InstrumentLayer layer;
 };
 
 // A project has a pool of three-band EQs, and an instrument can use one of
@@ -606,8 +630,8 @@ struct InstrumentFunctions {
 
 // This is metadata, not an audio abstraction: renderers keep their typed
 // paths while screens, validation and motion routing share this one catalogue.
-enum class InstrumentCategory : uint8_t { none, chip, sample, synth, drums, external, fm };
-enum class InstrumentScreenKind : uint8_t { none, ay1, ay2, aySample, braids, sample, scwf, byowtbl, plaits, achchid, drumSynth, mme, sintered, midi, opll, opl, simpleChip, dx7, soundfont, monk, audioIn };
+enum class InstrumentCategory : uint8_t { none, chip, sample, synth, drums, utility, fm };
+enum class InstrumentScreenKind : uint8_t { none, ay1, ay2, aySample, braids, sample, scwf, byowtbl, plaits, achchid, drumSynth, mme, sintered, midi, opll, opl, simpleChip, dx7, soundfont, monk, audioIn, layer };
 enum class InstrumentMotionValue : uint8_t { raw, speed, cutoff };
 
 static constexpr FXId instrumentNoFX = FX_ID_EMPTY;
@@ -663,6 +687,7 @@ int instrumentCCDestinationValue(const Instrument* instrument, int destination, 
 int instrumentSetCCDestination(Instrument* instrument, int destination, uint8_t cc);
 int instrumentFXAvailable(InstrumentType type, FXId fx);
 int instrumentFXAvailableForInstrument(const Instrument* instrument, FXId fx);
+int instrumentFXAvailableInProject(const Project* project, uint8_t instrument, FXId fx);
 int instrumentModDestinationAvailable(const Instrument* instrument, int destination);
 int drumSynthMacroUsed(DrumSynthEngine engine, int macro);
 InstrumentVoicePostSettings* instrumentVoicePostSettings(Instrument* instrument);

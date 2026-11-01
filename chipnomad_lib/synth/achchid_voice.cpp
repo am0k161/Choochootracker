@@ -28,7 +28,7 @@ void AChChidVoice::init(float sampleRate) {
   sidShape_ = sidPulseWidth_ = -1;
   cutoff_ = resonance_ = envMod_ = decay_ = accent_ = -1;
 }
-void AChChidVoice::configure(uint8_t wave, int8_t fine, uint8_t model, uint16_t timbre, uint16_t color, uint8_t saturation,
+void AChChidVoice::configure(uint8_t wave, int16_t fine, uint8_t model, uint16_t timbre, uint16_t color, uint8_t saturation,
                               uint8_t sidShape, uint16_t sidPulseWidth,
                               uint16_t cutoff, uint8_t resonance, uint8_t envMod, uint16_t decay,
                               uint8_t accent, float gain) {
@@ -67,7 +67,8 @@ void AChChidVoice::noteOn(int note, bool accent, bool slide, uint8_t slideValue)
   synth_.setSlideTime(5.0 * (60.0 + slideValue * 4.0));
   // Align Braids' pitch table with Open303 at the host rate.
   pitch_ = (note + 12) * 128 + fine_ * 128 / 100 + braidsPitchOffset_;
-  sidPitchTarget_ = 440.0 * exp2((note + 12 - 69) / 12.0);
+  synth_.setTuning(440.0 * exp2(fine_ / 1200.0));
+  sidPitchTarget_ = 440.0 * exp2((note + 12 + fine_ / 100.0 - 69) / 12.0);
   sidPitchSlew_.setTimeConstant(60.0 + slideValue * 4.0);
   if (!slide || !active_) sidPitchSlew_.setState(sidPitchTarget_);
   sid_.noteOn(slide && active_);

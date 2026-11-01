@@ -166,6 +166,7 @@ static const SelectionItem modulation[] = {
 static const SelectionItem spatial[] = {
   {"Rotary", insertRotary, nullptr, 0, nullptr},
   {"Doubler", insertDoubler, nullptr, 0, nullptr},
+  {"Stereo Width", insertStereoWidth, nullptr, 0, nullptr},
 };
 static const SelectionItem texture[] = {
   {"Beads", insertBeads, nullptr, 0, nullptr},

@@ -243,6 +243,9 @@ enum FX : FXId {
   // Sample loop start (relative). Appended to preserve project FX IDs.
   fxLST, // Sample FX: loop start offset (relative)
 
+  // Layer lane tuning and level. Appended to preserve project FX IDs.
+  fxL1C, fxL1V, fxL2C, fxL2V, fxL3C, fxL3V,
+
   // Total count - must be last
   fxTotalCount
 };

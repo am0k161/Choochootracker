@@ -417,6 +417,17 @@ static int initMidiInstrument(Instrument* instrument) {
 }
 static int freeMidiInstrument(Instrument* instrument) { freeCommon(instrument); return 0; }
 
+static int initLayerInstrument(Instrument* instrument) {
+  initCommon(instrument);
+  instrument->type = InstrumentType::Layer;
+  for (auto& entry : instrument->chip.layer.entries) {
+    entry.instrument = EMPTY_VALUE_8;
+    entry.transpose = 0x80;
+    entry.volume = 0x80;
+  }
+  return 0;
+}
+
 // The one source of truth for family metadata.  Values are accessed through
 // typed code below; no union member is addressed by an offset.
 #define D(n, f, r, v) {n, (FXId)(f), r, v}
@@ -425,7 +436,18 @@ static const InstrumentModDestination destAudioIn[] = {N,
   D("Volume", instrumentNoFX, 255, InstrumentMotionValue::raw),
   D("Cutoff", fxSCF, 255, InstrumentMotionValue::cutoff),
   D("Reso", fxSRS, 255, InstrumentMotionValue::raw)};
+static const InstrumentModDestination destLayer[] = {N,
+  D("Volume", instrumentNoFX, 255, InstrumentMotionValue::raw),
+  D("L1 Cents", instrumentNoFX, 2400, InstrumentMotionValue::raw),
+  D("L1 Vol", instrumentNoFX, 255, InstrumentMotionValue::raw),
+  D("L2 Cents", instrumentNoFX, 2400, InstrumentMotionValue::raw),
+  D("L2 Vol", instrumentNoFX, 255, InstrumentMotionValue::raw),
+  D("L3 Cents", instrumentNoFX, 2400, InstrumentMotionValue::raw),
+  D("L3 Vol", instrumentNoFX, 255, InstrumentMotionValue::raw)};
 static const InstrumentFX fxAudioIn[] = {{fxSCF, "SCF"}, {fxSRS, "SRS"}};
+static const InstrumentFX fxLayer[] = {
+  {fxL1C, "L1C"}, {fxL1V, "L1V"}, {fxL2C, "L2C"},
+  {fxL2V, "L2V"}, {fxL3C, "L3C"}, {fxL3V, "L3V"}};
 static const InstrumentModDestination destNone[] = {N};
 static const InstrumentModDestination destAY1[] = {N, D("Volume", instrumentNoFX, 255, InstrumentMotionValue::raw), D("Pitch", instrumentNoFX, 0, InstrumentMotionValue::raw), D("Noise", instrumentNoFX, 0, InstrumentMotionValue::raw), D("EnvPrd", instrumentNoFX, 0, InstrumentMotionValue::raw)};
 static const InstrumentModDestination destAY2[] = {N, D("Volume", instrumentNoFX,255,InstrumentMotionValue::raw), D("Pitch",instrumentNoFX,0,InstrumentMotionValue::raw), D("TonePit",instrumentNoFX,0,InstrumentMotionValue::raw), D("Noise",instrumentNoFX,0,InstrumentMotionValue::raw), D("EnvPit",instrumentNoFX,0,InstrumentMotionValue::raw), D("SoftPit",instrumentNoFX,0,InstrumentMotionValue::raw), D("FMDepth",instrumentNoFX,0,InstrumentMotionValue::raw), D("PulseW",instrumentNoFX,0,InstrumentMotionValue::raw), D("PulseL",instrumentNoFX,0,InstrumentMotionValue::raw), D("WavIdx",instrumentNoFX,0,InstrumentMotionValue::raw)};
@@ -480,7 +502,7 @@ static const InstrumentDefinition instrumentDefinitions[] = {
   // Keep the retired PD slots so existing MIDI instruments retain their on-disk type ID.
   {"Retired",InstrumentCategory::none,InstrumentScreenKind::none,destNone,COUNT(destNone),NULL,0,{0,modNameNone,initNoneInstrument,freeNoneInstrument,0,0}},
   {"Retired",InstrumentCategory::none,InstrumentScreenKind::none,destNone,COUNT(destNone),NULL,0,{0,modNameNone,initNoneInstrument,freeNoneInstrument,0,0}},
-  {"MIDI Out",InstrumentCategory::external,InstrumentScreenKind::midi,destMidi,COUNT(destMidi),fxMidi,COUNT(fxMidi),{0,modNameMidi,initMidiInstrument,freeMidiInstrument,0,0}},
+  {"MIDI Out",InstrumentCategory::utility,InstrumentScreenKind::midi,destMidi,COUNT(destMidi),fxMidi,COUNT(fxMidi),{0,modNameMidi,initMidiInstrument,freeMidiInstrument,0,0}},
   {"OPLL / MSX",InstrumentCategory::fm,InstrumentScreenKind::opl,destOPLL,COUNT(destOPLL),NULL,0,{2,modNameOPLL,initOPLLInstrument,freeNoneInstrument,1,0}},
   {"VRC7",InstrumentCategory::fm,InstrumentScreenKind::opl,destOPLL,COUNT(destOPLL),NULL,0,{2,modNameOPLL,initVRC7Instrument,freeNoneInstrument,1,0}},
   {"AdLib / OPL2",InstrumentCategory::fm,InstrumentScreenKind::opl,destOPLL,COUNT(destOPLL),NULL,0,{2,modNameOPLL,initOPL2Instrument,freeNoneInstrument,1,0}},
@@ -494,7 +516,8 @@ static const InstrumentDefinition instrumentDefinitions[] = {
   {"SID",InstrumentCategory::chip,InstrumentScreenKind::opl,destOPLL,COUNT(destOPLL),NULL,0,{2,modNameOPLL,initSIDInstrument,freeNoneInstrument,0,0}},
   {"SOUNDFONT",InstrumentCategory::sample,InstrumentScreenKind::soundfont,destOPLL,COUNT(destOPLL),fxSoundFont,COUNT(fxSoundFont),{2,modNameOPLL,initSoundFontInstrument,freeNoneInstrument,0,0}},
   {"MonkSynth",InstrumentCategory::synth,InstrumentScreenKind::monk,destMonk,COUNT(destMonk),fxMonk,COUNT(fxMonk),{8,modNameMonk,initMonkInstrument,freeNoneInstrument,1,0}},
-  {"Audio in",InstrumentCategory::external,InstrumentScreenKind::audioIn,destAudioIn,COUNT(destAudioIn),fxAudioIn,COUNT(fxAudioIn),{3,modNameAudioIn,initAudioInInstrument,freeNoneInstrument,1,0}},
+  {"Audio in",InstrumentCategory::utility,InstrumentScreenKind::audioIn,destAudioIn,COUNT(destAudioIn),fxAudioIn,COUNT(fxAudioIn),{3,modNameAudioIn,initAudioInInstrument,freeNoneInstrument,1,0}},
+  {"Layer",InstrumentCategory::utility,InstrumentScreenKind::layer,destLayer,COUNT(destLayer),fxLayer,COUNT(fxLayer),{7,modNameNone,initLayerInstrument,freeNoneInstrument,0,0}},
 };
 #undef COUNT
 
@@ -549,6 +572,21 @@ int instrumentFXAvailableForInstrument(const Instrument* instrument, FXId fx) {
   int macro = fx == fxDDC ? 0 : fx == fxDTO ? 1 : fx == fxDSW ? 2 :
     fx == fxDNO ? 3 : fx == fxDFM ? 4 : fx == fxDDR ? 5 : -1;
   return macro < 0 || drumSynthMacroUsed(instrument->chip.drumSynth.engine, macro);
+}
+
+int instrumentFXAvailableInProject(const Project* project, uint8_t instrumentIndex, FXId fx) {
+  if (!project || instrumentIndex >= PROJECT_MAX_INSTRUMENTS) return 0;
+  const Instrument& instrument = project->instruments[instrumentIndex];
+  if (instrument.type != InstrumentType::Layer)
+    return instrumentFXAvailableForInstrument(&instrument, fx);
+  if (instrumentFXAvailableForInstrument(&instrument, fx)) return 1;
+  for (const auto& entry : instrument.chip.layer.entries) {
+    if (entry.instrument >= PROJECT_MAX_INSTRUMENTS) continue;
+    const Instrument& child = project->instruments[entry.instrument];
+    if (child.type != InstrumentType::none && child.type != InstrumentType::Layer &&
+        instrumentFXAvailableForInstrument(&child, fx)) return 1;
+  }
+  return 0;
 }
 
 int instrumentModDestinationAvailable(const Instrument* instrument, int destination) {
@@ -654,6 +692,7 @@ static int ccSigned(uint8_t value) {
 
 int instrumentCCDestinationAvailable(const Instrument* instrument, int destination) {
   if (!instrument || destination == midiCCDestinationNone) return 0;
+  if (instrument->type == InstrumentType::Layer && destination >= 2 && destination <= 7) return 0;
   if (destination >= midiCCDestinationAttack && destination <= midiCCDestinationRelease)
     return instrumentVoicePostSettings(const_cast<Instrument*>(instrument)) != NULL;
   if (destination == 1) return 1; // Volume is shared by every instrument.

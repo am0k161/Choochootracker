@@ -574,7 +574,7 @@ An `F` in the note volume column triggers an accent. Normal notes use a half-ste
 
 ### Bogie
 
-**Bogie** is a native one-shot drum synthesiser. Tracker notes set pitch and the tracker/instrument volume sets level; each trigger has its own internal decay, so it has no ADSR page. It has 12 models: `Kick`, `Snare`, `Hat`, `Clap`, `Tom`, `Rim`, `FM`, `Noise`, `Cowbell`, `Cymbal`, `Shaker` and `Clave`.
+**Bogie** is a native one-shot drum synthesiser. Tracker notes set pitch and the tracker/instrument volume sets level; each trigger has its own internal decay, so it has no ADSR page. Its model picker groups the 12 models by sound: **Body / Tonal** (`Kick`, `Tom`, `FM`, `Clave`), **Noise / Snap** (`Snare`, `Clap`, `Noise`, `Shaker`) and **Metal / Bright** (`Hat`, `Rim`, `Cowbell`, `Cymbal`).
 
 Its six macros are **Decay**, **Tone**, **Sweep**, **Noise**, **FM** and **Drive**. Their labels adapt where useful (for example, Kick's Noise is `Click`, and Cowbell's FM is metallic cross-modulation). Every macro is active on every model, but its musical role changes with the model: Sweep can alter pitch, burst spacing or metallic spread; FM can add cross-modulation, a metallic layer or a ring-like overtone. The lower half of each range is intended for conventional drum sounds; the upper half deliberately opens wider timbral morphs and more synthetic results.
 
@@ -584,9 +584,9 @@ On the Modulation screen, press **EDIT** on a source to choose a family (Envelop
 
 ### Sintered
 
-**Sintered** is a native one-shot digital percussion synth. Notes set its fundamental pitch; its six models are `Knot`, `Shard`, `Burst`, `Comb`, `Logic` and `Melt`. Every model has **Decay**, **Mod** and **Motion**, plus three model-specific controls: Knot uses Ratio/Spread/Fold, Shard Ratio/Feedback/Bite, Burst Noise/Color/Feedback, Comb Time/Damping/Regen, Logic Rate/Pattern/Crush and Melt Ratio/Chaos/Drive. **Mod** is always the internal coupling depth.
+**Sintered** is a native one-shot digital percussion synth. Notes set its fundamental pitch; its seven models are `Knot`, `Shard`, `Burst`, `Comb`, `Logic`, `Melt` and `Squall`. Every model has **Decay** and **Motion**, plus model-specific controls: Knot uses Mod/Ratio/Spread/Fold, Shard Mod/Ratio/Feedback/Bite, Burst Mod/Noise/Color/Feedback, Comb Mod/Time/Damping/Regen, Logic Mod/Rate/Pattern/Crush, Melt Mod/Ratio/Chaos/Drive and Squall FM/Detune/Voices/Clip.
 
-Motion is an internal macro envelope, not pitch glide: values below `80` use an AD shape, `80` disables it, and values above `80` use a decay-only shape. Moving farther from the centre makes the envelope faster. Its destinations are fixed per model, so Sintered stays predictable in tracker patterns: Knot animates Mod/Fold; Shard Feedback/Bite; Burst Noise/Color/Feedback; Comb Damping/Regen; Logic Rate/Crush; Melt Chaos/Drive. All models reset their state on a note trigger and bound internal feedback for repeatable hits.
+Motion is an internal macro envelope, not pitch glide: values below `80` use an AD shape, `80` disables it, and values above `80` use a decay-only shape. Moving farther from the centre makes the sweep deeper and longer. Its destinations are fixed per model, so Sintered stays predictable in tracker patterns: Knot animates Mod/Fold; Shard Feedback/Bite; Burst Noise/Color/Feedback; Comb Damping/Regen; Logic Rate/Crush; Melt Chaos/Drive; Squall FM. All models reset their state on a note trigger and bound internal feedback for repeatable hits.
 
 ### MonkSynth
 
@@ -623,13 +623,25 @@ MME uses the shared LP/BP/HP multimode filter and ADSR. All six macros, Cutoff a
 
 ### Audio in
 
-Choose **External > Audio in** to process a live stereo input on a track. On **SOURCE**, choose **External** or one of the eight internal tracks. An internal source taps that track after its inserts and reroutes it to Audio in, so the source is no longer sent directly to the mixer. The resulting sound follows Audio in's notes, filter and envelope, then the destination track's inserts and mixer settings. Select **Device > [Open]** to enable hardware input, open its settings and arm an external source; **Back** returns to the instrument. You can also reach these settings through **Settings > Audio > Input devices**. Then enter notes in a phrase using this instrument. Any note opens the ADSR; note-off starts its release. The note pitch does not transpose the incoming audio. Without a note, the input stays silent on this track.
+Choose **Utility > Audio in** to process a live stereo input on a track. On **SOURCE**, choose **External** or one of the eight internal tracks. An internal source taps that track after its inserts and reroutes it to Audio in, so the source is no longer sent directly to the mixer. The resulting sound follows Audio in's notes, filter and envelope, then the destination track's inserts and mixer settings. Select **Device > [Open]** to enable hardware input, open its settings and arm an external source; **Back** returns to the instrument. You can also reach these settings through **Settings > Audio > Input devices**. Then enter notes in a phrase using this instrument. Any note opens the ADSR; note-off starts its release. The note pitch does not transpose the incoming audio. Without a note, the input stays silent on this track.
 
 The **Input level** meter shows the selected source before Audio in's envelope and filter, including while no note is playing. For an internal source, this includes the source track's inserts. The track waveform shows Audio in's signal during playback.
 
 The stereo input passes through the instrument's **FILTER** and **ADSR**, then the track's inserts, volume, pan and effect sends. The filter and envelope controls work like those on the Sampler. Leave the Sampler's dry input **MON** off if you only want to hear the processed signal.
 
 The Sampler can record an input while Audio in processes it. Select the Audio in track as the Sampler's track source to record its processed output, including its track inserts. Offline song export has no live input: record or bounce the performance into a sample first. Audio in uses the active capture device, shared by the armed inputs.
+
+### Layer
+
+Choose **Utility > Layer** to play as many as three other instrument slots from one tracker note. Each `L1`-`L3` row selects an instrument, adds a per-layer transpose and sets its level. Empty rows stay silent. A Layer cannot select another Layer.
+
+The transpose control is finest around `0` cents. From `-100` or `+100` cents onward it locks to exact semitones, up to `-2400` or `+2400`. Audio in ignores transpose; MIDI Out rounds it to the nearest semitone. Each child keeps its own volume, pan, EQ and modulation. Its Layer level is applied next, then the Layer instrument's volume, pan and EQ process the combined sound. Instrument FX on the Layer's tracker row affect every selected child that supports that FX; track FX and inserts process the combined result once.
+
+The Layer modulation page offers `L1 Cents`/`L1 Vol` through `L3 Cents`/`L3 Vol`, so each child's tuning and level can move independently. `Volume` controls the whole Layer. When you open a referenced child's instrument page while the Layer plays, its scope and live control bars follow that child.
+
+Lane FX `L1C`/`L1V` through `L3C`/`L3V` automate the same per-child controls from a phrase or table. A cents value of `00` is -2400 cents, `80` is neutral and `FF` is +2400 cents; volume uses the normal `00`-`FF` range. Modulation is applied after these Lane FX, so both can shape the same line.
+
+Layer presets store instrument slot numbers, not copies of the selected instruments. After loading a Layer `.cni` into another project, put the intended instruments in those same slots or reselect them. Audio in children may use internal tracks; routing loops retain the normal one-audio-block delay and can feed back, so lower the involved levels before trying them.
 
 ### MIDI Out
 
@@ -1425,7 +1437,7 @@ For Aggro instruments, set Resonance to zero when you do not need a resonant pea
 
 The CPU display is a smoothed measure of audio rendering time. It does not measure delays before the audio callback runs or in the device's audio output, so crackles can occur even with a low reading.
 
-On Android, audio output now prefers AAudio to avoid intermittent crackling observed with OpenSL ES on the Pixel 7a. This buffered output prioritises stable playback and can add some response latency. The tracker canvas keeps its full 4:3 layout on square and other unusual screen ratios; unused space is shown as borders rather than cropping columns. If crackling persists, report the song, phone model, Android version and whether you are using the speaker, headphones or Bluetooth.
+On Android, audio continues when you switch to another app. Android can still stop the process during a long background session or when conserving battery. Audio output prefers AAudio to avoid intermittent crackling observed with OpenSL ES on the Pixel 7a. This buffered output prioritises stable playback and can add some response latency. The tracker canvas keeps its full 4:3 layout on square and other unusual screen ratios; unused space is shown as borders rather than cropping columns. If crackling persists, report the song, phone model, Android version and whether you are using the speaker, headphones or Bluetooth.
 
 If you run into pops, crashes or slowdowns, use **Settings > Support report** and attach the generated `support-report.txt` to the bug report. If a specific song triggers the problem, attach that `.cct` too.
 
@@ -1472,6 +1484,7 @@ the current screen.
 | Work Compressor | Threshold, Attack, Release, Makeup, Ratio, Detector source, Detector filter, Mix |
 | Airwindows Distortion | Input, Mode, Output, Mix |
 | Airwindows StereoDoubler | Detune, Mix |
+| Stereo Width | Width, Space, Side HPF, Side Low, Side Mid frequency, Side Mid, Side High, Mix |
 | TAPESCAM | Input, Drive, Color, Wobble, Tone, Output |
 | OTT (Rui-727) | Depth, Time, Upward, Downward, Input, Output |
 | Chorus | Rate, Depth, Tone, Mix |
@@ -1491,6 +1504,15 @@ controls have an exact neutral at 80. Distortion modes are 00 Density, 01 Drive,
 low-pass, above is high-pass. A track source is taken after its volume, pan and
 Tilt EQ but before its inserts; a muted or absent source supplies silence. Either
 slot can contain any module; repeated modules are independent.
+Stereo Width shapes the sides without moving the centre. Width `00` folds the
+signal to mono, `80` leaves its existing width unchanged and `FF` reaches 200%.
+Space adds width to mono sounds; its generated bass stays centred. New Stereo
+Width inserts start with Width, Space and Mix at `FF`. Side HPF can
+remove more low end from the sides. Side Low and Side High are shelves fixed at
+250 Hz and 6 kHz; Side Mid frequency chooses the bell controlled by Side Mid.
+Mix blends the result with the original signal. Side content cancels when
+summed to mono, but strong boosts or
+large widths can raise stereo peaks, so lower the track or master if needed.
 Chorus, Flanger, Phaser and Rotary use gentle modulation defaults. Rotary Speed
 uses the full **00-FF** range: **00 = 0.01 Hz** (one rotation per 100 seconds),
 **FF = 25 Hz** (the former Chaos maximum). Exponential spacing gives finer

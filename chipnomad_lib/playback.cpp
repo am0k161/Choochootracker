@@ -113,6 +113,7 @@ static void resetTrack(PlaybackState* state, int trackIdx) {
   track->note.noteKilled = 0;
   track->note.accent = 0;
   track->note.volume1 = 0;
+  track->note.layerGainActive = 0;
   track->note.volume2 = 0;
   track->note.volume3 = 0;
   track->chordVoiceCount = 1;
@@ -1038,9 +1039,7 @@ static int16_t sequenceSourceOutput(const PlaybackState* state, PlaybackTrackSta
   return (int16_t)clampInt(raw * amount / 127, -32385, 32385);
 }
 
-static void processModulations(PlaybackState* state, int trackIdx) {
-  PlaybackTrackState* track = &state->tracks[trackIdx];
-
+static void processModulationsForTrack(PlaybackState* state, PlaybackTrackState* track) {
   if (track->note.instrument == EMPTY_VALUE_8) return;
 
   InstrumentType type = state->p->instruments[track->note.instrument].type;
@@ -1094,6 +1093,10 @@ static void processModulations(PlaybackState* state, int trackIdx) {
     }
     mod->outValue = sequenceSourceOutput(state, track, mod);
   }
+}
+
+static void processModulations(PlaybackState* state, int trackIdx) {
+  processModulationsForTrack(state, &state->tracks[trackIdx]);
 }
 
 static void handleInstrument(PlaybackState* state, int trackIdx) {
@@ -1191,6 +1194,128 @@ static void nextFrame(PlaybackState* state, int trackIdx, int chipIdx) {
       int chordPitch = pitch + (int)track->chordPitchBase[i] - (int)track->note.pitchBase;
       track->chordPitchFinal[i] = clampInt16(chordPitch, 0, p->pitchTable.length - 1);
     }
+  }
+}
+
+static void syncLayerTracks(PlaybackState* state, int trackIdx) {
+  PlaybackTrackState& parent = state->tracks[trackIdx];
+  const Instrument* layer = parent.note.instrument < PROJECT_MAX_INSTRUMENTS
+    ? &state->p->instruments[parent.note.instrument] : nullptr;
+  int layerVolume = layer ? layer->volume : 0;
+  for (const auto& mod : parent.note.modulation) {
+    if (!mod.modulation || mod.modulation->destination != 1) continue;
+    int value = playbackModScaleToRange(mod.outValue, 255);
+    layerVolume = modulationIsAdditive(mod.modulation->type) ? layerVolume + value : value;
+  }
+  layerVolume = clampInt(layerVolume, 0, 255);
+  for (int lane = 0; lane < INSTRUMENT_LAYER_COUNT; ++lane) {
+    PlaybackTrackState& child = state->layerTracks[trackIdx][lane];
+    const uint8_t oldInstrument = child.note.instrument;
+    const PlaybackChipNoteState oldChip = child.note.chip;
+    const NativeFMValues oldNativeFM = child.note.nativeFM;
+    const NativeFMValues oldNativeFMCurrent = child.note.nativeFMCurrent;
+    const NativeFMValues oldNativeFMRemaining = child.note.nativeFMRemaining;
+    int16_t oldSlewCurrent[fxTotalCount], oldSlewTarget[fxTotalCount];
+    uint8_t oldSlewRemaining[fxTotalCount];
+    memcpy(oldSlewCurrent, child.slewCurrent, sizeof(oldSlewCurrent));
+    memcpy(oldSlewTarget, child.slewTarget, sizeof(oldSlewTarget));
+    memcpy(oldSlewRemaining, child.slewRemaining, sizeof(oldSlewRemaining));
+    PlaybackFXState oldFX[fxTotalCount];
+    memcpy(oldFX, child.note.fx, sizeof(oldFX));
+    PlaybackModState modulations[4];
+    memcpy(modulations, child.note.modulation, sizeof(modulations));
+    child = parent;
+    memcpy(child.note.modulation, modulations, sizeof(modulations));
+
+    int cents = 0, volume = 0;
+    if (layer && layer->type == InstrumentType::Layer) {
+      const int centsFX = fxL1C + lane * 2, volumeFX = fxL1V + lane * 2;
+      const uint8_t transpose = parent.note.fx[centsFX].isOn
+        ? parent.note.fx[centsFX].fxValue : layer->chip.layer.entries[lane].transpose;
+      cents = instrumentLayerTransposeCents(transpose);
+      volume = parent.note.fx[volumeFX].isOn
+        ? parent.note.fx[volumeFX].fxValue : layer->chip.layer.entries[lane].volume;
+      for (const auto& mod : parent.note.modulation) {
+        if (!mod.modulation) continue;
+        if (mod.modulation->destination == 2 + lane * 2)
+          cents += playbackModScaleToRange(mod.outValue, 2400);
+        else if (mod.modulation->destination == 3 + lane * 2) {
+          int value = playbackModScaleToRange(mod.outValue, 255);
+          volume = modulationIsAdditive(mod.modulation->type) ? volume + value : value;
+        }
+      }
+    }
+    cents = clampInt(cents, -2400, 2400);
+    volume = clampInt(volume, 0, 255);
+    parent.liveControls[liveSource1 + lane * 2] = (uint8_t)(((cents + 2400) * 255 + 2400) / 4800);
+    parent.liveControls[liveSource2 + lane * 2] = (uint8_t)volume;
+
+    uint8_t slot = layer && layer->type == InstrumentType::Layer
+      ? layer->chip.layer.entries[lane].instrument : EMPTY_VALUE_8;
+    if (slot >= PROJECT_MAX_INSTRUMENTS || state->p->instruments[slot].type == InstrumentType::none ||
+        state->p->instruments[slot].type == InstrumentType::Layer) {
+      child.note.instrument = EMPTY_VALUE_8;
+      child.note.noteTriggered = child.note.noteReleased = 0;
+      child.note.noteKilled = oldInstrument != EMPTY_VALUE_8;
+      memset(child.note.modulation, 0, sizeof(child.note.modulation));
+      continue;
+    }
+
+    child.note.instrument = slot;
+    if (oldInstrument == slot) {
+      child.note.chip = oldChip;
+      child.note.nativeFM = oldNativeFM;
+      child.note.nativeFMCurrent = oldNativeFMCurrent;
+      child.note.nativeFMRemaining = oldNativeFMRemaining;
+      memcpy(child.slewCurrent, oldSlewCurrent, sizeof(oldSlewCurrent));
+      memcpy(child.slewTarget, oldSlewTarget, sizeof(oldSlewTarget));
+      memcpy(child.slewRemaining, oldSlewRemaining, sizeof(oldSlewRemaining));
+      for (int fx = 0; fx < fxTotalCount; ++fx) {
+        if (child.note.fx[fx].isOn && oldFX[fx].isOn &&
+            child.note.fx[fx].fxValue == oldFX[fx].fxValue) {
+          const uint8_t value = child.note.fx[fx].fxValue;
+          child.note.fx[fx] = oldFX[fx];
+          child.note.fx[fx].fxValue = value;
+        }
+      }
+    }
+    child.note.fineOffset += cents;
+    child.note.volume1 = (uint8_t)((volume * layerVolume + 127) / 255);
+    child.note.layerGainActive = 1;
+    if (oldInstrument != slot || child.note.noteTriggered) {
+      for (int m = 0; m < 4; ++m) {
+        playbackModInit(&child.note.modulation[m], &state->p->instruments[slot].modulation[m]);
+        playbackModSetAYWavetables(&child.note.modulation[m], state->p->ayWavetables);
+      }
+    }
+    if (child.note.noteReleased || child.note.noteKilled)
+      for (auto& modulation : child.note.modulation) playbackModNoteOff(&modulation);
+
+    // Engine FX are initialized and advanced against the referenced child,
+    // while generic/track FX have already been applied once to the Layer.
+    PlaybackTrackState parentTrack = state->tracks[trackIdx];
+    state->tracks[trackIdx] = child;
+    if (oldInstrument != slot) setupInstrument(state, trackIdx);
+    InstrumentType childType = state->p->instruments[slot].type;
+    if (childType == InstrumentType::AY1 || childType == InstrumentType::AY2 ||
+        childType == InstrumentType::AYSample) resetOffsetsAY(state, trackIdx);
+    for (int fx = 0; fx < fxTotalCount; ++fx) {
+      if (!child.note.fx[fx].isOn ||
+          !instrumentFXAvailableForInstrument(&state->p->instruments[slot], fx)) continue;
+      if (oldInstrument != slot || !oldFX[fx].isOn || oldFX[fx].fxValue != child.note.fx[fx].fxValue) {
+        const FXCell cell = {(FXId)fx, child.note.fx[fx].fxValue};
+        initFX(state, trackIdx, &cell, nullptr, -1);
+      }
+      if (fxHandlers[fx].handle) {
+        fxHandlers[fx].handle(state, &state->tracks[trackIdx], trackIdx, trackIdx,
+                              &state->tracks[trackIdx].note.fx[fx]);
+        state->tracks[trackIdx].note.fx[fx].counter++;
+      }
+    }
+    processModulationsForTrack(state, &state->tracks[trackIdx]);
+    handleInstrument(state, trackIdx);
+    child = state->tracks[trackIdx];
+    state->tracks[trackIdx] = parentTrack;
   }
 }
 
@@ -1440,6 +1565,8 @@ void playbackInit(PlaybackState* state, Project* project) {
   initAYSampleTables();
 
   for (int c = 0; c < PROJECT_MAX_TRACKS; c++) {
+    memset(state->layerTracks[c], 0, sizeof(state->layerTracks[c]));
+    for (auto& layer : state->layerTracks[c]) layer.note.instrument = EMPTY_VALUE_8;
     memset(&state->tracks[c].inserts, 0, sizeof(InsertAutomation));
     state->tracks[c].insertReset = 0;
     state->tracks[c].liveInstrument = EMPTY_VALUE_8;
@@ -1754,6 +1881,7 @@ int playbackNextFrame(ChipNomadState* chipNomadState) {
     }
 
     nextFrame(state, trackIdx, chipIdx);
+    syncLayerTracks(state, trackIdx);
 
     // Check if the track is still playing something
     if (track->songRow == EMPTY_VALUE_16) {
@@ -1766,6 +1894,27 @@ int playbackNextFrame(ChipNomadState* chipNomadState) {
   // Output registers for all chips
   for (int chipIdx = 0; chipIdx < p->chipsCount; chipIdx++) {
     outputRegistersAY(chipNomadState, chipIdx * projectGetChipTracks(p, chipIdx), chipIdx);
+  }
+  for (int trackIdx = 0; trackIdx < p->tracksCount; ++trackIdx) {
+    for (int lane = 0; lane < INSTRUMENT_LAYER_COUNT; ++lane) {
+      const int owner = PROJECT_MAX_TRACKS + trackIdx * INSTRUMENT_LAYER_COUNT + lane;
+      PlaybackTrackState& child = state->layerTracks[trackIdx][lane];
+      if (!chipNomadState->layerAYChips[owner] || child.note.instrument >= PROJECT_MAX_INSTRUMENTS) continue;
+      InstrumentType type = p->instruments[child.note.instrument].type;
+      if (type != InstrumentType::AY1 && type != InstrumentType::AY2 && type != InstrumentType::AYSample) continue;
+      PlaybackTrackState parent = state->tracks[trackIdx];
+      PlaybackChipState parentChip = state->chips[trackIdx];
+      SoundChip* physicalChip = chipNomadState->chips[trackIdx];
+      state->tracks[trackIdx] = child;
+      state->chips[trackIdx] = state->layerChips[owner];
+      chipNomadState->chips[trackIdx] = chipNomadState->layerAYChips[owner];
+      outputRegistersAY(chipNomadState, trackIdx, trackIdx);
+      child = state->tracks[trackIdx];
+      state->layerChips[owner] = state->chips[trackIdx];
+      state->tracks[trackIdx] = parent;
+      state->chips[trackIdx] = parentChip;
+      chipNomadState->chips[trackIdx] = physicalChip;
+    }
   }
 
   return !hasActiveTracks;

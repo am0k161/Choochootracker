@@ -158,6 +158,19 @@ int main() {
   require(chipnomadQueueProjectRefresh(state), "final removal");
   settle(state);
   require(liveBeads == 0, "concurrent edits leaked instances");
+
+  // Layer lane pools and DSP state are prepared by init, never by render.
+  getInstrumentFunctions(InstrumentType::Layer).init(&state->project.instruments[0]);
+  getInstrumentFunctions(InstrumentType::Sintered).init(&state->project.instruments[1]);
+  state->project.instruments[0].chip.layer.entries[0].instrument = 1;
+  chipnomadInitChips(state, 48000, nullptr);
+  require(chipnomadReserveRenderBuffers(state, 1024) == 0, "Layer callback buffers");
+  require(chipnomadQueuePlaybackPreviewNote(state, 0, 48, 0), "Layer preview");
+  const int layerAllocations = audioAllocations.load(), layerFrees = audioFrees.load();
+  settle(state);
+  require(audioAllocations == layerAllocations && audioFrees == layerFrees,
+          "Layer render allocated or freed heap storage");
+
   // Destroy with both audio-owned and unconsumed snapshot leases.
   insertSelect(&state->project.masterInserts[0], insertBeads);
   chipnomadInitChips(state, 48000, nullptr);

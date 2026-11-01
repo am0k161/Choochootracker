@@ -64,6 +64,25 @@ TEST_CASE("aChChid repeated configuration is bit-identical") {
   }
 }
 
+TEST_CASE("aChChid applies cents detune to 303, Braids and SID oscillators") {
+  for (uint8_t wave : {uint8_t(0), uint8_t(1), uint8_t(2), uint8_t(3)}) {
+    AChChidVoice normal, detuned;
+    normal.init(48000); detuned.init(48000);
+    normal.configure(wave, 0, 0, 16384, 16384, 0, 2, 2048,
+                     20000, 0, 0, 2000, 0, 1);
+    detuned.configure(wave, -2400, 0, 16384, 16384, 0, 2, 2048,
+                      20000, 0, 0, 2000, 0, 1);
+    normal.noteOn(45, false, false, 0);
+    detuned.noteOn(45, false, false, 0);
+    std::vector<float> a(4096), b(4096);
+    normal.render(a.data(), (int)a.size());
+    detuned.render(b.data(), (int)b.size());
+    float difference = 0;
+    for (size_t i = 512; i < a.size(); ++i) difference += std::fabs(a[i] - b[i]);
+    CHECK(difference > 1.0f);
+  }
+}
+
 TEST_CASE("aChChid Braids Shaper visibly reshapes the oscillator") {
   AChChidVoice clean;
   AChChidVoice asym;

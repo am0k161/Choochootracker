@@ -20,6 +20,7 @@
 #include "synth/instrument_eq.h"
 #include "screen_audio_input.h"
 #include "audio_input_manager.h"
+#include "model_catalog.h"
 #include "monitor_display.h"
 #include <string.h>
 #include <algorithm>
@@ -88,16 +89,17 @@ static SelectionItem instrumentTypeFM[] = {
   {"Arcade / YM2151", (int)InstrumentType::ArcadeFM, NULL, 0},
   {"DX7 FM", (int)InstrumentType::DX7, NULL, 0},
 };
-static SelectionItem instrumentTypeExternal[] = {
+static SelectionItem instrumentTypeUtility[] = {
   {NULL, (int)InstrumentType::Midi, NULL, 0},
   {NULL, (int)InstrumentType::AudioIn, NULL, 0},
+  {NULL, (int)InstrumentType::Layer, NULL, 0},
 };
 static const SelectionItem instrumentTypeCategories[] = {
   {"CHIP", -1, instrumentTypeChip, 7},
   {"DRUMS", -1, instrumentTypeDrums, 2},
   {"SAMPLE", -1, instrumentTypeSample, 4},
   {"SYNTH", -1, instrumentTypeSynth, sizeof(instrumentTypeSynth) / sizeof(instrumentTypeSynth[0])},
-  {"EXTERNAL", -1, instrumentTypeExternal, 2},
+  {"UTILITY", -1, instrumentTypeUtility, 3},
   {"FM", -1, instrumentTypeFM, sizeof(instrumentTypeFM) / sizeof(instrumentTypeFM[0])},
 };
 
@@ -242,6 +244,15 @@ static InstrumentVoicePostSettings* voicePostSettings(Instrument* instrument, In
   return instrumentVoicePostSettings(instrument);
 }
 
+static bool instrumentReferencedByLayer(int slot) {
+  for (const Instrument& instrument : chipnomadState->project.instruments) {
+    if (instrument.type != InstrumentType::Layer) continue;
+    for (const auto& entry : instrument.chip.layer.entries)
+      if (entry.instrument == slot) return true;
+  }
+  return false;
+}
+
 static void setInstrumentType(InstrumentType newType) {
   Instrument* instrument = &chipnomadState->project.instruments[cInstrument];
   InstrumentType oldType = instrument->type;
@@ -250,6 +261,7 @@ static void setInstrumentType(InstrumentType newType) {
     return;
   }
   const bool liveSwitch = chipnomadState->sampleRate > 0 &&
+    !instrumentReferencedByLayer(cInstrument) &&
     chipnomadCanSwitchInstrumentLive(oldType) &&
     chipnomadCanSwitchInstrumentLive(newType);
   if (liveSwitch) audioManager.ensureInstrumentVoices(newType);
@@ -420,6 +432,143 @@ static ScreenData screenInstrumentAudioIn = {
   .onInput = NULL, .onRawInput = NULL, .isCellValid = audioInCellValid, .getLoopRange = NULL,
 };
 
+static int layerColumns(int row) { return row < 3 ? instrumentCommonColumnCount(row) : 3; }
+static int layerCellValid(int col, int row) { return row < 3 || (row < 3 + INSTRUMENT_LAYER_COUNT && col < 3); }
+
+static const char* layerChildLabel(const Instrument& child) {
+  if (child.name[0]) return child.name;
+  if (child.type == InstrumentType::Braids)
+    return modelCatalogName(child.type, child.chip.braids.model);
+  if (child.type == InstrumentType::Plaits || child.type == InstrumentType::PlaitsAlt)
+    return modelCatalogName(child.type, child.chip.plaits.engine);
+  if (child.type == InstrumentType::DrumSynth) {
+    static const char* names[] = {"Bogie/Kick", "Bogie/Snare", "Bogie/Hat", "Bogie/Clap", "Bogie/Tom", "Bogie/Rim", "Bogie/FM", "Bogie/Noise", "Bogie/Cowbell", "Bogie/Cymbal", "Bogie/Shaker", "Bogie/Clave"};
+    int model = (int)child.chip.drumSynth.engine;
+    return names[model >= 0 && model < (int)DrumSynthEngine::totalCount ? model : 0];
+  }
+  if (child.type == InstrumentType::Sintered) {
+    static const char* names[] = {"Sintered/Knot", "Sintered/Shard", "Sintered/Burst", "Sintered/Comb", "Sintered/Logic", "Sintered/Melt", "Sintered/Squall"};
+    int model = (int)child.chip.sintered.model;
+    return names[model >= 0 && model < (int)SinteredModel::totalCount ? model : 0];
+  }
+  if (child.type == InstrumentType::MME) {
+    static const char* names[] = {"MME/Ring", "MME/Fold", "MME/Cross", "MME/VPM", "MME/Sync", "MME/Logic", "MME/Vocode"};
+    int model = (int)child.chip.mme.model;
+    return names[model >= 0 && model < (int)MMEModel::totalCount ? model : 0];
+  }
+  return instrumentTypeName(child.type);
+}
+
+static void layerStatic() {
+  instrumentCommonDrawStatic();
+  gfxSetFgColor(appSettings.colorScheme.textTitles);
+  gfxPrint(0, 7, "L");
+  gfxPrint(3, 7, "IN");
+  gfxPrint(6, 7, "NAME");
+  gfxPrint(16, 7, "CENTS");
+  gfxPrint(27, 7, "VOL");
+}
+
+static void layerCursor(int col, int row) {
+  if (row < 3) return instrumentCommonDrawCursor(col, row);
+  static const int x[] = {3, 16, 27};
+  static const int width[] = {2, 10, 8};
+  gfxCursor(x[col], 8 + row - 3, width[col]);
+}
+
+static void layerField(int col, int row, CellState state) {
+  if (row < 3) return instrumentCommonDrawField(col, row, state);
+  const int lane = row - 3;
+  const auto& entry = chipnomadState->project.instruments[cInstrument].chip.layer.entries[lane];
+  const int y = 8 + lane;
+  gfxSetFgColor(fieldNameColor(state));
+  gfxPrintf(0, y, "L%d", lane + 1);
+  gfxSetFgColor(fieldValueColor(state));
+  if (col == 0) {
+    gfxPrint(3, y, byteToHexOrEmpty(entry.instrument));
+    gfxClearRect(6, y, 9, 1);
+    if (entry.instrument < PROJECT_MAX_INSTRUMENTS) {
+      const Instrument& child = chipnomadState->project.instruments[entry.instrument];
+      if (child.type != InstrumentType::none && child.type != InstrumentType::Layer) {
+        const char* label = layerChildLabel(child);
+        if (!child.name[0] && strlen(label) > 9)
+          if (const char* model = strrchr(label, '/')) label = model + 1;
+        gfxPrintf(6, y, "%-9.9s", label);
+      }
+    }
+  } else if (col == 1) {
+    const int cents = instrumentLayerTransposeCents(entry.transpose);
+    const float setPosition = (cents + 2400) / 4800.0f;
+    const float livePosition = instrumentLivePosition(liveSource1 + lane * 2);
+    gfxPrintf(16, y, "%+5d", cents);
+    fieldDrawBar(21, y, 5, livePosition < 0.0f ? setPosition : livePosition, state, true,
+                 livePosition < 0.0f ? -1.0f : setPosition);
+  } else {
+    const float setPosition = entry.volume / 255.0f;
+    const float livePosition = instrumentLivePosition(liveSource2 + lane * 2);
+    gfxPrint(27, y, byteToHex(entry.volume));
+    fieldDrawBar(29, y, kFieldBarWidth, livePosition < 0.0f ? setPosition : livePosition, state, false,
+                 livePosition < 0.0f ? -1.0f : setPosition);
+  }
+}
+
+static int editLayerSlot(CellEditAction action, uint8_t* slot) {
+  action = convertMultiAction(action);
+  if (action == CellEditAction::clear) { *slot = EMPTY_VALUE_8; return 1; }
+  int direction = action == CellEditAction::increase || action == CellEditAction::increaseBig ? 1 :
+                  action == CellEditAction::decrease || action == CellEditAction::decreaseBig ? -1 : 0;
+  if (!direction) return 0;
+  int value = *slot < PROJECT_MAX_INSTRUMENTS ? *slot : (direction > 0 ? -1 : PROJECT_MAX_INSTRUMENTS);
+  for (int n = 0; n < PROJECT_MAX_INSTRUMENTS; ++n) {
+    value = (value + direction + PROJECT_MAX_INSTRUMENTS) % PROJECT_MAX_INSTRUMENTS;
+    const InstrumentType type = chipnomadState->project.instruments[value].type;
+    if (type != InstrumentType::none && type != InstrumentType::Layer && value != cInstrument) {
+      *slot = (uint8_t)value;
+      return 1;
+    }
+  }
+  *slot = EMPTY_VALUE_8;
+  return 1;
+}
+
+static int editLayerTranspose(CellEditAction action, uint8_t* value) {
+  action = convertMultiAction(action);
+  if (action == CellEditAction::tap) return 1;
+  if (action == CellEditAction::clear) { *value = 0x80; return 1; }
+  int direction = action == CellEditAction::increase || action == CellEditAction::increaseBig ? 1 :
+                  action == CellEditAction::decrease || action == CellEditAction::decreaseBig ? -1 : 0;
+  if (!direction) return 0;
+  int next = std::clamp((int)*value + direction *
+      (action == CellEditAction::increaseBig || action == CellEditAction::decreaseBig ? 16 : 1), 0, 255);
+  const int previousCents = instrumentLayerTransposeCents(*value);
+  while (next > 0 && next < 255 && instrumentLayerTransposeCents((uint8_t)next) == previousCents)
+    next += direction;
+  *value = (uint8_t)next;
+  return 1;
+}
+
+static int layerEdit(int col, int row, CellEditAction action) {
+  if (row < 3) return instrumentCommonOnEdit(col, row, action);
+  auto& entry = chipnomadState->project.instruments[cInstrument].chip.layer.entries[row - 3];
+  int handled = col == 0 ? editLayerSlot(action, &entry.instrument) :
+                col == 1 ? editLayerTranspose(action, &entry.transpose) :
+                           edit8noLast(action, &entry.volume, 16, 0, 255);
+  if (handled) {
+    projectModified = 1;
+    if (col == 0 && audioManager.reinitializeChips) audioManager.reinitializeChips();
+  }
+  return handled;
+}
+
+static ScreenData screenInstrumentLayer = {
+  .rows = 3 + INSTRUMENT_LAYER_COUNT, .cursorRow = 0, .cursorCol = 0, .topRow = 0, .selectMode = -1,
+  .selectStartRow = 0, .selectStartCol = 0, .selectAnchorRow = 0, .selectAnchorCol = 0,
+  .playbackLevel = ScreenPlaybackLevel::none, .getColumnCount = layerColumns,
+  .drawStatic = layerStatic, .drawCursor = layerCursor, .drawSelection = NULL,
+  .drawRowHeader = NULL, .drawColHeader = NULL, .drawField = layerField, .onEdit = layerEdit,
+  .onInput = NULL, .onRawInput = NULL, .isCellValid = layerCellValid, .getLoopRange = NULL,
+};
+
 static ScreenData* instrumentScreen(void) {
   // Slot navigation can redraw directly without running setup().
   instrumentFMSetContext(cInstrument, chipnomadState->project.instruments[cInstrument].type);
@@ -429,7 +578,7 @@ static ScreenData* instrumentScreen(void) {
     &screenInstrumentSCWF, &screenInstrumentBYOWTBL, &screenInstrumentPlaits, &screenInstrumentAChChid,
     &screenInstrumentDrumSynth, &screenInstrumentMME,
     &screenInstrumentSintered,
-    &screenInstrumentMidi, &screenInstrumentOPLL, &screenInstrumentOPL, &screenInstrumentSimpleChip, &screenInstrumentOPL, &screenInstrumentSoundFont, &screenInstrumentMonk, &screenInstrumentAudioIn,
+    &screenInstrumentMidi, &screenInstrumentOPLL, &screenInstrumentOPL, &screenInstrumentSimpleChip, &screenInstrumentOPL, &screenInstrumentSoundFont, &screenInstrumentMonk, &screenInstrumentAudioIn, &screenInstrumentLayer,
   };
   InstrumentScreenKind kind = getInstrumentDefinition(chipnomadState->project.instruments[cInstrument].type)->screen;
   ScreenData* data = screens[(int)kind];
@@ -443,8 +592,8 @@ static void init(void) {
   typeButtonDown = 0;
   screenInstrumentNone.cursorRow = 0;
   screenInstrumentNone.cursorCol = 0;
-  SelectionItem* groups[] = {instrumentTypeChip, instrumentTypeSample, instrumentTypeSynth, instrumentTypeDrums, instrumentTypeExternal};
-  const int counts[] = {7, 4, sizeof(instrumentTypeSynth) / sizeof(instrumentTypeSynth[0]), 2, 2};
+  SelectionItem* groups[] = {instrumentTypeChip, instrumentTypeSample, instrumentTypeSynth, instrumentTypeDrums, instrumentTypeUtility};
+  const int counts[] = {7, 4, sizeof(instrumentTypeSynth) / sizeof(instrumentTypeSynth[0]), 2, 3};
   for (int group = 0; group < 5; ++group)
     for (int item = 0; item < counts[group]; ++item)
       groups[group][item].label = getInstrumentDefinition((InstrumentType)groups[group][item].value)->uiName;
@@ -484,15 +633,20 @@ static int shownLiveFor = -1;
 static const uint8_t* instrumentLiveControls(void) {
   const PlaybackStatus* status = chipnomadGetPlaybackStatus(chipnomadState);
   if (!status) return NULL;
-  auto plays = [&](int t) {
+  auto controls = [&](int t) -> const uint8_t* {
     const PlaybackTrackState& track = status->tracks[t];
-    return status->trackEnabled[t] && track.mode != PlaybackMode::stopped && track.mode != PlaybackMode::none &&
-           track.note.instrument == cInstrument && track.liveInstrument == cInstrument;
+    if (!status->trackEnabled[t] || track.mode == PlaybackMode::stopped || track.mode == PlaybackMode::none) return NULL;
+    if (track.note.instrument == cInstrument && track.liveInstrument == cInstrument) return track.liveControls;
+    for (int lane = 0; lane < INSTRUMENT_LAYER_COUNT; ++lane) {
+      const PlaybackLayerStatus& child = status->layerTracks[t][lane];
+      if (child.instrument == cInstrument && child.liveInstrument == cInstrument) return child.liveControls;
+    }
+    return NULL;
   };
-  if (*pSongTrack >= 0 && *pSongTrack < chipnomadState->project.tracksCount && plays(*pSongTrack))
-    return status->tracks[*pSongTrack].liveControls;
+  if (*pSongTrack >= 0 && *pSongTrack < chipnomadState->project.tracksCount)
+    if (const uint8_t* live = controls(*pSongTrack)) return live;
   for (int t = 0; t < chipnomadState->project.tracksCount; ++t)
-    if (plays(t)) return status->tracks[t].liveControls;
+    if (const uint8_t* live = controls(t)) return live;
   return NULL;
 }
 
@@ -509,7 +663,14 @@ float instrumentLivePosition(int control) {
 // controls first, then the shared filter's cutoff and resonance.
 static bool liveCell(int control, int* col, int* row) {
   bool (*pageCell)(int, int*, int*) = NULL;
-  switch (chipnomadState->project.instruments[cInstrument].type) {
+  const InstrumentType type = chipnomadState->project.instruments[cInstrument].type;
+  if (type == InstrumentType::Layer && control >= liveSource1 && control <= liveSource6) {
+    const int index = control - liveSource1;
+    *col = index % 2 ? 2 : 1;
+    *row = 3 + index / 2;
+    return true;
+  }
+  switch (type) {
     case InstrumentType::Sample: pageCell = instrumentSampleLiveCell; break;
     case InstrumentType::SCWF: pageCell = instrumentSCWFLiveCell; break;
     case InstrumentType::BYOWTBL: pageCell = instrumentBYOWTBLLiveCell; break;
@@ -861,11 +1022,14 @@ void instrumentCommonDrawLivePreview(void) {
   }
   const PlaybackStatus* playback = chipnomadGetPlaybackStatus(chipnomadState);
   const auto now = std::chrono::steady_clock::now();
-  int track = -1;
+  int track = -1, monitor = -1;
   for (int i = 0; i < chipnomadState->project.tracksCount; ++i) {
-    if (playback->tracks[i].note.instrument == cInstrument &&
-        chipnomadState->voiceMonitors[i].active &&
-        (track < 0 || i == *pSongTrack)) track = i;
+    int candidate = playback->tracks[i].note.instrument == cInstrument ? i : -1;
+    for (int lane = 0; candidate < 0 && lane < INSTRUMENT_LAYER_COUNT; ++lane)
+      if (playback->layerTracks[i][lane].instrument == cInstrument)
+        candidate = PROJECT_MAX_TRACKS + i * INSTRUMENT_LAYER_COUNT + lane;
+    if (candidate >= 0 && chipnomadState->voiceMonitors[candidate].active &&
+        (track < 0 || i == *pSongTrack)) { track = i; monitor = candidate; }
   }
   if (track < 0) {
     if (!livePreviewWasActive) return;
@@ -890,12 +1054,12 @@ void instrumentCommonDrawLivePreview(void) {
     livePreviewLastActivity = now;
     int hz = appSettings.waveformRefreshHz;
     if (hz < 1 || hz > 60) hz = 30;
-    if (track != livePreviewTrack || livePreviewRefresh == std::chrono::steady_clock::time_point() ||
+    if (monitor != livePreviewTrack || livePreviewRefresh == std::chrono::steady_clock::time_point() ||
         std::chrono::duration<float>(now - livePreviewRefresh).count() >= 1.0f / hz) {
-      renderFloatPreview(livePreviewBitmap, chipnomadState->voiceMonitors[track].samples,
+      renderFloatPreview(livePreviewBitmap, chipnomadState->voiceMonitors[monitor].samples,
                          VOICE_MONITOR_SAMPLES);
       livePreviewRefresh = now;
-      livePreviewTrack = track;
+      livePreviewTrack = monitor;
     }
   }
   // Cached bitmap pixels are transparent; clear on every draw, not only when

@@ -267,7 +267,7 @@ TEST_SUITE("track inserts") {
     CHECK(fxF11 > fxATY);
     CHECK(fxF28 < 255);
     CHECK(genericModFirstInsert == 29);
-    const int counts[] = {0, 8, 4, 2, 6, 6, 5, 4, 5, 4, 4, 4, 8, 6, 8, 8, 6};
+    const int counts[] = {0, 8, 4, 2, 6, 6, 5, 4, 5, 4, 4, 4, 8, 6, 8, 8, 6, 8};
     static_assert(sizeof(counts) / sizeof(counts[0]) == insertModuleCount, "Test covers every module");
     for (int m = 0; m < insertModuleCount; ++m) {
       CHECK(insertDescriptor(m).count == counts[m]);
@@ -284,6 +284,87 @@ TEST_SUITE("track inserts") {
       CHECK(insertClamp(m, 8, 255) == 0);
     }
     CHECK(insertDescriptor(999).count == 0);
+  }
+  TEST_CASE("Stereo Width has exact endpoints, widens stereo and creates mono-compatible Side") {
+    CHECK(insertMap(insertStereoWidth, 0, 0) == doctest::Approx(0.0f));
+    CHECK(insertMap(insertStereoWidth, 0, 128) == doctest::Approx(1.0f));
+    CHECK(insertMap(insertStereoWidth, 0, 255) == doctest::Approx(2.0f));
+    CHECK(insertMap(insertStereoWidth, 2, 0) == 0.0f);
+    CHECK(insertMap(insertStereoWidth, 2, 255) == doctest::Approx(400.0f));
+
+    InsertConfig config[2]{};
+    insertSelect(&config[0], insertStereoWidth);
+    CHECK(config[0].values[0] == 255);
+    CHECK(config[0].values[1] == 255);
+    CHECK(config[0].values[7] == 255);
+    insertEdit(&config[0], 0, 128);
+    InsertAutomation automation{};
+    InsertChain chain(48000);
+    chain.sync(config, &automation);
+    uint8_t effective[2][8];
+    values(config, effective);
+
+    auto dry = signal(1024), unity = dry;
+    chain.process(unity.data(), 1024, effective);
+    CHECK(unity == dry);
+
+    insertEdit(&config[0], 0, 0);
+    chain.sync(config, &automation);
+    values(config, effective);
+    auto folded = signal(1024);
+    chain.process(folded.data(), 1024, effective); // Finish the parameter fade.
+    folded = signal(1024);
+    chain.process(folded.data(), 1024, effective);
+    for (int frame = 0; frame < 1024; ++frame)
+      CHECK(folded[frame * 2] == doctest::Approx(folded[frame * 2 + 1]).epsilon(1e-6));
+
+    insertEdit(&config[0], 0, 255);
+    chain.sync(config, &automation);
+    values(config, effective);
+    std::vector<float> mono(4096 * 2);
+    for (int frame = 0; frame < 4096; ++frame)
+      mono[frame * 2] = mono[frame * 2 + 1] = 0.3f * sinf(frame * 0.071f);
+    auto widenedMono = mono;
+    chain.process(widenedMono.data(), 4096, effective);
+    bool hasSide = false;
+    for (int frame = 512; frame < 4096; ++frame) {
+      hasSide |= fabsf(widenedMono[frame * 2] - widenedMono[frame * 2 + 1]) > 1e-4f;
+      CHECK((widenedMono[frame * 2] + widenedMono[frame * 2 + 1]) * 0.5f ==
+            doctest::Approx(mono[frame * 2]).epsilon(1e-5));
+    }
+    CHECK(hasSide);
+
+    insertEdit(&config[0], 7, 0);
+    values(config, effective);
+    auto mixedDry = mono;
+    chain.process(mixedDry.data(), 4096, effective);
+    CHECK(mixedDry == mono);
+
+    insertEdit(&config[0], 7, 255);
+    insertEdit(&config[0], 0, 128);
+    insertEdit(&config[0], 3, 255);
+    chain.sync(config, &automation);
+    values(config, effective);
+    auto sideEQ = signal(4096), unshaped = sideEQ;
+    chain.process(sideEQ.data(), 4096, effective);
+    bool eqChanged = false;
+    for (size_t i = 1024; i < sideEQ.size(); ++i)
+      eqChanged |= fabsf(sideEQ[i] - unshaped[i]) > 1e-5f;
+    CHECK(eqChanged);
+
+    insertEdit(&config[0], 3, 128);
+    insertEdit(&config[0], 0, 255);
+    chain.sync(config, &automation);
+    values(config, effective);
+    InsertChain stereoChain(48000);
+    stereoChain.sync(config, &automation);
+    std::vector<float> stereo(1024 * 2);
+    for (int frame = 0; frame < 1024; ++frame) {
+      stereo[frame * 2] = 0.25f;
+      stereo[frame * 2 + 1] = -0.25f;
+    }
+    stereoChain.process(stereo.data(), 1024, effective);
+    CHECK(stereo.back() == doctest::Approx(-0.5f).epsilon(1e-5));
   }
   TEST_CASE("trance gate has named patterns, deterministic cycles and smooth dry/wet control") {
     InsertConfig c[2]{};
@@ -681,7 +762,7 @@ TEST_SUITE("track inserts") {
       }
     for (int slot = 0; slot < 2; ++slot) {
       auto& c = p->masterInserts[slot];
-      insertSelect(&c, slot ? insertTape : insertCompressor);
+      insertSelect(&c, slot ? insertStereoWidth : insertCompressor);
       c.bypass = slot;
       insertEdit(&c, 0, 255);
     }
@@ -1197,7 +1278,7 @@ TEST_CASE("insert tips return after real key release and categorized chooser sel
       insertOff, insertOTT, insertCompressor, insertParametricEQ,
       insertDistortion, insertSaturation, insertBitcrusher, insertDestruction, insertTape,
       insertChorus, insertPhaser, insertFlanger, insertTranceGate,
-      insertRotary, insertDoubler, insertBeads, insertFormant,
+      insertRotary, insertDoubler, insertStereoWidth, insertBeads, insertFormant,
   };
   for (int i = 1; i < (int)(sizeof(popupOrder) / sizeof(popupOrder[0])); ++i) {
     screenInsertFX.onInput(1, keyEdit | keyRight, 0);

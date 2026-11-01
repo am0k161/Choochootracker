@@ -27,7 +27,7 @@
 
 // Shared state
 char projectFileError[41];
-int projectFileVersion = 11;  // Default to current version
+int projectFileVersion = 12;  // Default to current version
 static char chipNames[][16] = { "AY8910" };
 
 // Peek/consume implementation - single global buffer (ChipNomad is single-threaded)
@@ -806,7 +806,9 @@ static int projectLoadInternal(FILE* file, Project* project) {
 
   // Detect version
   if (strlen(version) > 0) {
-    if (strncmp(version, " 11.0", 5) == 0) {
+    if (strncmp(version, " 12.0", 5) == 0) {
+      projectFileVersion = 12;
+    } else if (strncmp(version, " 11.0", 5) == 0) {
       projectFileVersion = 11;
     } else if (strncmp(version, " 10.0", 5) == 0) {
       projectFileVersion = 10;
@@ -1682,7 +1684,7 @@ static int projectSaveAYWavetables(FILE* file, Project* project) {
 
 static int projectSaveInternal(FILE* file, Project* project) {
   // Format 11 marks table volumes as 00-7F. Older files use 00-0F.
-  fprintf(file, "# ChooChooTracker Module 11.0\n\n");
+  fprintf(file, "# ChooChooTracker Module 12.0\n\n");
 
   fprintf(file, "- Title: %s\n", project->title);
   fprintf(file, "- Author: %s\n", project->author);
@@ -1934,7 +1936,7 @@ int instrumentSave(Project* project, const char* path, int instrumentIdx) {
     return 1;
   }
 
-  fprintf(file, "# ChipNomad Instrument 10.0\n\n");
+  fprintf(file, "# ChipNomad Instrument 11.0\n\n");
   instrumentSaveData(file, 0, &project->instruments[instrumentIdx]);
   saveTable(file, 0, &project->tables[instrumentIdx]);
   // The EQ travels with the instrument, after the table where older
@@ -1959,7 +1961,9 @@ static int instrumentLoadInternal(FILE* file, Project* project, int instrumentId
 
   // Detect version
   if (strlen(line) > 22) {
-    if (strncmp(line + 22, " 10.0", 5) == 0) {
+    if (strncmp(line + 22, " 11.0", 5) == 0) {
+      projectFileVersion = 12;
+    } else if (strncmp(line + 22, " 10.0", 5) == 0) {
       projectFileVersion = 11;
     } else if (strncmp(line + 22, " 9.0", 4) == 0) {
       projectFileVersion = 9;
@@ -2033,7 +2037,7 @@ static int instrumentLoadStream(Project* project, FILE* file, int instrumentIdx)
   if (!file) return 1;
   int result;
   const char* header = peekLine(file);
-  if (header && (strncmp(header, "# ChipNomad Instrument 6.0", 25) == 0 || strncmp(header, "# ChipNomad Instrument 7.0", 25) == 0 || strncmp(header, "# ChipNomad Instrument 8.0",25)==0 || strncmp(header,"# ChipNomad Instrument 9.0",25)==0 || strncmp(header,"# ChipNomad Instrument 10.0",27)==0)) {
+  if (header && (strncmp(header, "# ChipNomad Instrument 6.0", 25) == 0 || strncmp(header, "# ChipNomad Instrument 7.0", 25) == 0 || strncmp(header, "# ChipNomad Instrument 8.0",25)==0 || strncmp(header,"# ChipNomad Instrument 9.0",25)==0 || strncmp(header,"# ChipNomad Instrument 10.0",27)==0 || strncmp(header,"# ChipNomad Instrument 11.0",27)==0)) {
     auto temporary = std::make_unique<Project>();
     projectInit(temporary.get());
     result = instrumentLoadInternal(file, temporary.get(), instrumentIdx);

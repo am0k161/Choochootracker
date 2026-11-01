@@ -56,8 +56,9 @@ void SinteredVoice::render(float* output, size_t frames) {
   const float baseB = parameters_.b / 255.0f, baseC = parameters_.c / 255.0f;
   static constexpr float modelGain[] = {1.822647f, 1.995262f, 1.995262f, 1.995262f, 1.995262f, 1.995262f, .75f};
   const float calibration = modelGain[(int)parameters_.model];
-  const float motion = (parameters_.motion - 128) / 127.0f;
-  const float motionTime = .008f + (1.0f - fabsf(motion)) * .35f;
+  const float motion = (parameters_.motion - 128) / 128.0f;
+  const float motionDepth = fabsf(motion);
+  const float motionTime = .012f + motionDepth * .08f;
   const bool fixedA = parameters_.model != SinteredModel::burst &&
                       parameters_.model != SinteredModel::logic;
   const float fixedF2 = fixedA ? frequency_ * powf(2.0f, (baseA - .5f) * 5.0f) : 0.0f;
@@ -79,7 +80,8 @@ void SinteredVoice::render(float* output, size_t frames) {
     float movement = 0.0f;
     if (parameters_.motion != 128) {
       float x = age_ / motionTime;
-      movement = motion < 0.0f ? (x < 1.0f ? sinf(kPi * x) : 0.0f) : expf(-6.0f * x);
+      const float envelope = motion < 0.0f ? (x < 1.0f ? sinf(kPi * x) : 0.0f) : expf(-3.0f * x);
+      movement = envelope * motionDepth * 1.75f;
     }
     float mod = baseMod, a = baseA, b = baseB, c = baseC;
     switch (parameters_.model) {

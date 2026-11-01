@@ -53,6 +53,7 @@ struct PlaybackNoteState {
   int16_t fineOffset; // Fine pitch offset (cents or periods, depending on linearPitch setting)
   int16_t periodOffset; // Period offset
   uint8_t volume1; // Instrument volume
+  uint8_t layerGainActive; // volume1 is a Layer multiplier, including zero.
   uint8_t volume2; // Instrument table volume
   uint8_t volume3; // Aux table volume
   int16_t volumeOffset; // Phrase-volume offset in the 0-127 domain
@@ -215,7 +216,9 @@ struct StopRange {
 struct PlaybackState {
   Project* p;
   PlaybackTrackState tracks[PROJECT_MAX_TRACKS];
+  PlaybackTrackState layerTracks[PROJECT_MAX_TRACKS][INSTRUMENT_LAYER_COUNT];
   PlaybackChipState chips[PROJECT_MAX_CHIPS];
+  PlaybackChipState layerChips[PROJECT_MAX_VOICE_OWNERS];
   uint8_t trackEnabled[PROJECT_MAX_TRACKS];
   LoopRange loopRange;
   StopRange stopRange;

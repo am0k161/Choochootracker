@@ -65,7 +65,7 @@ TEST_CASE("Audio in capture is stereo and independent from dry monitoring") {
   CHECK(recent[1] == doctest::Approx(-3008 / 32768.0f));
 }
 
-TEST_CASE("Audio in preset preserves post settings and external category") {
+TEST_CASE("Audio in preset preserves post settings and utility category") {
   auto saved = std::make_unique<Project>(), loaded = std::make_unique<Project>();
   fillFXNames(); projectInit(saved.get()); projectInit(loaded.get());
   auto& instrument = saved->instruments[0];

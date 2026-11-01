@@ -78,6 +78,7 @@ static void motionRecordFrame(ChipNomadState* state);
 static int instrumentFXCutoff(uint8_t value);
 static int slewEngineFX(PlaybackTrackState*, FX, int);
 static void updateInsertValues(ChipNomadState*);
+static int effectivePan(ChipNomadState*, int, bool);
 
 class AudioCommandQueue {
  public:
@@ -351,6 +352,14 @@ class AudioCommandQueue {
     if (slot < 0) return;
     PlaybackStatus& status = statusSlots_[slot].value;
     memcpy(status.tracks, playback->tracks, sizeof(status.tracks));
+    for (int track = 0; track < PROJECT_MAX_TRACKS; ++track)
+      for (int lane = 0; lane < INSTRUMENT_LAYER_COUNT; ++lane) {
+        const PlaybackTrackState& source = playback->layerTracks[track][lane];
+        PlaybackLayerStatus& target = status.layerTracks[track][lane];
+        target.instrument = source.note.instrument;
+        target.liveInstrument = source.liveInstrument;
+        memcpy(target.liveControls, source.liveControls, sizeof(target.liveControls));
+      }
     memcpy(status.trackEnabled, playback->trackEnabled, sizeof(status.trackEnabled));
     status.isPlaying = playbackIsPlaying(const_cast<PlaybackState*>(playback));
     status.linkPhaseTicks = linkPhaseTicks;
@@ -672,10 +681,10 @@ static void motionRecordFrame(ChipNomadState* state) {
   }
 }
 
-static void captureVoiceMonitor(ChipNomadState* state, int trackIdx,
+static void captureVoiceMonitor(ChipNomadState* state, int owner,
                                 const float* samples, int frames,
                                 int channels, float envelope) {
-  VoiceMonitor* monitor = &state->voiceMonitors[trackIdx];
+  VoiceMonitor* monitor = &state->voiceMonitors[owner];
   for (int i = 0; i < VOICE_MONITOR_SAMPLES; ++i) {
     int frame = frames > 1 ? (i * (frames - 1)) / (VOICE_MONITOR_SAMPLES - 1) : 0;
     monitor->samples[i] = samples[frame * channels];
@@ -734,7 +743,63 @@ static float mixerSendGain(uint8_t value) {
 
 static float phraseGain(const PlaybackState* playback, const PlaybackTrackState* track,
                         const Instrument* instrument) {
-  return instrument->volume * playbackVolumeGain(playback, track) / 255.0f;
+  const float layer = track->note.layerGainActive ? track->note.volume1 / 255.0f : 1.0f;
+  return instrument->volume * playbackVolumeGain(playback, track) / 255.0f * layer;
+}
+
+static int voiceOwnerTrack(int owner) {
+  return owner < PROJECT_MAX_TRACKS ? owner : (owner - PROJECT_MAX_TRACKS) / INSTRUMENT_LAYER_COUNT;
+}
+
+static PlaybackTrackState* voiceOwnerState(ChipNomadState* state, int owner) {
+  if (owner < PROJECT_MAX_TRACKS) return &state->playbackState.tracks[owner];
+  int index = owner - PROJECT_MAX_TRACKS;
+  return &state->playbackState.layerTracks[index / INSTRUMENT_LAYER_COUNT][index % INSTRUMENT_LAYER_COUNT];
+}
+
+static int voiceOwnerLimit(const ChipNomadState* state) {
+  return PROJECT_MAX_TRACKS + state->audioProject.tracksCount * INSTRUMENT_LAYER_COUNT;
+}
+
+static bool voiceOwnerValid(const ChipNomadState* state, int owner) {
+  return owner >= PROJECT_MAX_TRACKS || owner < state->audioProject.tracksCount;
+}
+
+static int layerChildPan(ChipNomadState* state, int owner) {
+  const PlaybackTrackState* lane = voiceOwnerState(state, owner);
+  int child = 128;
+  InstrumentType childType = InstrumentType::none;
+  if (lane->note.instrument < PROJECT_MAX_INSTRUMENTS) {
+    const Instrument& instrument = state->audioProject.instruments[lane->note.instrument];
+    child = instrument.pan;
+    childType = instrument.type;
+  }
+  for (const auto& mod : lane->note.modulation) {
+    if (!mod.modulation || instrumentGenericModDestination(childType, mod.modulation->destination) != genericModInstrumentPan) continue;
+    int value = playbackModScaleToRange(mod.outValue, 255);
+    child = modulationIsAdditive(mod.modulation->type) || mod.modulation->type == ModulationType::SLFO ||
+      mod.modulation->type == ModulationType::FLFO ? child + value : value;
+  }
+  return clampInt(child, 0, 255);
+}
+
+static bool processLayerVoiceEQ(ChipNomadState* state, int owner, int slot, float* stereo, int frames) {
+  if (owner < PROJECT_MAX_TRACKS) return false;
+  const PlaybackTrackState* lane = voiceOwnerState(state, owner);
+  if (lane->note.instrument >= PROJECT_MAX_INSTRUMENTS) {
+    state->layerEQActive[owner][slot] = 0;
+    return false;
+  }
+  uint8_t bank = state->audioProject.instruments[lane->note.instrument].eq;
+  if (bank >= PROJECT_EQ_BANKS || !instrumentEQAudible(state->audioProject.eqBanks[bank])) {
+    state->layerEQActive[owner][slot] = 0;
+    return false;
+  }
+  if (!state->layerEQActive[owner][slot]) state->layerEQ[owner][slot].reset();
+  state->layerEQ[owner][slot].configure(state->audioProject.eqBanks[bank]);
+  state->layerEQ[owner][slot].process(stereo, frames);
+  state->layerEQActive[owner][slot] = 1;
+  return true;
 }
 
 static float effectiveTrackSend(ChipNomadState* state, int trackIdx,
@@ -810,8 +875,9 @@ struct TrackPanMix {
 
 static void updateAudioInputRoutedTracks(ChipNomadState* state) {
   uint8_t mask = 0;
-  for (int track = 0; track < state->audioProject.tracksCount; ++track) {
-    int instrumentIdx = state->playbackState.tracks[track].note.instrument;
+  for (int owner = 0; owner < voiceOwnerLimit(state); ++owner) {
+    if (!voiceOwnerValid(state, owner)) continue;
+    int instrumentIdx = voiceOwnerState(state, owner)->note.instrument;
     if (instrumentIdx >= PROJECT_MAX_INSTRUMENTS) continue;
     const Instrument& instrument = state->audioProject.instruments[instrumentIdx];
     if (instrument.type == InstrumentType::AudioIn && instrument.audioInputSource > InstrumentAudioInputSource::external &&
@@ -843,6 +909,20 @@ static TrackPanMix makeTrackPanMix(ChipNomadState* state, int instrumentPan, int
     pan.amount = (trackPan - 128) / 127.0f;
   }
   pan.attenuation = 1.0f - pan.amount;
+  return pan;
+}
+
+static TrackPanMix makeVoiceOwnerPanMix(ChipNomadState* state, int owner) {
+  const int track = voiceOwnerTrack(owner);
+  if (owner < PROJECT_MAX_TRACKS)
+    return makeTrackPanMix(state, effectivePan(state, track, true), effectivePan(state, track, false));
+  if (state->benchmarkBypassPan) return {};
+  TrackPanMix pan = makeTrackPanMix(state, 128, effectivePan(state, track, false));
+  pan.active = true;
+  const int child = layerChildPan(state, owner);
+  const int parent = effectivePan(state, track, true);
+  pan.leftGain *= panGain(child, 0) * panGain(parent, 0);
+  pan.rightGain *= panGain(child, 1) * panGain(parent, 1);
   return pan;
 }
 
@@ -968,6 +1048,10 @@ void chipnomadDestroy(ChipNomadState* state) {
       state->chips[i] = nullptr;
     }
   }
+  for (auto*& chip : state->layerAYChips) {
+    delete chip;
+    chip = nullptr;
+  }
 
   delete state->monkPreview;
   delete state->sidPreview;
@@ -976,7 +1060,7 @@ void chipnomadDestroy(ChipNomadState* state) {
   delete state->oplPreview;
   delete state->dx7Preview;
   delete state->opllPreview;
-  for (int i = 0; i < PROJECT_MAX_TRACKS; i++) {
+  for (int i = 0; i < VOICE_OWNER_COUNT; i++) {
     for (int voice = 0; voice < CHORD_MAX_VOICES; ++voice) {
       delete state->braidsVoices[i][voice];
       delete state->soundbankVoices[i][voice];
@@ -1021,8 +1105,9 @@ void chipnomadDestroy(ChipNomadState* state) {
 }
 
 template <typename Voice>
-static void syncVoicePool(Voice* (&pool)[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES], bool needed, float rate) {
-  for (auto& track : pool) for (auto*& voice : track) {
+static void syncVoicePool(Voice* (&pool)[VOICE_OWNER_COUNT][CHORD_MAX_VOICES], bool directNeeded, bool layerNeeded, float rate) {
+  for (int owner = 0; owner < VOICE_OWNER_COUNT; ++owner) for (auto*& voice : pool[owner]) {
+    const bool needed = owner < PROJECT_MAX_TRACKS ? directNeeded : layerNeeded;
     if (!needed) { delete voice; voice = nullptr; }
     else {
       if (!voice) voice = new Voice();
@@ -1033,7 +1118,7 @@ static void syncVoicePool(Voice* (&pool)[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES], 
 
 struct PreparedInstrumentVoices {
   InstrumentType type;
-  void* voices[PROJECT_MAX_TRACKS * CHORD_MAX_VOICES] = {};
+  void* voices[VOICE_OWNER_COUNT * CHORD_MAX_VOICES] = {};
   MonkSynthVoice* monkPreview = nullptr;
   void (*dispose)(PreparedInstrumentVoices*) = nullptr;
   ~PreparedInstrumentVoices() {
@@ -1057,6 +1142,19 @@ static void prepareVoices(PreparedInstrumentVoices* prepared, float rate) {
   }
 }
 
+template <typename Voice>
+static void prepareMissingVoices(PreparedInstrumentVoices* prepared,
+                                 Voice* (&pool)[VOICE_OWNER_COUNT][CHORD_MAX_VOICES], float rate) {
+  for (int owner = 0; owner < PROJECT_MAX_TRACKS; ++owner)
+    for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) {
+      if (pool[owner][slot]) continue;
+      prepared->dispose = disposePreparedVoices<Voice>;
+      Voice* voice = new Voice();
+      prepared->voices[owner * CHORD_MAX_VOICES + slot] = voice;
+      voice->init(rate);
+    }
+}
+
 static InstrumentType voicePoolType(InstrumentType type) {
   switch (type) {
     case InstrumentType::VRC7: return InstrumentType::OPLL;
@@ -1078,6 +1176,7 @@ bool chipnomadCanSwitchInstrumentLive(InstrumentType type) {
     case InstrumentType::OPLL: case InstrumentType::OPL2:
     case InstrumentType::SegaPSG: case InstrumentType::DX7:
     case InstrumentType::GenesisFM: case InstrumentType::SID:
+    case InstrumentType::Layer:
       return true;
     default: return false;
   }
@@ -1091,36 +1190,36 @@ PreparedInstrumentVoices* chipnomadPrepareInstrumentVoices(ChipNomadState* state
   const float rate = (float)state->sampleRate;
   switch (type) {
     case InstrumentType::Braids:
-      if (!state->braidsVoices[0][0]) prepareVoices<BraidsVoice>(prepared, rate); break;
+      prepareMissingVoices(prepared, state->braidsVoices, rate); break;
     case InstrumentType::Plaits:
-      if (!state->plaitsVoices[0][0]) prepareVoices<PlaitsVoice>(prepared, rate); break;
+      prepareMissingVoices(prepared, state->plaitsVoices, rate); break;
     case InstrumentType::PlaitsAlt:
-      if (!state->plaitsAltVoices[0][0]) prepareVoices<PlaitsAltVoice>(prepared, rate); break;
+      prepareMissingVoices(prepared, state->plaitsAltVoices, rate); break;
     case InstrumentType::AChChid:
-      if (!state->achchidVoices[0][0]) prepareVoices<AChChidVoice>(prepared, rate); break;
+      prepareMissingVoices(prepared, state->achchidVoices, rate); break;
     case InstrumentType::AudioIn:
-      if (!state->audioInputVoices[0][0]) prepareVoices<AudioInputVoice>(prepared, rate);
+      prepareMissingVoices(prepared, state->audioInputVoices, rate);
       break;
     case InstrumentType::DrumSynth:
-      if (!state->drumSynthVoices[0][0]) prepareVoices<DrumSynthVoice>(prepared, rate); break;
+      prepareMissingVoices(prepared, state->drumSynthVoices, rate); break;
     case InstrumentType::MME:
-      if (!state->mmeVoices[0][0]) prepareVoices<MMEVoice>(prepared, rate); break;
+      prepareMissingVoices(prepared, state->mmeVoices, rate); break;
     case InstrumentType::Sintered:
-      if (!state->sinteredVoices[0][0]) prepareVoices<SinteredVoice>(prepared, rate); break;
+      prepareMissingVoices(prepared, state->sinteredVoices, rate); break;
     case InstrumentType::OPLL:
-      if (!state->opllVoices[0][0]) prepareVoices<OPLLVoice>(prepared, rate); break;
+      prepareMissingVoices(prepared, state->opllVoices, rate); break;
     case InstrumentType::OPL2:
-      if (!state->oplVoices[0][0]) prepareVoices<OPLVoice>(prepared, rate); break;
+      prepareMissingVoices(prepared, state->oplVoices, rate); break;
     case InstrumentType::SegaPSG:
-      if (!state->simpleChipVoices[0][0]) prepareVoices<SimpleChipVoice>(prepared, rate); break;
+      prepareMissingVoices(prepared, state->simpleChipVoices, rate); break;
     case InstrumentType::GenesisFM:
-      if (!state->fourOpVoices[0][0]) prepareVoices<FourOpVoice>(prepared, rate); break;
+      prepareMissingVoices(prepared, state->fourOpVoices, rate); break;
     case InstrumentType::SID:
-      if (!state->sidVoices[0][0]) prepareVoices<SIDVoice>(prepared, rate); break;
+      prepareMissingVoices(prepared, state->sidVoices, rate); break;
     case InstrumentType::DX7:
-      if (!state->dx7Parts[0]) {
-        prepared->dispose = disposePreparedVoices<DX7Part>;
-        for (int track = 0; track < PROJECT_MAX_TRACKS; ++track) {
+      prepared->dispose = disposePreparedVoices<DX7Part>;
+      for (int track = 0; track < PROJECT_MAX_TRACKS; ++track) {
+        if (!state->dx7Parts[track]) {
           auto* part = new DX7Part();
           prepared->voices[track] = part;
           part->init(rate);
@@ -1128,14 +1227,23 @@ PreparedInstrumentVoices* chipnomadPrepareInstrumentVoices(ChipNomadState* state
       }
       break;
     case InstrumentType::Monk:
-      if (!state->monkVoices[0][0]) {
-        prepared->monkPreview = new MonkSynthVoice();
-        prepared->monkPreview->init(rate);
+      {
+        bool missing = false, any = false;
+        for (int owner = 0; owner < PROJECT_MAX_TRACKS; ++owner)
+          for (auto* voice : state->monkVoices[owner]) { if (!voice) missing = true; else any = true; }
+        if (!missing) break;
+        if (!any) {
+          prepared->monkPreview = new MonkSynthVoice();
+          prepared->monkPreview->init(rate);
+        }
+        MonkSynthVoice* shared = any ? state->monkPreview : prepared->monkPreview;
         prepared->dispose = disposePreparedVoices<MonkSynthVoice>;
-        for (void*& slot : prepared->voices) {
+        for (int index = 0; index < PROJECT_MAX_TRACKS * CHORD_MAX_VOICES; ++index) {
+          void*& slot = prepared->voices[index];
+          if (state->monkVoices[index / CHORD_MAX_VOICES][index % CHORD_MAX_VOICES]) continue;
           auto* voice = new MonkSynthVoice();
           slot = voice;
-          voice->init(rate, prepared->monkPreview);
+          voice->init(rate, shared);
         }
       }
       break;
@@ -1146,12 +1254,12 @@ PreparedInstrumentVoices* chipnomadPrepareInstrumentVoices(ChipNomadState* state
 }
 
 template <typename Voice>
-static void installVoices(Voice* (&pool)[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES],
+static void installVoices(Voice* (&pool)[VOICE_OWNER_COUNT][CHORD_MAX_VOICES],
                           PreparedInstrumentVoices* prepared) {
-  for (int track = 0; track < PROJECT_MAX_TRACKS; ++track)
+  for (int track = 0; track < VOICE_OWNER_COUNT; ++track)
     for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) {
       int index = track * CHORD_MAX_VOICES + slot;
-      pool[track][slot] = static_cast<Voice*>(prepared->voices[index]);
+      if (prepared->voices[index]) pool[track][slot] = static_cast<Voice*>(prepared->voices[index]);
       prepared->voices[index] = nullptr;
     }
 }
@@ -1178,17 +1286,20 @@ void chipnomadInstallInstrumentVoices(ChipNomadState* state, PreparedInstrumentV
     case InstrumentType::GenesisFM: installVoices(state->fourOpVoices, prepared); break;
     case InstrumentType::SID: installVoices(state->sidVoices, prepared); break;
     case InstrumentType::Monk:
-      delete state->monkPreview;
-      state->monkPreview = prepared->monkPreview;
-      prepared->monkPreview = nullptr;
+      if (prepared->monkPreview) {
+        delete state->monkPreview;
+        state->monkPreview = prepared->monkPreview;
+        prepared->monkPreview = nullptr;
+      }
       installVoices(state->monkVoices, prepared);
       break;
     case InstrumentType::DX7:
-      for (int track = 0; track < PROJECT_MAX_TRACKS; ++track) {
-        state->dx7Parts[track] = static_cast<DX7Part*>(prepared->voices[track]);
+      for (int track = 0; track < VOICE_OWNER_COUNT; ++track) {
+        if (prepared->voices[track]) state->dx7Parts[track] = static_cast<DX7Part*>(prepared->voices[track]);
         prepared->voices[track] = nullptr;
         for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot)
-          state->dx7Voices[track][slot] = &state->dx7Parts[track]->voices[slot];
+          state->dx7Voices[track][slot] = state->dx7Parts[track]
+            ? &state->dx7Parts[track]->voices[slot] : nullptr;
       }
       break;
     default: break;
@@ -1207,7 +1318,17 @@ void chipnomadInitChips(ChipNomadState* state, int sampleRate, ChipFactory facto
     if (type < static_cast<int>(InstrumentType::totalCount)) used[type] = true;
   }
   auto has = [&](InstrumentType type) { return used[static_cast<int>(type)]; };
-  const bool hasMonk = has(InstrumentType::Monk);
+  bool layered[static_cast<int>(InstrumentType::totalCount)] = {};
+  for (const auto& instrument : state->audioProject.instruments) {
+    if (instrument.type != InstrumentType::Layer) continue;
+    for (const auto& entry : instrument.chip.layer.entries)
+      if (entry.instrument < PROJECT_MAX_INSTRUMENTS) {
+        int type = (int)voicePoolType(state->audioProject.instruments[entry.instrument].type);
+        if (type > 0 && type < (int)InstrumentType::totalCount) layered[type] = true;
+      }
+  }
+  auto inLayer = [&](InstrumentType type) { return layered[(int)voicePoolType(type)]; };
+  const bool hasMonk = has(InstrumentType::Monk) || inLayer(InstrumentType::Monk);
 
   // Cleanup existing chips if already initialized
   if (state->sampleRate > 0) {
@@ -1217,10 +1338,15 @@ void chipnomadInitChips(ChipNomadState* state, int sampleRate, ChipFactory facto
         state->chips[i] = nullptr;
       }
     }
+    for (auto*& chip : state->layerAYChips) {
+      delete chip;
+      chip = nullptr;
+    }
   }
 
   // Zero the entire chips array for safety
   memset(state->chips, 0, sizeof(state->chips));
+  memset(state->layerAYChips, 0, sizeof(state->layerAYChips));
   state->sampleRate = sampleRate;
   state->masterEffects->init((float)sampleRate);
   state->masterEQ.init((float)sampleRate);
@@ -1246,32 +1372,37 @@ void chipnomadInitChips(ChipNomadState* state, int sampleRate, ChipFactory facto
   state->dx7Preview->init((float)sampleRate);
   state->opllPreview->init((float)sampleRate); state->opllPreviewTrack = -1;
   const float rate = (float)sampleRate;
-  syncVoicePool(state->braidsVoices, has(InstrumentType::Braids), rate);
+  syncVoicePool(state->braidsVoices, has(InstrumentType::Braids), inLayer(InstrumentType::Braids), rate);
   if (state->braidsVoices[0][0]) chipnomadSetBraidsSettings(state, state->braidsBits,
     state->braidsDrift, state->braidsSignature, state->braidsSignatureSeed);
-  syncVoicePool(state->soundbankVoices, has(InstrumentType::SoundFont), rate);
-  syncVoicePool(state->sampleVoices, has(InstrumentType::Sample), rate);
-  syncVoicePool(state->audioInputVoices, has(InstrumentType::AudioIn), rate);
-  syncVoicePool(state->scwfVoices, has(InstrumentType::SCWF) || has(InstrumentType::BYOWTBL), rate);
-  syncVoicePool(state->plaitsVoices, has(InstrumentType::Plaits), rate);
-  syncVoicePool(state->plaitsAltVoices, has(InstrumentType::PlaitsAlt), rate);
-  syncVoicePool(state->achchidVoices, has(InstrumentType::AChChid), rate);
-  syncVoicePool(state->drumSynthVoices, has(InstrumentType::DrumSynth), rate);
-  syncVoicePool(state->mmeVoices, has(InstrumentType::MME), rate);
-  syncVoicePool(state->sidVoices, has(InstrumentType::SID), rate);
-  syncVoicePool(state->simpleChipVoices, has(InstrumentType::SegaPSG) || has(InstrumentType::GBPulse) || has(InstrumentType::GBNoise), rate);
-  syncVoicePool(state->fourOpVoices, has(InstrumentType::GenesisFM) || has(InstrumentType::ArcadeFM), rate);
-  syncVoicePool(state->oplVoices, has(InstrumentType::OPL2) || has(InstrumentType::OPL3), rate);
-  syncVoicePool(state->opllVoices, has(InstrumentType::OPLL) || has(InstrumentType::VRC7), rate);
-  syncVoicePool(state->sinteredVoices, has(InstrumentType::Sintered), rate);
-  for (int i = 0; i < PROJECT_MAX_TRACKS; ++i) {
-    if (!has(InstrumentType::DX7)) { delete state->dx7Parts[i]; state->dx7Parts[i] = nullptr; }
+  syncVoicePool(state->soundbankVoices, has(InstrumentType::SoundFont), inLayer(InstrumentType::SoundFont), rate);
+  syncVoicePool(state->sampleVoices, has(InstrumentType::Sample), inLayer(InstrumentType::Sample), rate);
+  syncVoicePool(state->audioInputVoices, has(InstrumentType::AudioIn), inLayer(InstrumentType::AudioIn), rate);
+  syncVoicePool(state->scwfVoices, has(InstrumentType::SCWF) || has(InstrumentType::BYOWTBL), inLayer(InstrumentType::SCWF) || inLayer(InstrumentType::BYOWTBL), rate);
+  syncVoicePool(state->plaitsVoices, has(InstrumentType::Plaits), inLayer(InstrumentType::Plaits), rate);
+  syncVoicePool(state->plaitsAltVoices, has(InstrumentType::PlaitsAlt), inLayer(InstrumentType::PlaitsAlt), rate);
+  syncVoicePool(state->achchidVoices, has(InstrumentType::AChChid), inLayer(InstrumentType::AChChid), rate);
+  syncVoicePool(state->drumSynthVoices, has(InstrumentType::DrumSynth), inLayer(InstrumentType::DrumSynth), rate);
+  syncVoicePool(state->mmeVoices, has(InstrumentType::MME), inLayer(InstrumentType::MME), rate);
+  syncVoicePool(state->sidVoices, has(InstrumentType::SID), inLayer(InstrumentType::SID), rate);
+  syncVoicePool(state->simpleChipVoices, has(InstrumentType::SegaPSG) || has(InstrumentType::GBPulse) || has(InstrumentType::GBNoise), inLayer(InstrumentType::SegaPSG), rate);
+  syncVoicePool(state->fourOpVoices, has(InstrumentType::GenesisFM) || has(InstrumentType::ArcadeFM), inLayer(InstrumentType::GenesisFM), rate);
+  syncVoicePool(state->oplVoices, has(InstrumentType::OPL2) || has(InstrumentType::OPL3), inLayer(InstrumentType::OPL2), rate);
+  syncVoicePool(state->opllVoices, has(InstrumentType::OPLL) || has(InstrumentType::VRC7), inLayer(InstrumentType::OPLL), rate);
+  syncVoicePool(state->sinteredVoices, has(InstrumentType::Sintered), inLayer(InstrumentType::Sintered), rate);
+  const bool directDX7 = has(InstrumentType::DX7), layerDX7 = inLayer(InstrumentType::DX7);
+  for (int i = 0; i < VOICE_OWNER_COUNT; ++i) {
+    const bool needed = i < PROJECT_MAX_TRACKS ? directDX7 : layerDX7;
+    if (!needed) { delete state->dx7Parts[i]; state->dx7Parts[i] = nullptr; }
     else {
       if (!state->dx7Parts[i]) state->dx7Parts[i] = new DX7Part();
       state->dx7Parts[i]->init(rate);
     }
     for (int voice = 0; voice < CHORD_MAX_VOICES; ++voice)
       state->dx7Voices[i][voice] = state->dx7Parts[i] ? &state->dx7Parts[i]->voices[voice] : nullptr;
+    for (int voice = 0; voice < CHORD_MAX_VOICES; ++voice)
+      state->layerEQ[i][voice].init(rate);
+    memset(state->layerEQActive[i], 0, sizeof(state->layerEQActive[i]));
   }
   for (int i = 0; i < PROJECT_MAX_TRACKS; i++) {
     state->trackTilt[i].init((float)sampleRate);
@@ -1280,13 +1411,16 @@ void chipnomadInitChips(ChipNomadState* state, int sampleRate, ChipFactory facto
     state->insertChains[i] = new(std::nothrow) InsertChain((float)sampleRate);
     if (state->insertChains[i]) state->insertChains[i]->sync(state->audioProject.trackInserts[i], &state->playbackState.tracks[i].inserts);
     state->insertResetSeen[i] = state->playbackState.tracks[i].insertReset;
+  }
+  const bool directMonk = has(InstrumentType::Monk), layerMonk = inLayer(InstrumentType::Monk);
+  for (int i = 0; i < VOICE_OWNER_COUNT; ++i)
     for (int voice = 0; voice < CHORD_MAX_VOICES; ++voice) {
-      if (hasMonk) {
+      const bool needed = i < PROJECT_MAX_TRACKS ? directMonk : layerMonk;
+      if (needed) {
         if (!state->monkVoices[i][voice]) state->monkVoices[i][voice] = new MonkSynthVoice();
         state->monkVoices[i][voice]->init(rate, state->monkPreview);
       } else { delete state->monkVoices[i][voice]; state->monkVoices[i][voice] = nullptr; }
     }
-  }
 
   state->audioCommands->initializeBeads(state);
 
@@ -1297,19 +1431,31 @@ void chipnomadInitChips(ChipNomadState* state, int sampleRate, ChipFactory facto
   for (int i = 0; i < state->audioProject.chipsCount; i++) {
     state->chips[i] = chipFactory(i, sampleRate, state->audioProject.chipSetup);
   }
+  const bool layerAY = inLayer(InstrumentType::AY1) || inLayer(InstrumentType::AY2) ||
+    inLayer(InstrumentType::AYSample);
+  if (layerAY) {
+    for (int owner = PROJECT_MAX_TRACKS; owner < VOICE_OWNER_COUNT; ++owner)
+      state->layerAYChips[owner] = chipFactory((owner - PROJECT_MAX_TRACKS) / INSTRUMENT_LAYER_COUNT,
+                                               sampleRate, state->audioProject.chipSetup);
+  }
 }
 
 static int audioRateModulationFrames(const ChipNomadState* state) {
   int frames = CCT_FLFO_MAX_CONTROL_FRAMES;
   bool active = false;
   for (int trackIdx = 0; trackIdx < state->audioProject.tracksCount; ++trackIdx) {
-    const PlaybackTrackState* track = &state->playbackState.tracks[trackIdx];
-    for (int i = 0; i < 4; ++i) {
-      const PlaybackModState* mod = &track->note.modulation[i];
-      if (!mod->modulation || mod->modulation->type != ModulationType::FLFO ||
-          mod->modulation->destination == 0) continue;
-      active = true;
-      frames = std::min(frames, playbackModAudioControlFrames(mod, (float)state->sampleRate));
+    const PlaybackTrackState* tracks[1 + INSTRUMENT_LAYER_COUNT] = {
+      &state->playbackState.tracks[trackIdx],
+      &state->playbackState.layerTracks[trackIdx][0], &state->playbackState.layerTracks[trackIdx][1],
+      &state->playbackState.layerTracks[trackIdx][2]};
+    for (const PlaybackTrackState* track : tracks) {
+      for (int i = 0; i < 4; ++i) {
+        const PlaybackModState* mod = &track->note.modulation[i];
+        if (!mod->modulation || mod->modulation->type != ModulationType::FLFO ||
+            mod->modulation->destination == 0) continue;
+        active = true;
+        frames = std::min(frames, playbackModAudioControlFrames(mod, (float)state->sampleRate));
+      }
     }
   }
   return active ? frames : 0;
@@ -1437,9 +1583,13 @@ static void applyVoicePostModulations(const PlaybackTrackState* track, Instrumen
 
 static void updateAudioRateModulations(ChipNomadState* state, int frames) {
   for (int trackIdx = 0; trackIdx < state->audioProject.tracksCount; ++trackIdx) {
-    PlaybackTrackState* track = &state->playbackState.tracks[trackIdx];
-    for (int i = 0; i < 4; ++i)
-      playbackModNextAudioFrames(&track->note.modulation[i], (float)state->sampleRate, frames);
+    PlaybackTrackState* tracks[1 + INSTRUMENT_LAYER_COUNT] = {
+      &state->playbackState.tracks[trackIdx],
+      &state->playbackState.layerTracks[trackIdx][0], &state->playbackState.layerTracks[trackIdx][1],
+      &state->playbackState.layerTracks[trackIdx][2]};
+    for (PlaybackTrackState* track : tracks)
+      for (int i = 0; i < 4; ++i)
+        playbackModNextAudioFrames(&track->note.modulation[i], (float)state->sampleRate, frames);
   }
   updateSoundbankVoices(state);
   updateSampleVoices(state); updateAudioInputVoices(state);
@@ -1533,7 +1683,14 @@ static int advancePlaybackFrame(ChipNomadState* state, uint64_t dueMicros) {
     state->playbackState.tracks[t].liveInstrument = EMPTY_VALUE_8;
   updateSoundbankVoices(state);
   updateSampleVoices(state); updateAudioInputVoices(state); updateSCWFVoices(state); updateBraidsVoices(state);
-  updatePlaitsVoices(state); updatePlaitsAltVoices(state); updateAChChidVoices(state); updateDrumSynthVoices(state); updateMMEVoices(state); updateMonkVoices(state); updateSinteredVoices(state); updateOPLLVoices(state); updateOPLVoices(state); updateFourOpVoices(state); updateSimpleChipVoices(state); updateSIDVoices(state); updateDX7Voices(state); applyVoiceEvents(state, dueMicros);
+  updatePlaitsVoices(state); updatePlaitsAltVoices(state); updateAChChidVoices(state); updateDrumSynthVoices(state);
+  updateMMEVoices(state); updateMonkVoices(state); updateSinteredVoices(state); updateOPLLVoices(state); updateOPLVoices(state); updateFourOpVoices(state); updateSimpleChipVoices(state); updateSIDVoices(state); updateDX7Voices(state); applyVoiceEvents(state, dueMicros);
+  for (int t = 0; t < state->audioProject.tracksCount; ++t) {
+    PlaybackTrackState& track = state->playbackState.tracks[t];
+    if (track.note.instrument < PROJECT_MAX_INSTRUMENTS &&
+        state->audioProject.instruments[track.note.instrument].type == InstrumentType::Layer)
+      track.liveInstrument = track.note.instrument;
+  }
   if (state->audioOverload > 0) state->audioOverload--;
   for (int i = 0; i < PROJECT_MAX_TRACKS; ++i)
     if (state->trackClipping[i] > 0) state->trackClipping[i]--;
@@ -1558,7 +1715,7 @@ static void activeEffectBuses(ChipNomadState* state, bool* reverb, bool* delay) 
 
 static int prepareRenderChunk(ChipNomadState* state, float* output, int frames,
                               bool* hasReverb, bool* hasDelay) {
-  for (int i = 0; i < state->audioProject.tracksCount; ++i) state->voiceMonitors[i].active = 0;
+  for (int i = 0; i < VOICE_OWNER_COUNT; ++i) state->voiceMonitors[i].active = 0;
   int requiredSize = frames * 2;
   if (requiredSize > state->mixBufferSize) {
     state->audioCommands->setRenderBufferOverflow();
@@ -1663,28 +1820,60 @@ static void renderChipTracks(ChipNomadState* state, float* output, int frames) {
                     rendered[i * 2] * gain, rendered[i * 2 + 1] * gain,
                     i, reverbSend, delaySend, pan);
   }
+  for (int owner = PROJECT_MAX_TRACKS; owner < voiceOwnerLimit(state); ++owner) {
+    if (!voiceOwnerValid(state, owner)) continue;
+    PlaybackTrackState* track = voiceOwnerState(state, owner);
+    if (track->note.instrument >= PROJECT_MAX_INSTRUMENTS) continue;
+    InstrumentType type = state->audioProject.instruments[track->note.instrument].type;
+    if (type != InstrumentType::AY1 && type != InstrumentType::AY2 && type != InstrumentType::AYSample) continue;
+    SoundChip* chip = state->layerAYChips[owner];
+    const int physicalTrack = voiceOwnerTrack(owner);
+    if (!chip || !state->playbackState.trackEnabled[physicalTrack]) continue;
+    float* rendered = state->mixBuffer;
+    chip->render(rendered, frames);
+    processLayerVoiceEQ(state, owner, 0, rendered, frames);
+    captureVoiceMonitor(state, owner, rendered, frames, 2, 1.0f);
+    captureVoiceMonitor(state, physicalTrack, rendered, frames, 2, 1.0f);
+    float gain = state->audioProject.trackVolume[physicalTrack] / 100.0f *
+      state->audioProject.instruments[track->note.instrument].volume / 255.0f * track->note.volume1 / 255.0f;
+    float reverbSend = effectiveTrackSend(state, physicalTrack, true);
+    float delaySend = effectiveTrackSend(state, physicalTrack, false);
+    TrackPanMix pan = makeVoiceOwnerPanMix(state, owner);
+    for (int i = 0; i < frames; ++i)
+      mixTrackFrame(state, physicalTrack, output, state->reverbBuffer, state->delayBuffer,
+                    rendered[i * 2] * gain, rendered[i * 2 + 1] * gain,
+                    i, reverbSend, delaySend, pan);
+  }
 }
 
 template <typename Voice>
 static void renderMonoVoiceTracks(ChipNomadState* state, Voice* const voices[][CHORD_MAX_VOICES], float* output, int frames) {
-  for (int trackIdx = 0; trackIdx < state->audioProject.tracksCount; ++trackIdx) {
+  for (int owner = 0; owner < voiceOwnerLimit(state); ++owner) {
+    if (!voiceOwnerValid(state, owner)) continue;
+    const int trackIdx = voiceOwnerTrack(owner);
+    PlaybackTrackState* voiceTrack = voiceOwnerState(state, owner);
     if (!state->playbackState.trackEnabled[trackIdx]) continue;
-    for (int slot = 0; slot < state->playbackState.tracks[trackIdx].chordVoiceCount; ++slot) {
-      Voice* voice = voices[trackIdx][slot];
+    for (int slot = 0; slot < voiceTrack->chordVoiceCount; ++slot) {
+      Voice* voice = voices[owner][slot];
       if (!voice || !voice->active()) continue;
       float* rendered = state->mixBuffer;
       voice->render(rendered, frames);
-      captureVoiceMonitor(state, trackIdx, rendered, frames, 1, voice->envelopeLevel());
+      if (owner >= PROJECT_MAX_TRACKS) {
+        for (int i = frames - 1; i >= 0; --i) rendered[i * 2] = rendered[i * 2 + 1] = rendered[i];
+        processLayerVoiceEQ(state, owner, slot, rendered, frames);
+      }
+      captureVoiceMonitor(state, owner, rendered, frames, owner >= PROJECT_MAX_TRACKS ? 2 : 1, voice->envelopeLevel());
+      if (owner >= PROJECT_MAX_TRACKS)
+        captureVoiceMonitor(state, trackIdx, rendered, frames, 2, voice->envelopeLevel());
       float trackGain = state->audioProject.trackVolume[trackIdx] / 100.0f;
       float reverbSend = effectiveTrackSend(state, trackIdx, true);
       float delaySend = effectiveTrackSend(state, trackIdx, false);
-      int instrumentPan = effectivePan(state, trackIdx, true);
-      int trackPan = effectivePan(state, trackIdx, false);
-      TrackPanMix pan = makeTrackPanMix(state, instrumentPan, trackPan);
+      TrackPanMix pan = makeVoiceOwnerPanMix(state, owner);
       for (int i = 0; i < frames; ++i) {
-        float sample = rendered[i] * 0.25f * trackGain;
+        float left = rendered[owner >= PROJECT_MAX_TRACKS ? i * 2 : i] * 0.25f * trackGain;
+        float right = rendered[owner >= PROJECT_MAX_TRACKS ? i * 2 + 1 : i] * 0.25f * trackGain;
         mixTrackFrame(state, trackIdx, output, state->reverbBuffer, state->delayBuffer,
-                      sample, sample, i, reverbSend, delaySend, pan);
+                      left, right, i, reverbSend, delaySend, pan);
       }
     }
   }
@@ -1692,20 +1881,24 @@ static void renderMonoVoiceTracks(ChipNomadState* state, Voice* const voices[][C
 
 template <typename Voice>
 static void renderStereoVoiceTracks(ChipNomadState* state, Voice* const voices[][CHORD_MAX_VOICES], float* output, int frames, bool includeReleaseSlots = false) {
-  for (int trackIdx = 0; trackIdx < state->audioProject.tracksCount; ++trackIdx) {
+  for (int owner = 0; owner < voiceOwnerLimit(state); ++owner) {
+    if (!voiceOwnerValid(state, owner)) continue;
+    const int trackIdx = voiceOwnerTrack(owner);
+    PlaybackTrackState* voiceTrack = voiceOwnerState(state, owner);
     if (!state->playbackState.trackEnabled[trackIdx]) continue;
-    for (int slot = 0; slot < (includeReleaseSlots ? CHORD_MAX_VOICES : state->playbackState.tracks[trackIdx].chordVoiceCount); ++slot) {
-      Voice* voice = voices[trackIdx][slot];
+    for (int slot = 0; slot < (includeReleaseSlots ? CHORD_MAX_VOICES : voiceTrack->chordVoiceCount); ++slot) {
+      Voice* voice = voices[owner][slot];
       if (!voice || !voice->active()) continue;
       float* rendered = state->mixBuffer;
       voice->render(rendered, frames);
-      captureVoiceMonitor(state, trackIdx, rendered, frames, 2, voice->envelopeLevel());
+      processLayerVoiceEQ(state, owner, slot, rendered, frames);
+      captureVoiceMonitor(state, owner, rendered, frames, 2, voice->envelopeLevel());
+      if (owner >= PROJECT_MAX_TRACKS)
+        captureVoiceMonitor(state, trackIdx, rendered, frames, 2, voice->envelopeLevel());
       float gain = state->audioProject.trackVolume[trackIdx] / 100.0f;
       float reverbSend = effectiveTrackSend(state, trackIdx, true);
       float delaySend = effectiveTrackSend(state, trackIdx, false);
-      int instrumentPan = effectivePan(state, trackIdx, true);
-      int trackPan = effectivePan(state, trackIdx, false);
-      TrackPanMix pan = makeTrackPanMix(state, instrumentPan, trackPan);
+      TrackPanMix pan = makeVoiceOwnerPanMix(state, owner);
       for (int i = 0; i < frames; ++i)
         mixTrackFrame(state, trackIdx, output, state->reverbBuffer, state->delayBuffer,
                       rendered[i * 2] * gain, rendered[i * 2 + 1] * gain,
@@ -1866,8 +2059,9 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples, const flo
     renderStereoVoiceTracks(state, state->soundbankVoices, output, frames, true);
     // Sample voices keep the same short de-click tail after KILL/retrigger.
     renderStereoVoiceTracks(state, state->sampleVoices, output, frames, true);
-    for (int t = 0; t < state->audioProject.tracksCount; ++t) {
-      int instrumentIdx = state->playbackState.tracks[t].note.instrument;
+    for (int t = 0; t < voiceOwnerLimit(state); ++t) {
+      if (!voiceOwnerValid(state, t)) continue;
+      int instrumentIdx = voiceOwnerState(state, t)->note.instrument;
       const Instrument* instrument = instrumentIdx < PROJECT_MAX_INSTRUMENTS
         ? &state->audioProject.instruments[instrumentIdx] : nullptr;
       int source = instrument && instrument->type == InstrumentType::AudioIn
@@ -1888,31 +2082,35 @@ int chipnomadRender(ChipNomadState* state, float* buffer, int samples, const flo
     renderMonoVoiceTracks(state, state->mmeVoices, output, frames);
     renderMonoVoiceTracks(state, state->sinteredVoices, output, frames);
     renderMonoVoiceTracks(state, state->opllVoices, output, frames);
-    for(int t=0;t<state->audioProject.tracksCount;++t) {
+    for(int t=0;t<voiceOwnerLimit(state);++t) {
+      if (!voiceOwnerValid(state, t)) continue;
+      const int physicalTrack = voiceOwnerTrack(t);
       auto* part=state->dx7Parts[t];
-      int instrument=state->playbackState.tracks[t].note.instrument;
+      int instrument=voiceOwnerState(state,t)->note.instrument;
       bool dx7Selected=instrument!=EMPTY_VALUE_8&&state->audioProject.instruments[instrument].type==InstrumentType::DX7;
       if (!part || (!part->active() && !dx7Selected)) continue;
       float* rendered = state->mixBuffer;
       part->render(rendered,frames);
-      if(!state->playbackState.trackEnabled[t])continue;
-      captureVoiceMonitor(state,t,rendered,frames,1,part->envelopeLevel());
-      float gain=state->audioProject.trackVolume[t]/100.f*.25f;
-      float reverb=effectiveTrackSend(state,t,true),delay=effectiveTrackSend(state,t,false);
-      int instrumentPan = effectivePan(state, t, true);
-      int trackPan = effectivePan(state, t, false);
-      TrackPanMix pan = makeTrackPanMix(state, instrumentPan, trackPan);
+      if(!state->playbackState.trackEnabled[physicalTrack])continue;
+      for (int i = frames - 1; i >= 0; --i) rendered[i * 2] = rendered[i * 2 + 1] = rendered[i];
+      processLayerVoiceEQ(state, t, 0, rendered, frames);
+      captureVoiceMonitor(state,t,rendered,frames,2,part->envelopeLevel());
+      if(t>=PROJECT_MAX_TRACKS)captureVoiceMonitor(state,physicalTrack,rendered,frames,2,part->envelopeLevel());
+      float gain=state->audioProject.trackVolume[physicalTrack]/100.f*.25f;
+      float reverb=effectiveTrackSend(state,physicalTrack,true),delay=effectiveTrackSend(state,physicalTrack,false);
+      TrackPanMix pan = makeVoiceOwnerPanMix(state, t);
       for(int i=0;i<frames;++i)
-        mixTrackFrame(state,t,output,state->reverbBuffer,state->delayBuffer,rendered[i]*gain,rendered[i]*gain,i,reverb,delay,pan);
+        mixTrackFrame(state,physicalTrack,output,state->reverbBuffer,state->delayBuffer,rendered[i*2]*gain,rendered[i*2+1]*gain,i,reverb,delay,pan);
     }
 
     renderStereoVoiceTracks(state,state->fourOpVoices,output,frames);
     renderStereoVoiceTracks(state,state->oplVoices,output,frames);
     renderMonoVoiceTracks(state,state->simpleChipVoices,output,frames);
-    SIDVoice* sidPool[PROJECT_MAX_TRACKS*CHORD_MAX_VOICES];int sidCount=0;
+    SIDVoice* sidPool[VOICE_OWNER_COUNT*CHORD_MAX_VOICES];int sidCount=0;
     // Order roots first across tracks; deterministic stealing retains new roots.
     if (state->sidVoices[0][0]) {
-      for(int slot=0;slot<CHORD_MAX_VOICES;++slot)for(int t=0;t<PROJECT_MAX_TRACKS;++t)sidPool[sidCount++]=state->sidVoices[t][slot];
+      for(int slot=0;slot<CHORD_MAX_VOICES;++slot)for(int t=0;t<VOICE_OWNER_COUNT;++t)
+        if(state->sidVoices[t][slot])sidPool[sidCount++]=state->sidVoices[t][slot];
       limitSIDVoices(sidPool,sidCount,4);
     }
     renderMonoVoiceTracks(state,state->sidVoices,output,frames);
@@ -1964,10 +2162,10 @@ static float envelopeTime(uint8_t value) {
 }
 
 static void applyVoiceEvents(ChipNomadState* state, uint64_t dueMicros) {
-  PlaybackState* playback = &state->playbackState;
   Project* project = &state->audioProject;
-  for (int trackIdx = 0; trackIdx < project->tracksCount; ++trackIdx) {
-    PlaybackTrackState* track = &playback->tracks[trackIdx];
+  for (int trackIdx = 0; trackIdx < voiceOwnerLimit(state); ++trackIdx) {
+    if (!voiceOwnerValid(state, trackIdx)) continue;
+    PlaybackTrackState* track = voiceOwnerState(state, trackIdx);
 
     // MC1-MC4 row FX (see playback_fx_midi.cpp): independent of note
     // trigger/release, so this runs even on a row that only carries a CC
@@ -1988,7 +2186,14 @@ static void applyVoiceEvents(ChipNomadState* state, uint64_t dueMicros) {
     }
 
     if (!track->note.noteTriggered && !track->note.noteReleased && !track->note.noteKilled) continue;
-    if (track->note.instrument == EMPTY_VALUE_8) continue;
+    if (track->note.instrument == EMPTY_VALUE_8) {
+      // A Layer reference can disappear or become another Layer while a MIDI
+      // note is held. The owner identity is enough to release any such note.
+      if (track->note.noteKilled)
+        for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot)
+          midiRouterEmitNoteOff(state->midiRouter, trackIdx, slot, dueMicros);
+      continue;
+    }
     auto applyEvent = [&](auto* voices) {
       for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) {
         if (track->note.noteKilled || (track->note.noteTriggered && slot >= track->chordVoiceCount))
@@ -2001,10 +2206,11 @@ static void applyVoiceEvents(ChipNomadState* state, uint64_t dueMicros) {
       case InstrumentType::SoundFont:
         if (track->note.noteTriggered)
           for (int incoming = 0; incoming < track->chordVoiceCount; ++incoming)
-            for (int t = 0; t < project->tracksCount; ++t)
+            for (int t = 0; t < voiceOwnerLimit(state); ++t) if (voiceOwnerValid(state, t))
               for (int v = 0; v < CHORD_MAX_VOICES; ++v)
-                state->soundbankVoices[t][v]->chokeFrom(
-                    *state->soundbankVoices[trackIdx][incoming]);
+                if (state->soundbankVoices[t][v])
+                  state->soundbankVoices[t][v]->chokeFrom(
+                      *state->soundbankVoices[trackIdx][incoming]);
         applyEvent(state->soundbankVoices[trackIdx]);
         break;
       case InstrumentType::AudioIn:
@@ -2088,11 +2294,13 @@ static void applyVoiceEvents(ChipNomadState* state, uint64_t dueMicros) {
           // *active-gated sends this replaced.
           if (endSlot) midiRouterEmitNoteOff(state->midiRouter, trackIdx, slot, dueMicros);
           if (track->note.noteTriggered && slot < track->chordVoiceCount) {
-            int midiNote = 12 + track->chordPitchFinal[slot];
+            int midiNote = 12 + track->chordPitchFinal[slot] +
+              (track->note.fineOffset >= 0 ? track->note.fineOffset + 50 : track->note.fineOffset - 50) / 100;
             if (midiNote < 0) midiNote = 0;
             if (midiNote > 127) midiNote = 127;
             int volume = clampInt(track->note.volume + track->note.volumeOffset, 0, PHRASE_VOLUME_MAX);
-            int velocity = volume;
+            int velocity = volume * project->instruments[track->note.instrument].volume / 255;
+            velocity = velocity * (track->note.layerGainActive ? track->note.volume1 : 255) / 255;
             midiRouterEmitNoteOn(state->midiRouter, trackIdx, slot, channel, (uint8_t)midiNote, (uint8_t)velocity, dueMicros);
           }
         }
@@ -2102,7 +2310,7 @@ static void applyVoiceEvents(ChipNomadState* state, uint64_t dueMicros) {
     }
     track->note.noteTriggered = track->note.noteReleased = track->note.noteKilled = 0;
   }
-  if (state->dx7Parts[0]) limitDX7Voices(state->dx7Parts, project->tracksCount);
+  if (state->dx7Parts[0]) limitDX7Voices(state->dx7Parts, voiceOwnerLimit(state));
 }
 
 // InstrumentType::Midi keeps no voice object of its own (see
@@ -2125,7 +2333,7 @@ void chipnomadCollectSoundbanks(ChipNomadState* state) {
       for (const auto& i : p->instruments)
         if (i.type == InstrumentType::SoundFont && i.chip.soundfont.prepared == h) return true;
     if (state->audioCommands->hasSoundbank(h)) return true;
-    for (int t = 0; t < PROJECT_MAX_TRACKS; ++t)
+    for (int t = 0; t < VOICE_OWNER_COUNT; ++t)
       for (int v = 0; v < CHORD_MAX_VOICES; ++v)
         if (state->soundbankVoices[t][v] && state->soundbankVoices[t][v]->active() && state->soundbankVoices[t][v]->handle() == h)
           return true;
@@ -2136,9 +2344,11 @@ static void updateSoundbankVoices(ChipNomadState* state) {
   if (!state->soundbankVoices[0][0]) return;
   auto* project = &state->audioProject;
   auto* playback = &state->playbackState;
-  for (int t = 0; t < project->tracksCount; ++t) {
-    auto* track = &playback->tracks[t];
+  for (int t = 0; t < voiceOwnerLimit(state); ++t) {
+    if (!voiceOwnerValid(state, t)) continue;
+    auto* track = voiceOwnerState(state, t);
     auto voices = state->soundbankVoices[t];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 ||
         project->instruments[track->note.instrument].type != InstrumentType::SoundFont) {
       for (int v = 0; v < CHORD_MAX_VOICES; ++v) voices[v]->kill();
@@ -2148,6 +2358,7 @@ static void updateSoundbankVoices(ChipNomadState* state) {
     const auto controls = soundbankFXControls(instrument->chip.soundfont.controls, track->note.fx);
     float gain = (track->note.fx[fxFVL].isOn ? track->note.fx[fxFVL].fxValue : instrument->volume)
       * playbackVolumeGain(playback, track) / 255.f;
+    if (track->note.layerGainActive) gain *= track->note.volume1 / 255.f;
     int pitch = 0;
     for (int m = 0; m < 4; ++m) {
       auto& mod = track->note.modulation[m];
@@ -2187,9 +2398,11 @@ static void recordLiveControls(PlaybackTrackState* track, std::initializer_list<
 
 static void updateAudioInputVoices(ChipNomadState* state) {
   if (!state->audioInputVoices[0][0]) return;
-  for (int t = 0; t < state->audioProject.tracksCount; ++t) {
-    auto* track = &state->playbackState.tracks[t];
+  for (int t = 0; t < voiceOwnerLimit(state); ++t) {
+    if (!voiceOwnerValid(state, t)) continue;
+    auto* track = voiceOwnerState(state, t);
     auto** voices = state->audioInputVoices[t];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 ||
         state->audioProject.instruments[track->note.instrument].type != InstrumentType::AudioIn) {
       for (int v = 0; v < CHORD_MAX_VOICES; ++v) voices[v]->kill();
@@ -2229,9 +2442,11 @@ static void updateSampleVoices(ChipNomadState* state) {
   if (!state->sampleVoices[0][0]) return;
   Project* project = &state->audioProject;
   PlaybackState* playback = &state->playbackState;
-  for (int trackIdx = 0; trackIdx < project->tracksCount; trackIdx++) {
-    PlaybackTrackState* track = &playback->tracks[trackIdx];
+  for (int trackIdx = 0; trackIdx < voiceOwnerLimit(state); trackIdx++) {
+    if (!voiceOwnerValid(state, trackIdx)) continue;
+    PlaybackTrackState* track = voiceOwnerState(state, trackIdx);
     SampleVoice** voices = state->sampleVoices[trackIdx];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 ||
         project->instruments[track->note.instrument].type != InstrumentType::Sample) {
       for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) voices[slot]->kill();
@@ -2409,9 +2624,11 @@ static void updateSCWFVoices(ChipNomadState* state) {
   if (!state->scwfVoices[0][0]) return;
   Project* project = &state->audioProject;
   PlaybackState* playback = &state->playbackState;
-  for (int trackIdx = 0; trackIdx < project->tracksCount; ++trackIdx) {
-    PlaybackTrackState* track = &playback->tracks[trackIdx];
+  for (int trackIdx = 0; trackIdx < voiceOwnerLimit(state); ++trackIdx) {
+    if (!voiceOwnerValid(state, trackIdx)) continue;
+    PlaybackTrackState* track = voiceOwnerState(state, trackIdx);
     SCWFVoice** voices = state->scwfVoices[trackIdx];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 ||
         (project->instruments[track->note.instrument].type != InstrumentType::SCWF &&
          project->instruments[track->note.instrument].type != InstrumentType::BYOWTBL)) {
@@ -2500,9 +2717,11 @@ static void updateAChChidVoices(ChipNomadState* state) {
   if (!state->achchidVoices[0][0]) return;
   Project* project = &state->audioProject;
   PlaybackState* playback = &state->playbackState;
-  for (int trackIdx = 0; trackIdx < project->tracksCount; ++trackIdx) {
-    PlaybackTrackState* track = &playback->tracks[trackIdx];
+  for (int trackIdx = 0; trackIdx < voiceOwnerLimit(state); ++trackIdx) {
+    if (!voiceOwnerValid(state, trackIdx)) continue;
+    PlaybackTrackState* track = voiceOwnerState(state, trackIdx);
     AChChidVoice** voices = state->achchidVoices[trackIdx];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 ||
         project->instruments[track->note.instrument].type != InstrumentType::AChChid) {
       for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) voices[slot]->kill();
@@ -2512,6 +2731,7 @@ static void updateAChChidVoices(ChipNomadState* state) {
     int cutoff = a->cutoff, resonance = a->resonance, envMod = a->envMod;
     int decay = a->decay, accent = a->accent;
     int timbre = a->timbre, color = a->color;
+    int fine = a->fineTune + track->note.fineOffset;
     float gain = phraseGain(playback, track, &project->instruments[track->note.instrument]);
     if (track->note.fx[fxACF].isOn) cutoff = instrumentFXCutoff(track->note.fx[fxACF].fxValue);
     if (track->note.fx[fxARS].isOn) resonance = track->note.fx[fxARS].fxValue * 100 / 255;
@@ -2527,6 +2747,7 @@ static void updateAChChidVoices(ChipNomadState* state) {
       if (!mod->modulation) continue;
       switch (mod->modulation->destination) {
         case 1: { int value = playbackModScaleToRange(mod->outValue, 255); gain = modulationIsAdditive(mod->modulation->type) ? gain + value / 255.0f : value / 255.0f; break; }
+        case 2: fine += playbackModScaleToRange(mod->outValue, 1200); break;
         case 3: cutoff = playbackModulateCutoff(cutoff, mod); break;
         case 4: resonance += playbackModScaleToRange(mod->outValue, 100); break;
         case 5: envMod += playbackModScaleToRange(mod->outValue, 100); break;
@@ -2542,7 +2763,9 @@ static void updateAChChidVoices(ChipNomadState* state) {
                        controlFromLogRange(clampInt(cutoff, 200, FILTER_CUTOFF_MAX_HZ), 200, FILTER_CUTOFF_MAX_HZ),
                        controlFromRange(clampInt(resonance, 0, 100), 100));
     for (int slot = 0; slot < track->chordVoiceCount; ++slot)
-      voices[slot]->configure((uint8_t)a->wave, a->fineTune, a->model, (uint16_t)clampInt(timbre, 0, 32767), (uint16_t)clampInt(color, 0, 32767), a->saturation, a->sidShape, a->sidPulseWidth,
+      voices[slot]->configure((uint8_t)a->wave,
+        (int16_t)clampInt(fine, -32768, 32767),
+        a->model, (uint16_t)clampInt(timbre, 0, 32767), (uint16_t)clampInt(color, 0, 32767), a->saturation, a->sidShape, a->sidPulseWidth,
         (uint16_t)clampInt(cutoff, 200, FILTER_CUTOFF_MAX_HZ), (uint8_t)clampInt(resonance, 0, 100),
         (uint8_t)clampInt(envMod, 0, 100), (uint16_t)clampInt(decay, 200, 2000),
         (uint8_t)clampInt(accent, 0, 100), (gain < 0.0f ? 0.0f : gain) / track->chordVoiceCount);
@@ -2553,9 +2776,11 @@ static void updateDrumSynthVoices(ChipNomadState* state) {
   if (!state->drumSynthVoices[0][0]) return;
   Project* project = &state->audioProject;
   PlaybackState* playback = &state->playbackState;
-  for (int trackIdx = 0; trackIdx < project->tracksCount; ++trackIdx) {
-    PlaybackTrackState* track = &playback->tracks[trackIdx];
+  for (int trackIdx = 0; trackIdx < voiceOwnerLimit(state); ++trackIdx) {
+    if (!voiceOwnerValid(state, trackIdx)) continue;
+    PlaybackTrackState* track = voiceOwnerState(state, trackIdx);
     DrumSynthVoice** voices = state->drumSynthVoices[trackIdx];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 ||
         project->instruments[track->note.instrument].type != InstrumentType::DrumSynth) {
       for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) voices[slot]->kill();
@@ -2608,9 +2833,11 @@ static void updateMMEVoices(ChipNomadState* state) {
   if (!state->mmeVoices[0][0]) return;
   Project* project = &state->audioProject;
   PlaybackState* playback = &state->playbackState;
-  for (int trackIdx = 0; trackIdx < project->tracksCount; ++trackIdx) {
-    PlaybackTrackState* track = &playback->tracks[trackIdx];
+  for (int trackIdx = 0; trackIdx < voiceOwnerLimit(state); ++trackIdx) {
+    if (!voiceOwnerValid(state, trackIdx)) continue;
+    PlaybackTrackState* track = voiceOwnerState(state, trackIdx);
     MMEVoice** voices = state->mmeVoices[trackIdx];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 ||
         project->instruments[track->note.instrument].type != InstrumentType::MME) { for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) voices[slot]->kill(); continue; }
     InstrumentMME* m = &project->instruments[track->note.instrument].chip.mme;
@@ -2671,9 +2898,11 @@ static void updateMonkVoices(ChipNomadState* state) {
   if (!state->monkVoices[0][0]) return;
   Project* project = &state->audioProject;
   PlaybackState* playback = &state->playbackState;
-  for (int trackIdx = 0; trackIdx < project->tracksCount; ++trackIdx) {
-    PlaybackTrackState* track = &playback->tracks[trackIdx];
+  for (int trackIdx = 0; trackIdx < voiceOwnerLimit(state); ++trackIdx) {
+    if (!voiceOwnerValid(state, trackIdx)) continue;
+    PlaybackTrackState* track = voiceOwnerState(state, trackIdx);
     MonkSynthVoice** voices = state->monkVoices[trackIdx];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 ||
         project->instruments[track->note.instrument].type != InstrumentType::Monk) { for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) voices[slot]->kill(); continue; }
     InstrumentMonk* m = &project->instruments[track->note.instrument].chip.monk;
@@ -2732,9 +2961,11 @@ static void updateSinteredVoices(ChipNomadState* state) {
   if (!state->sinteredVoices[0][0]) return;
   Project* project = &state->audioProject;
   PlaybackState* playback = &state->playbackState;
-  for (int trackIdx = 0; trackIdx < project->tracksCount; ++trackIdx) {
-    PlaybackTrackState* track = &playback->tracks[trackIdx];
+  for (int trackIdx = 0; trackIdx < voiceOwnerLimit(state); ++trackIdx) {
+    if (!voiceOwnerValid(state, trackIdx)) continue;
+    PlaybackTrackState* track = voiceOwnerState(state, trackIdx);
     SinteredVoice** voices = state->sinteredVoices[trackIdx];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 ||
         project->instruments[track->note.instrument].type != InstrumentType::Sintered) { for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) voices[slot]->kill(); continue; }
     InstrumentSintered* s = &project->instruments[track->note.instrument].chip.sintered;
@@ -2784,9 +3015,11 @@ static void updateBraidsVoices(ChipNomadState* state) {
   Project* project = &state->audioProject;
   PlaybackState* playback = &state->playbackState;
 
-  for (int trackIdx = 0; trackIdx < project->tracksCount; trackIdx++) {
-    PlaybackTrackState* track = &playback->tracks[trackIdx];
+  for (int trackIdx = 0; trackIdx < voiceOwnerLimit(state); trackIdx++) {
+    if (!voiceOwnerValid(state, trackIdx)) continue;
+    PlaybackTrackState* track = voiceOwnerState(state, trackIdx);
     BraidsVoice** voices = state->braidsVoices[trackIdx];
+    if (!voices[0]) continue;
 
     if (track->note.instrument == EMPTY_VALUE_8 ||
         project->instruments[track->note.instrument].type != InstrumentType::Braids) {
@@ -2884,9 +3117,11 @@ static void updatePlaitsVoices(ChipNomadState* state) {
   if (!state->plaitsVoices[0][0]) return;
   Project* project = &state->audioProject;
   PlaybackState* playback = &state->playbackState;
-  for (int trackIdx = 0; trackIdx < project->tracksCount; ++trackIdx) {
-    PlaybackTrackState* track = &playback->tracks[trackIdx];
+  for (int trackIdx = 0; trackIdx < voiceOwnerLimit(state); ++trackIdx) {
+    if (!voiceOwnerValid(state, trackIdx)) continue;
+    PlaybackTrackState* track = voiceOwnerState(state, trackIdx);
     PlaitsVoice** voices = state->plaitsVoices[trackIdx];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 ||
         project->instruments[track->note.instrument].type != InstrumentType::Plaits) {
       for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) voices[slot]->kill();
@@ -2971,9 +3206,11 @@ static void updatePlaitsAltVoices(ChipNomadState* state) {
   if (!state->plaitsAltVoices[0][0]) return;
   Project* project = &state->audioProject;
   PlaybackState* playback = &state->playbackState;
-  for (int trackIdx = 0; trackIdx < project->tracksCount; ++trackIdx) {
-    PlaybackTrackState* track = &playback->tracks[trackIdx];
+  for (int trackIdx = 0; trackIdx < voiceOwnerLimit(state); ++trackIdx) {
+    if (!voiceOwnerValid(state, trackIdx)) continue;
+    PlaybackTrackState* track = voiceOwnerState(state, trackIdx);
     PlaitsAltVoice** voices = state->plaitsAltVoices[trackIdx];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 ||
         project->instruments[track->note.instrument].type != InstrumentType::PlaitsAlt) {
       for (int slot = 0; slot < CHORD_MAX_VOICES; ++slot) voices[slot]->kill();
@@ -3054,6 +3291,7 @@ void chipnomadSetQuality(ChipNomadState* state, ChipNomadQuality quality) {
       state->chips[i]->setQuality(quality);
     }
   }
+  for (auto* chip : state->layerAYChips) if (chip) chip->setQuality(quality);
 }
 
 void chipnomadSetBraidsSettings(ChipNomadState* state, uint8_t bits,
@@ -3141,8 +3379,10 @@ static void updateOPLLVoices(ChipNomadState* state) {
   if (!state->opllVoices[0][0]) return;
   auto* project = &state->audioProject;
   auto* playback = &state->playbackState;
-  for (int t = 0; t < project->tracksCount; ++t) {
-    auto* track = &playback->tracks[t]; auto* voices = state->opllVoices[t];
+  for (int t = 0; t < voiceOwnerLimit(state); ++t) {
+    if (!voiceOwnerValid(state, t)) continue;
+    auto* track = voiceOwnerState(state, t); auto* voices = state->opllVoices[t];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 || !isOPLL(project->instruments[track->note.instrument].type)) {
       for (int v = 0; v < CHORD_MAX_VOICES; ++v) voices[v]->kill();
       continue;
@@ -3177,8 +3417,10 @@ static void updateOPLVoices(ChipNomadState* state) {
   if (!state->oplVoices[0][0]) return;
   auto* project = &state->audioProject;
   auto* playback = &state->playbackState;
-  for (int t = 0; t < project->tracksCount; ++t) {
-    auto* track = &playback->tracks[t]; auto* voices = state->oplVoices[t];
+  for (int t = 0; t < voiceOwnerLimit(state); ++t) {
+    if (!voiceOwnerValid(state, t)) continue;
+    auto* track = voiceOwnerState(state, t); auto* voices = state->oplVoices[t];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 || !isOPL(project->instruments[track->note.instrument].type)) {
       for (int v = 0; v < CHORD_MAX_VOICES; ++v) voices[v]->kill();
       continue;
@@ -3213,8 +3455,10 @@ static void updateFourOpVoices(ChipNomadState* state) {
   if (!state->fourOpVoices[0][0]) return;
   auto* project = &state->audioProject;
   auto* playback = &state->playbackState;
-  for (int t = 0; t < project->tracksCount; ++t) {
-    auto* track = &playback->tracks[t]; auto* voices = state->fourOpVoices[t];
+  for (int t = 0; t < voiceOwnerLimit(state); ++t) {
+    if (!voiceOwnerValid(state, t)) continue;
+    auto* track = voiceOwnerState(state, t); auto* voices = state->fourOpVoices[t];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 || !isFourOp(project->instruments[track->note.instrument].type)) {
       for (int v = 0; v < CHORD_MAX_VOICES; ++v) voices[v]->kill();
       continue;
@@ -3249,8 +3493,10 @@ static void updateSimpleChipVoices(ChipNomadState* state) {
   if (!state->simpleChipVoices[0][0]) return;
   auto* project = &state->audioProject;
   auto* playback = &state->playbackState;
-  for (int t = 0; t < project->tracksCount; ++t) {
-    auto* track = &playback->tracks[t]; auto* voices = state->simpleChipVoices[t];
+  for (int t = 0; t < voiceOwnerLimit(state); ++t) {
+    if (!voiceOwnerValid(state, t)) continue;
+    auto* track = voiceOwnerState(state, t); auto* voices = state->simpleChipVoices[t];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 || !isSimpleChip(project->instruments[track->note.instrument].type)) {
       for (int v = 0; v < CHORD_MAX_VOICES; ++v) voices[v]->kill();
       continue;
@@ -3297,8 +3543,10 @@ static void updateDX7Voices(ChipNomadState* state) {
   if (!state->dx7Voices[0][0]) return;
   auto* project = &state->audioProject;
   auto* playback = &state->playbackState;
-  for (int t = 0; t < project->tracksCount; ++t) {
-    auto* track = &playback->tracks[t]; auto* voices = state->dx7Voices[t];
+  for (int t = 0; t < voiceOwnerLimit(state); ++t) {
+    if (!voiceOwnerValid(state, t)) continue;
+    auto* track = voiceOwnerState(state, t); auto* voices = state->dx7Voices[t];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 || project->instruments[track->note.instrument].type!=InstrumentType::DX7) {
       for (int v = 0; v < CHORD_MAX_VOICES; ++v) voices[v]->kill();
       continue;
@@ -3334,8 +3582,10 @@ static void updateSIDVoices(ChipNomadState* state) {
   if (!state->sidVoices[0][0]) return;
   auto* project = &state->audioProject;
   auto* playback = &state->playbackState;
-  for (int t = 0; t < project->tracksCount; ++t) {
-    auto* track = &playback->tracks[t]; auto* voices = state->sidVoices[t];
+  for (int t = 0; t < voiceOwnerLimit(state); ++t) {
+    if (!voiceOwnerValid(state, t)) continue;
+    auto* track = voiceOwnerState(state, t); auto* voices = state->sidVoices[t];
+    if (!voices[0]) continue;
     if (track->note.instrument == EMPTY_VALUE_8 || project->instruments[track->note.instrument].type!=InstrumentType::SID) {
       for (int v = 0; v < CHORD_MAX_VOICES; ++v) voices[v]->kill();
       continue;

@@ -34,6 +34,8 @@ struct MidiRouterState;
 struct LinkClientState;
 class AudioMonitor;
 
+constexpr int VOICE_OWNER_COUNT = PROJECT_MAX_VOICE_OWNERS;
+
 constexpr int VOICE_MONITOR_SAMPLES = 256;
 
 struct VoiceMonitor {
@@ -52,8 +54,15 @@ struct MotionRecordEvent {
 
 // UI-facing copy of the audio state.  The callback never exposes its mutable
 // PlaybackState to the UI.
+struct PlaybackLayerStatus {
+  uint8_t instrument;
+  uint8_t liveInstrument;
+  uint8_t liveControls[liveControlCount];
+};
+
 struct PlaybackStatus {
   PlaybackTrackState tracks[PROJECT_MAX_TRACKS];
+  PlaybackLayerStatus layerTracks[PROJECT_MAX_TRACKS][INSTRUMENT_LAYER_COUNT];
   uint8_t trackEnabled[PROJECT_MAX_TRACKS];
   uint8_t isPlaying;
   // Audio-thread tick counter and the host timestamp of that tick. They are
@@ -85,6 +94,8 @@ struct ChipNomadState {
   Project audioProject;
   PlaybackState playbackState;
   SoundChip* chips[PROJECT_MAX_CHIPS];
+  // Dedicated AY instances for Layer lanes. Normal owners remain null.
+  SoundChip* layerAYChips[VOICE_OWNER_COUNT];
   int sampleRate;
   float frameSampleCounter;
   StopTransition stopTransition;
@@ -96,6 +107,8 @@ struct ChipNomadState {
   // The EQ of the instrument each track is playing, run on the track's insert buffer.
   InstrumentEQFilter trackEQ[PROJECT_MAX_TRACKS];
   uint8_t trackEQActive[PROJECT_MAX_TRACKS];
+  InstrumentEQFilter layerEQ[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
+  uint8_t layerEQActive[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
   InstrumentEQFilter masterEQ;
   uint8_t masterEQActive;
   InsertChain* insertChains[PROJECT_MAX_TRACKS];
@@ -116,36 +129,36 @@ struct ChipNomadState {
   float* delayBuffer;
   int mixBufferSize;
   int aySampleDithering;
-  BraidsVoice* braidsVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
+  BraidsVoice* braidsVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
   uint8_t braidsBits, braidsDrift, braidsSignature;
   uint32_t braidsSignatureSeed;
-  SoundbankVoice* soundbankVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  AudioInputVoice* audioInputVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  SampleVoice* sampleVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  SCWFVoice* scwfVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  PlaitsVoice* plaitsVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  PlaitsAltVoice* plaitsAltVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  AChChidVoice* achchidVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  DrumSynthVoice* drumSynthVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  MMEVoice* mmeVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
+  SoundbankVoice* soundbankVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
+  AudioInputVoice* audioInputVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
+  SampleVoice* sampleVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
+  SCWFVoice* scwfVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
+  PlaitsVoice* plaitsVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
+  PlaitsAltVoice* plaitsAltVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
+  AChChidVoice* achchidVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
+  DrumSynthVoice* drumSynthVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
+  MMEVoice* mmeVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
   MonkSynthVoice* monkPreview;
-  MonkSynthVoice* monkVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  OPLVoice* oplVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
+  MonkSynthVoice* monkVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
+  OPLVoice* oplVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
   OPLVoice* oplPreview;
   FourOpVoice* fourOpPreview;
-  FourOpVoice* fourOpVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  SimpleChipVoice* simpleChipVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
+  FourOpVoice* fourOpVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
+  SimpleChipVoice* simpleChipVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
   SimpleChipVoice* simpleChipPreview;
   InstrumentType chipPreviewType;
-  DX7Part* dx7Parts[PROJECT_MAX_TRACKS];
-  DX7Voice* dx7Voices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
+  DX7Part* dx7Parts[VOICE_OWNER_COUNT];
+  DX7Voice* dx7Voices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
   DX7Part* dx7Preview;
   SIDVoice* sidPreview;
-  SIDVoice* sidVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
+  SIDVoice* sidVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
   OPLLVoice* opllPreview;
   int opllPreviewTrack;
-  OPLLVoice* opllVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
-  SinteredVoice* sinteredVoices[PROJECT_MAX_TRACKS][CHORD_MAX_VOICES];
+  OPLLVoice* opllVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
+  SinteredVoice* sinteredVoices[VOICE_OWNER_COUNT][CHORD_MAX_VOICES];
   // MIDI-Out active-note tracking, Program/Bank cache, and MIDI-In routing
   // state now live behind the generic MIDI router (see midi/midi_router.h) -
   // one instance per ChipNomadState, so independent engine states (e.g. one
@@ -156,7 +169,7 @@ struct ChipNomadState {
   // with serial-bumped getters; the audio thread captures session state
   // through it at tick boundaries.
   LinkClientState* linkClient;
-  VoiceMonitor voiceMonitors[PROJECT_MAX_TRACKS];
+  VoiceMonitor voiceMonitors[VOICE_OWNER_COUNT];
   MasterEffects* masterEffects;
   AudioCommandQueue* audioCommands;
   AudioMonitor* audioMonitor;
