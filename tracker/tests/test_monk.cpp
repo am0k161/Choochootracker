@@ -101,7 +101,10 @@ TEST_CASE("MonkSynth prepares engines only for projects with Monk instruments") 
   s->project.instruments[0]=monkInstrument();
   chipnomadInitChips(s.get(),48000,nullptr);
   CHECK(s->monkPreview->initialized());
-  for(auto& track:s->monkVoices) for(auto* voice:track) CHECK(voice->initialized());
+  for(int owner=0;owner<VOICE_OWNER_COUNT;++owner) for(auto* voice:s->monkVoices[owner]) {
+    if(owner<PROJECT_MAX_TRACKS) { REQUIRE(voice); CHECK(voice->initialized()); }
+    else CHECK(voice==nullptr);
+  }
   s->project.instruments[0].type=InstrumentType::none;
   chipnomadInitChips(s.get(),48000,nullptr);
   CHECK_FALSE(s->monkPreview->initialized());
