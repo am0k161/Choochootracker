@@ -206,6 +206,25 @@ uploading it:
 & 'C:\Program Files\7-Zip\7z.exe' t releases\choochootracker.zip
 ```
 
+## NextUI Pak Store (TrimUI tg5040)
+
+The NextUI package reuses the same ARM64 executable as PortMaster:
+
+```sh
+cd tracker
+make -j4 -f Makefile.portmaster NextUI-deploy \
+  COMMON_CFLAGS='-std=c++17 -Wall -g -Os -DTEST'
+```
+
+This writes `releases/ChooChooTracker.pak.zip`. Its files must be at the ZIP
+root; Pak Store extracts them into `Tools/tg5040/ChooChooTracker.pak`.
+Keep the root `pak.json` version equal to the GitHub release tag and validate
+the archive before upload:
+
+```powershell
+& 'C:\Program Files\7-Zip\7z.exe' t releases\ChooChooTracker.pak.zip
+```
+
 ## Android / Google Play
 
 The Android app is `com.paiheulevrai.choochootracker`, targets API 36, and

@@ -56,6 +56,11 @@ android android-deploy:
 PortMaster PortMaster-deploy:
 	$(MAKE) -f Makefile.portmaster $@
 
+# NextUI Pak Store (reuses the PortMaster ARM64 binary)
+.PHONY: NextUI NextUI-deploy
+NextUI NextUI-deploy:
+	$(MAKE) -f Makefile.portmaster $@
+
 # MiyooPorts
 .PHONY: MiyooPorts MiyooPorts-deploy
 MiyooPorts MiyooPorts-deploy:

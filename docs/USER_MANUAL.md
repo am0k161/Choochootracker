@@ -20,6 +20,13 @@ It follows the classic LSDj workflow and navigation system, with several sound d
 Install `choochootracker.zip` through PortMaster, or copy the extracted package to the console's `ports` directory. Start **ChooChooTracker** from the Ports menu.
 On the RG353V with ArkOS, use the console's **+ / -** buttons to adjust output volume during playback.
 
+### TrimUI Brick / Smart Pro (NextUI)
+
+Install **ChooChooTracker** from Pak Store's **Media** category, then start it
+from NextUI's Tools menu. For a manual installation, extract
+`ChooChooTracker.pak.zip` into `Tools/tg5040/ChooChooTracker.pak` on the SD
+card. Back up the Pak's `projects` folder before uninstalling it.
+
 ### Miyoo Mini / Mini Plus (Onion OS)
 
 Extract the MiyooPorts archive at the root of the SD card so that its `Roms/PORTS/` folders merge with Onion's existing folders. Start **ChooChooTracker** from the Ports menu after refreshing the collection. Back up the app's `projects/` folder before replacing an existing installation.

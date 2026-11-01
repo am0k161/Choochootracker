@@ -46,6 +46,8 @@ $(foreach source,$(SOURCES),$(eval $(call compile_source,$(source))))
 PACKAGE_ROOT = $(BUILD)/package
 PORT_DIR = $(PACKAGE_ROOT)/choochootracker
 RELEASE = ../releases/choochootracker.zip
+NEXTUI_PACKAGE_ROOT = $(BUILD)/nextui-package
+NEXTUI_RELEASE = ../releases/ChooChooTracker.pak.zip
 
 .PHONY: PortMaster
 PortMaster: $(BUILD)/choochootracker.aarch64
@@ -74,3 +76,22 @@ PortMaster-deploy: PortMaster
 	cd $(PACKAGE_ROOT) && zip -qr ../choochootracker.zip .
 	cp $(BUILD)/choochootracker.zip $(RELEASE)
 	@echo "PortMaster package created: $(RELEASE)"
+
+.PHONY: NextUI NextUI-deploy
+NextUI: PortMaster
+
+NextUI-deploy: NextUI
+	grep -Fq '"version": "v$(VERSION)"' ../pak.json
+	rm -rf $(NEXTUI_PACKAGE_ROOT)
+	mkdir -p $(NEXTUI_PACKAGE_ROOT)/licenses ../releases
+	cp $(BUILD)/choochootracker.aarch64 $(NEXTUI_PACKAGE_ROOT)/
+	cp -r packaging/common/. $(NEXTUI_PACKAGE_ROOT)/
+	cp ../docs/USER_MANUAL.md $(NEXTUI_PACKAGE_ROOT)/
+	cp ../pak.json packaging/nextui/launch.sh $(NEXTUI_PACKAGE_ROOT)/
+	cp ../LICENSE $(NEXTUI_PACKAGE_ROOT)/licenses/LICENSE.choochootracker.md
+	cp ../chipnomad_lib/external/insert_fx/LICENSE-JM-Formant $(NEXTUI_PACKAGE_ROOT)/licenses/
+	cp packaging/portmaster/license/* $(NEXTUI_PACKAGE_ROOT)/licenses/
+	chmod +x $(NEXTUI_PACKAGE_ROOT)/launch.sh $(NEXTUI_PACKAGE_ROOT)/choochootracker.aarch64
+	rm -f $(NEXTUI_RELEASE)
+	cd $(NEXTUI_PACKAGE_ROOT) && zip -qr ../../../../releases/ChooChooTracker.pak.zip .
+	@echo "NextUI package created: $(NEXTUI_RELEASE)"

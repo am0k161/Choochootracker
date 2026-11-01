@@ -38,9 +38,10 @@ jobs:
               cmake --install /tmp/SDL2-build && ldconfig && \
               sdl_pc=\$(find /usr/local -name sdl2.pc -print -quit) && \
               PKG_CONFIG_LIBDIR=\$(dirname \"\$sdl_pc\"):/usr/lib/aarch64-linux-gnu/pkgconfig:/usr/share/pkgconfig \
-                make -B -j4 -f Makefile.portmaster PortMaster-deploy \
+                make -B -j4 -f Makefile.portmaster PortMaster-deploy NextUI-deploy \
               COMMON_CFLAGS='-std=c++17 -Wall -g -Os -DTEST' CXX=g++ STRIP=strip"
           unzip -t releases/choochootracker.zip
+          unzip -t releases/ChooChooTracker.pak.zip
           # The binary alone is not a usable release: native chip and FM
           # preset libraries are loaded from these packaged asset paths.
           # Save the full listing so grep -q cannot terminate unzip early
@@ -53,8 +54,19 @@ jobs:
             grep -Fxq "choochootracker/instruments/USER/$engine/README.txt" releases/package-files.txt
           done
           grep -Fxq 'choochootracker/licenses/miniz.txt' releases/package-files.txt
+          unzip -Z1 releases/ChooChooTracker.pak.zip > releases/nextui-package-files.txt
+          grep -Fxq 'launch.sh' releases/nextui-package-files.txt
+          grep -Fxq 'pak.json' releases/nextui-package-files.txt
+          grep -Fxq 'choochootracker.aarch64' releases/nextui-package-files.txt
+          grep -Fxq 'instruments/FACTORY/catalog.tsv' releases/nextui-package-files.txt
+          test "$(unzip -p releases/ChooChooTracker.pak.zip pak.json)" = "$(cat pak.json)"
       - uses: actions/upload-artifact@v4
         with:
           name: choochootracker-portmaster
           path: releases/choochootracker.zip
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: choochootracker-nextui
+          path: releases/ChooChooTracker.pak.zip
           if-no-files-found: error

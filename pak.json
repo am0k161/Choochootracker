@@ -1,0 +1,18 @@
+{
+  "name": "ChooChooTracker",
+  "version": "v1.0.21-alpha",
+  "type": "TOOL",
+  "description": "A portable music tracker combining classic sound chips, modern synth engines and samples.",
+  "author": "ChooChooTracker contributors",
+  "repo_url": "https://github.com/paiheulevrai/Choochootracker",
+  "release_filename": "ChooChooTracker.pak.zip",
+  "changelog": {
+    "v1.0.21-alpha": "Initial NextUI release for TrimUI Brick and Smart Pro."
+  },
+  "screenshots": [
+    "tracker/packaging/portmaster/screenshot.png"
+  ],
+  "platforms": [
+    "tg5040"
+  ]
+}

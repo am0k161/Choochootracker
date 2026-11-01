@@ -92,6 +92,12 @@ ChooChooTracker supports PortMaster-compatible Linux handhelds.
 
 Tested on ArkOS, DarkOs, Knulli, amberElec, Anbernic and TrimUI devices, among others.
 
+### 🚂 TrimUI Brick / Smart Pro — NextUI
+
+ChooChooTracker is also distributed as a NextUI tool Pak for the `tg5040`
+platform. Install `ChooChooTracker.pak.zip` from Pak Store, or extract its
+contents into `Tools/tg5040/ChooChooTracker.pak` on the SD card.
+
 ### 🕹️ Miyoo Mini / Mini Plus
 
 1. Download the MiyooPorts package 
